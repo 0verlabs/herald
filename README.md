@@ -1,4 +1,8 @@
-# ivanius.ai
+<div align="center">
+  <img width="120x" height="auto" src="assets/logo.png" />
+</div>
+
+# Ivanius
 
 Bun + Turborepo monorepo targeting the Cloudflare ecosystem. All workspace
 packages are named `@ivanius.ai/<name>`.
