@@ -9,6 +9,9 @@
       "packages/*"
     ],
     "catalog": {
+      "@astryxdesign/cli": "0.1.2",
+      "@astryxdesign/core": "0.1.2",
+      "@astryxdesign/theme-neutral": "0.1.2",
       "@biomejs/biome": "2.5.2",
       "@cloudflare/vite-plugin": "1.43.0",
       "@tailwindcss/vite": "4.3.2",
@@ -26,6 +29,7 @@
       "drizzle-kit": "0.31.10",
       "drizzle-orm": "0.45.2",
       "hono": "4.12.27",
+      "lucide-react": "1.23.0",
       "react": "19.2.7",
       "react-dom": "19.2.7",
       "tailwindcss": "4.3.2",
