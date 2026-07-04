@@ -14,7 +14,7 @@ packages are named `@ivanius.ai/<name>`.
 | Runtime & PM   | [Bun](https://bun.com)                                        |
 | Orchestration  | [Turborepo](https://turborepo.com)                            |
 | Language       | TypeScript (strict) + [ts-reset](https://github.com/mattpocock/ts-reset) |
-| Frontend       | React + Vite, TailwindCSS + [Astryx](https://astryx.atmeta.com), React Router (file routing) |
+| Frontend       | React + Vite, TailwindCSS + [shadcn/ui](https://ui.shadcn.com), [TanStack Router](https://tanstack.com/router) (file routing) |
 | Backend        | [Hono](https://hono.dev)                                      |
 | Database       | [Drizzle ORM](https://orm.drizzle.team) (Cloudflare D1)       |
 | Validation     | [Zod](https://zod.dev)                                        |
@@ -35,16 +35,16 @@ bun run dev
 
 All package-level tasks run through Turborepo:
 
-| Script               | What it does                                     |
-| -------------------- | ------------------------------------------------ |
-| `bun run build`      | `turbo run build` across all packages            |
-| `bun run dev`        | `turbo run dev` (persistent, uncached)           |
-| `bun run lint`       | `turbo run lint` across all packages             |
-| `bun run format`     | `turbo run format` across all packages           |
-| `bun run typecheck`  | `turbo run typecheck` across all packages        |
-| `bun run check`      | Biome check on the entire repo                   |
-| `bun run check:fix`  | Biome check with auto-fix                        |
-| `bun run changeset`  | Create a changeset                               |
+| Script                     | What it does                                            |
+| -------------------------- | -------------------------------------------------------- |
+| `bun run build`            | `turbo run build` across all packages                    |
+| `bun run dev`              | `turbo run dev` (persistent, uncached)                    |
+| `bun run lint`             | `turbo run lint` across all packages                      |
+| `bun run lint:staged`      | `turbo run lint:staged` — staged files only, run by the pre-commit hook |
+| `bun run format`           | `turbo run format` across all packages                    |
+| `bun run typecheck`        | `turbo run typecheck` across all packages                 |
+| `bun run changeset`        | Create a changeset                                        |
+| `bun run version-packages` | `changeset version` — apply pending changesets and bump versions |
 
 ## Structure
 
@@ -64,8 +64,8 @@ Packages are named `@ivanius.ai/<name>` and live in `packages/<name>`. Prefer
 `bun create` scaffolding, then align the package with the repo conventions below.
 
 ```sh
-# Frontend (React + Vite + Tailwind on Cloudflare Workers, file routing via @react-router/fs-routes)
-bun create react-router@latest packages/web --template remix-run/react-router-templates/cloudflare
+# Frontend (React + Vite + Tailwind on Cloudflare Workers, file routing via TanStack Router)
+bunx create-tsrouter-app@latest packages/<name> --template file-router --package-manager bun
 
 # API (Hono on Cloudflare Workers — pick the cloudflare-workers template)
 bun create hono@latest packages/api
@@ -98,7 +98,7 @@ Every package must:
 
 ### Dependency catalog
 
-Shared libraries/frameworks (React, Vite, Tailwind, React Router, Hono, Drizzle,
+Shared libraries/frameworks (React, Vite, Tailwind, TanStack Router, Hono, Drizzle,
 Wrangler, Zod, TypeScript, …) are version-pinned once in the root
 `package.json` under `workspaces.catalog`. Packages reference them without a
 version:
@@ -116,17 +116,20 @@ version:
 > package's `package.json` and run `bun install`. To upgrade a shared
 > dependency, bump its version once in the root catalog.
 
-### UI work (Astryx)
+### UI work (shadcn)
 
-The `ui`/`web` packages use Meta's [Astryx](https://astryx.atmeta.com/docs/working-with-ai)
-design system on top of Tailwind. Set it up inside the package with:
+The `ui` package holds shared components, built with [shadcn/ui](https://ui.shadcn.com)
+on top of Tailwind (`components.json` lives there). Frontend packages import
+components from it: `@ivanius.ai/ui/components/<name>`.
+
+Add or update components from inside `packages/ui`:
 
 ```sh
-bunx astryx init --features agents --agent claude
+bunx shadcn add <component>
 ```
 
-Before writing UI code (especially with AI agents): `bunx astryx template --list`,
-then `bunx astryx template <name> --skeleton`, then `bunx astryx component <Name>`.
+A Claude Code skill (`shadcn`) is installed at the repo root — invoke it when
+adding, styling, or composing shadcn components instead of hand-rolling them.
 
 ## Deployment & releases
 

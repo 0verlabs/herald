@@ -7,14 +7,15 @@ named `@ivanius.ai/<name>`.
 ## Commands
 
 - `bun run build | dev | lint | format | typecheck` — run via Turbo across packages
-- `bun run check` / `bun run check:fix` — Biome on the whole repo
+- `bun run lint:staged` — Turbo lint of staged files only; run by the pre-commit hook
 - `bun run changeset` — add a changeset (required for versioned changes)
+- `bun run version-packages` — apply pending changesets and bump versions
 - Filter to one package: `bun run build --filter=@ivanius.ai/<name>`
 
 ## Hard rules
 
 - **Shared stack deps come from the catalog.** Versions for React, Vite,
-  Tailwind, React Router, Hono, Drizzle, Wrangler, Zod, TypeScript, etc. are
+  Tailwind, TanStack Router, Hono, Drizzle, Wrangler, Zod, TypeScript, etc. are
   pinned once in root `package.json` → `workspaces.catalog`. In packages,
   reference them as `"react": "catalog:"` and run `bun install`. `bun add`
   does NOT write `catalog:` references — this is the one case where you edit
@@ -25,9 +26,9 @@ named `@ivanius.ai/<name>`.
   `bunfig.toml` enforces exact versions.
 - **Bun everywhere**: `bun`/`bunx`, never `npm`/`npx`/`node`. Scaffold new
   packages with `bun create <template>` when one exists (e.g. `bun create
-  hono@latest`, `bun create react-router@latest`).
+  hono@latest`, `bunx create-tsrouter-app@latest`).
 - Stack choices are fixed: Hono for APIs, Drizzle for DB (D1), Zod for
-  validation, React + Vite + TailwindCSS + React Router (file routing) for
+  validation, React + Vite + TailwindCSS + TanStack Router (file routing) for
   frontend, Wrangler for all Cloudflare infra.
 
 ## New package checklist
@@ -45,14 +46,16 @@ named `@ivanius.ai/<name>`.
    `worker-configuration.d.ts`. Re-run `wrangler types` after changing
    wrangler config/bindings.
 
-## UI: Astryx design system
+## UI: shadcn/ui
 
-UI code uses Meta's Astryx (https://astryx.atmeta.com) on Tailwind. Before
-writing UI, follow its AI workflow **in order**:
+UI code uses shadcn/ui (https://ui.shadcn.com) on Tailwind. Shared components
+live in `packages/ui` (see its `components.json`); frontend packages import
+them via `@ivanius.ai/ui/components/<name>`. Add or update a component from
+inside `packages/ui`:
 
-1. `bunx astryx template --list` — find related page patterns
-2. `bunx astryx template <name> --skeleton` — study layout structure
-3. `bunx astryx component <Name>` — read props and examples
+```sh
+bunx shadcn add <component>
+```
 
-Astryx also exposes an MCP server at `https://astryx.atmeta.com/mcp` (name it
-`xds`). Initialize per package with `bunx astryx init --features agents --agent claude`.
+Use the `shadcn` Claude Code skill (installed at the repo root) when adding,
+styling, or composing components instead of hand-rolling them.
