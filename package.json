@@ -9,6 +9,7 @@
       "packages/*"
     ],
     "catalog": {
+      "@biomejs/biome": "2.5.2",
       "@cloudflare/vite-plugin": "1.43.0",
       "@react-router/dev": "8.1.0",
       "@react-router/fs-routes": "8.1.0",
@@ -46,7 +47,7 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.2",
+    "@biomejs/biome": "catalog:",
     "@changesets/cli": "2.31.0",
     "@total-typescript/ts-reset": "catalog:",
     "@types/bun": "catalog:",
