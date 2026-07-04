@@ -13,15 +13,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@astryxdesign/core": "catalog:",
-    "@astryxdesign/theme-neutral": "catalog:",
     "@tanstack/react-router": "catalog:",
     "lucide-react": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:"
   },
   "devDependencies": {
-    "@astryxdesign/cli": "catalog:",
     "@biomejs/biome": "catalog:",
     "@cloudflare/vite-plugin": "catalog:",
     "@tailwindcss/vite": "catalog:",
