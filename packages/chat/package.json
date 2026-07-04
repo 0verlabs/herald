@@ -13,6 +13,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ivanius.ai/ui": "workspace:",
     "@tanstack/react-router": "catalog:",
     "lucide-react": "catalog:",
     "react": "catalog:",
