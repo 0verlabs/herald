@@ -1,0 +1,3 @@
+[install]
+# Always pin exact versions in package.json (no ^ or ~ ranges)
+exact = true
