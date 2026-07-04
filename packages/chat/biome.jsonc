@@ -1,8 +1,8 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.2/schema.json",
   "extends": "//",
-  "linter": {
-    "includes": ["**/*", "!**/routeTree.gen.ts"]
+  "files": {
+    "includes": ["**", "!**/routeTree.gen.ts"]
   },
   "css": {
     "parser": {
