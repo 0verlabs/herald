@@ -6,6 +6,6 @@ if git status --short | grep --quiet '^MM'; then
   exit 1;
 fi
 
-bun run lint:staged
+bun run check:staged
 
 git update-index --again

@@ -41,10 +41,10 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "lint": "turbo run lint",
-    "lint:staged": "turbo run lint:staged",
-    "format": "turbo run format",
-    "typecheck": "turbo run typecheck",
+    "check": "turbo run check",
+    "check:lint": "turbo run check:lint",
+    "check:types": "turbo run check:types",
+    "check:staged": "turbo run check:staged",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "prepare": "husky"

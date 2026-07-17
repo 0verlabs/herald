@@ -39,10 +39,10 @@ All package-level tasks run through Turborepo:
 | -------------------------- | -------------------------------------------------------- |
 | `bun run build`            | `turbo run build` across all packages                    |
 | `bun run dev`              | `turbo run dev` (persistent, uncached)                    |
-| `bun run lint`             | `turbo run lint` across all packages                      |
-| `bun run lint:staged`      | `turbo run lint:staged` — staged files only, run by the pre-commit hook |
-| `bun run format`           | `turbo run format` across all packages                    |
-| `bun run typecheck`        | `turbo run typecheck` across all packages                 |
+| `bun run check`            | `turbo run check` — Biome (`check:lint`) + types (`check:types`) across all packages |
+| `bun run check:lint`       | `turbo run check:lint` — `biome check .` (format + lint + imports) across all packages |
+| `bun run check:types`      | `turbo run check:types` across all packages               |
+| `bun run check:staged`     | `turbo run check:staged` — staged files only, run by the pre-commit hook |
 | `bun run changeset`        | Create a changeset                                        |
 | `bun run version-packages` | `changeset version` — apply pending changesets and bump versions |
 
@@ -80,14 +80,16 @@ Every package must:
 2. Extend the root TS config: `"extends": "../../tsconfig.base.json"`.
 3. Add a `reset.d.ts` containing `import "@total-typescript/ts-reset";` and include it in its tsconfig.
 4. Define the task contract so Turbo can run it:
-   - `build`, `dev`, `typecheck` (`tsc --noEmit`)
-   - `lint` (`biome lint .`), `format` (`biome format --write .`)
+   - `build`, `dev`
+   - `check` (runs `check:lint` + `check:types`), `check:lint` (`biome check .`),
+     `check:types` (`tsc --noEmit`), `check:staged`
+     (`biome check . --write --staged …`, run by the pre-commit hook)
    - `deploy` (`wrangler deploy`) for anything that ships to Cloudflare
 
    Worker packages generate their runtime + `Env` types with
    [`wrangler types`](https://developers.cloudflare.com/workers/languages/typescript/)
    instead of depending on `@cloudflare/workers-types`:
-   - `"typecheck": "wrangler types && tsc --noEmit"`
+   - `"check:types": "wrangler types && tsc --noEmit"`
    - tsconfig: `"types": ["./worker-configuration.d.ts"]`
    - Commit `worker-configuration.d.ts`; CI can verify it with `wrangler types --check`.
    - (`@cloudflare/workers-types` is only for pure library packages that need
@@ -133,7 +135,7 @@ adding, styling, or composing shadcn components instead of hand-rolling them.
 
 ## Deployment & releases
 
-- **CI** (`ci.yml`) — Biome, lint, typecheck, build on every PR and push to `main`.
+- **CI** (`ci.yml`) — Biome (`biome ci .`), typecheck, build on every PR and push to `main`.
 - **Deploy** (`deploy.yml`) — on push to `main`, runs `turbo run deploy` (each
   Cloudflare package's `wrangler deploy`). Requires the `CLOUDFLARE_API_TOKEN`
   and `CLOUDFLARE_ACCOUNT_ID` repository secrets.

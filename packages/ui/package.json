@@ -4,10 +4,10 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "lint": "biome lint .",
-    "lint:staged": "biome lint . --write --staged --files-ignore-unknown=true --no-errors-on-unmatched",
-    "format": "biome format . --write",
-    "typecheck": "tsc --noEmit"
+    "check": "bun run check:lint && bun run check:types",
+    "check:lint": "biome check .",
+    "check:types": "tsc --noEmit",
+    "check:staged": "biome check . --write --staged --files-ignore-unknown=true --no-errors-on-unmatched"
   },
   "dependencies": {
     "@base-ui/react": "1.6.0",

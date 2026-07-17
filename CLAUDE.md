@@ -6,8 +6,9 @@ named `@ivanius.ai/<name>`.
 
 ## Commands
 
-- `bun run build | dev | lint | format | typecheck` — run via Turbo across packages
-- `bun run lint:staged` — Turbo lint of staged files only; run by the pre-commit hook
+- `bun run build | dev | check` — run via Turbo across packages (`check` runs
+  `check:lint` (Biome) + `check:types` (tsc); both also runnable standalone)
+- `bun run check:staged` — Turbo `biome check --write` of staged files only; run by the pre-commit hook
 - `bun run changeset` — add a changeset (required for versioned changes)
 - `bun run version-packages` — apply pending changesets and bump versions
 - Filter to one package: `bun run build --filter=@ivanius.ai/<name>`
@@ -36,12 +37,15 @@ named `@ivanius.ai/<name>`.
 1. `packages/<name>`, name `@ivanius.ai/<name>`, `"private": true`.
 2. tsconfig extends `../../tsconfig.base.json`; add `reset.d.ts` with
    `import "@total-typescript/ts-reset";` and include it.
-3. Scripts contract for Turbo: `build`, `dev`, `typecheck`, `lint` (`biome lint .`),
-   `format` (`biome format --write .`); Cloudflare packages also add
-   `deploy` (`wrangler deploy`) — CI deploys `main` via `turbo run deploy`.
+3. Scripts contract for Turbo: `build`, `dev`, `check` (runs `check:lint` +
+   `check:types`), `check:lint` (`biome check .` — format + lint + imports),
+   `check:types` (`tsc --noEmit`), `check:staged`
+   (`biome check . --write --staged …`, run by the pre-commit hook); Cloudflare
+   packages also add `deploy` (`wrangler deploy`) — CI deploys `main` via
+   `turbo run deploy`.
 4. Worker packages: types come from `wrangler types` (NOT
    `@cloudflare/workers-types` — only pure libraries without a wrangler config
-   use that). Set `"typecheck": "wrangler types && tsc --noEmit"`, tsconfig
+   use that). Set `"check:types": "wrangler types && tsc --noEmit"`, tsconfig
    `"types": ["./worker-configuration.d.ts"]`, and commit the generated
    `worker-configuration.d.ts`. Re-run `wrangler types` after changing
    wrangler config/bindings.

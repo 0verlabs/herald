@@ -13,7 +13,9 @@ const suggestions = ["Swap tokens", "Send crypto", "Delegate to an agent", "Chec
 function ChatComponent() {
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-4 px-4 pb-20">
-      <h1 className="text-4xl font-serif font-semibold tracking-tight mb-6">What can I help with?</h1>
+      <h1 className="text-4xl font-serif font-semibold tracking-tight mb-6">
+        What can I help with?
+      </h1>
       <form className="w-full max-w-2xl">
         <div className="rounded-2xl border bg-card p-2 shadow-sm focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
           <Textarea
