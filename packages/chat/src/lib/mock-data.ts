@@ -12,14 +12,14 @@ export const currentUser = {
 };
 
 export const chats: ChatSummary[] = [
-  { id: "chat-01", title: "Cloudflare Workers cron triggers" },
-  { id: "chat-02", title: "Drizzle migrations on D1" },
-  { id: "chat-03", title: "Naming a personal AI agent" },
-  { id: "chat-04", title: "Turborepo remote caching setup" },
-  { id: "chat-05", title: "Explain OAuth PKCE flow" },
-  { id: "chat-06", title: "Tailwind v4 theme tokens" },
-  { id: "chat-07", title: "Weekend itinerary for Kyoto" },
-  { id: "chat-08", title: "Refactor chat message schema" },
-  { id: "chat-09", title: "Bun vs Node cold start times" },
-  { id: "chat-10", title: "Landing page copy review" },
+  { id: "chat-01", title: "Swap 500 USDC for ETH on Base" },
+  { id: "chat-02", title: "Set up an A2A payment channel" },
+  { id: "chat-03", title: "Delegate research to a sub-agent" },
+  { id: "chat-04", title: "Bridge assets from Arbitrum to Solana" },
+  { id: "chat-05", title: "Sign an x402 payment for API access" },
+  { id: "chat-06", title: "Approve agent spending allowance" },
+  { id: "chat-07", title: "Discover vendor agents via registry" },
+  { id: "chat-08", title: "Stake ETH and auto-compound rewards" },
+  { id: "chat-09", title: "Escrow contract for agent-to-agent trade" },
+  { id: "chat-10", title: "Monitor wallet for large transfers" },
 ];

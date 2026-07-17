@@ -77,7 +77,7 @@ export function NavUser() {
               <Settings />
               Settings
             </DropdownMenuItem>
-            <DropdownMenuItem>
+            <DropdownMenuItem className="text-destructive">
               <LogOut />
               Sign out
             </DropdownMenuItem>
