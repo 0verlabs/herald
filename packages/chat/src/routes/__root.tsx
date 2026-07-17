@@ -1,4 +1,4 @@
-import { createRootRoute, Outlet } from "@tanstack/react-router";
+import { createRootRoute, Outlet, useRouterState } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 
 import { Button } from "@ivanius.ai/ui/components/button";
@@ -12,18 +12,24 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
+  const isIndexRoute = useRouterState({
+    select: (state) => state.location.pathname === "/",
+  });
+
   return (
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
         <header className="flex h-14 shrink-0 items-center justify-between gap-2 px-4">
           <SidebarTrigger className="md:hidden" />
-          <div className="ml-auto">
-            <Button variant="outline" size="lg">
-              <Plus />
-              New chat
-            </Button>
-          </div>
+          {isIndexRoute && (
+            <div className="ml-auto">
+              <Button variant="outline" size="lg">
+                <Plus />
+                New chat
+              </Button>
+            </div>
+          )}
         </header>
         <Outlet />
       </SidebarInset>

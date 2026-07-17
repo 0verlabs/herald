@@ -1,4 +1,4 @@
-import { MessageSquareText, PanelLeft, Plus, Search, Trash2 } from "lucide-react";
+import { Compass, PanelLeft, Plus, Search, SquarePen, Trash2 } from "lucide-react";
 
 import { Kbd } from "@ivanius.ai/ui/components/kbd";
 import {
@@ -15,6 +15,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  SidebarSeparator,
   SidebarTrigger,
   useSidebar,
 } from "@ivanius.ai/ui/components/sidebar";
@@ -29,18 +30,18 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <div className="flex items-center justify-between gap-1 group-data-[collapsible=icon]:justify-center">
+        <div className="flex h-8 items-center justify-between gap-1 group-data-[collapsible=icon]:justify-center">
           <button
             type="button"
             onClick={toggleSidebar}
             aria-label={open ? "Close sidebar" : "Open sidebar"}
             className="group/logo flex items-center gap-1 rounded-lg"
           >
-            <span className="relative flex size-8 shrink-0 items-center justify-center rounded-lg group-data-[collapsible=icon]:hover:bg-sidebar-accent">
+            <span className="relative hidden size-8 shrink-0 items-center justify-center rounded-lg group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:hover:bg-sidebar-accent">
               <Logo />
               <PanelLeft className="absolute size-4 opacity-0 transition-opacity group-data-[collapsible=icon]:group-hover/logo:opacity-100" />
             </span>
-            <span className="font-heading text-lg font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
+            <span className="ml-2 font-heading text-2xl leading-none font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
               Ivanius
             </span>
           </button>
@@ -59,9 +60,22 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Chat" isActive>
-                  <MessageSquareText />
-                  <span>Chat</span>
+                <SidebarMenuButton tooltip="New chat">
+                  <SquarePen />
+                  <span>New chat</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarSeparator />
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Explore">
+                  <Compass />
+                  <span>Explore</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -69,9 +83,6 @@ export function AppSidebar() {
         </SidebarGroup>
         <SidebarGroup className="group-data-[collapsible=icon]:hidden">
           <SidebarGroupLabel className="text-sm text-muted-foreground">Chats</SidebarGroupLabel>
-          <SidebarGroupAction title="New chat" aria-label="New chat">
-            <Plus />
-          </SidebarGroupAction>
           <SidebarGroupContent>
             <SidebarMenu>
               {chats.map((chat) => (
@@ -80,6 +91,9 @@ export function AppSidebar() {
                     <span>{chat.title}</span>
                   </SidebarMenuButton>
                   <SidebarMenuAction
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                    }}
                     showOnHover
                     aria-label={`Delete ${chat.title}`}
                     className="text-sidebar-foreground/50 hover:text-destructive"
