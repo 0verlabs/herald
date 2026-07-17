@@ -27,9 +27,9 @@ export function NavUser() {
     <SidebarMenu>
       <SidebarMenuItem>
         <DropdownMenu>
-          <DropdownMenuTrigger render={<SidebarMenuButton size="lg" />}>
-            <Avatar className="size-8 rounded-lg">
-              <AvatarFallback className="rounded-lg">{currentUser.initials}</AvatarFallback>
+          <DropdownMenuTrigger render={<SidebarMenuButton size="lg" className="rounded-full" />}>
+            <Avatar className="size-8">
+              <AvatarFallback>{currentUser.initials}</AvatarFallback>
             </Avatar>
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-medium">{currentUser.name}</span>
@@ -48,8 +48,8 @@ export function NavUser() {
             <DropdownMenuGroup>
               <DropdownMenuLabel className="p-0 font-normal">
                 <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                  <Avatar className="size-8 rounded-lg">
-                    <AvatarFallback className="rounded-lg">{currentUser.initials}</AvatarFallback>
+                  <Avatar className="size-8">
+                    <AvatarFallback>{currentUser.initials}</AvatarFallback>
                   </Avatar>
                   <div className="grid flex-1 leading-tight">
                     <span className="truncate font-medium text-foreground">{currentUser.name}</span>

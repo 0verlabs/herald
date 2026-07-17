@@ -20,39 +20,30 @@ import {
 } from "@ivanius.ai/ui/components/sidebar";
 
 import { chats } from "../lib/mock-data";
+import { Logo } from "./logo";
 import { NavUser } from "./nav-user";
 
-function SidebarLogo() {
+export function AppSidebar() {
   const { open, toggleSidebar } = useSidebar();
 
-  return (
-    <button
-      type="button"
-      onClick={toggleSidebar}
-      aria-label={open ? "Close sidebar" : "Open sidebar"}
-      className="group/logo relative flex size-8 shrink-0 items-center justify-center rounded-lg hover:bg-sidebar-accent"
-    >
-      <img
-        src="/logo.svg"
-        alt=""
-        className="size-7 rounded-md transition-opacity group-data-[collapsible=icon]:group-hover/logo:opacity-0"
-      />
-      <PanelLeft className="absolute size-4 opacity-0 transition-opacity group-data-[collapsible=icon]:group-hover/logo:opacity-100" />
-    </button>
-  );
-}
-
-export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <div className="flex items-center justify-between gap-1 group-data-[collapsible=icon]:justify-center">
-          <div className="flex items-center gap-2">
-            <SidebarLogo />
-            <span className="font-heading italic text-xl font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            aria-label={open ? "Close sidebar" : "Open sidebar"}
+            className="group/logo flex items-center gap-1 rounded-lg"
+          >
+            <span className="relative flex size-8 shrink-0 items-center justify-center rounded-lg group-data-[collapsible=icon]:hover:bg-sidebar-accent">
+              <Logo />
+              <PanelLeft className="absolute size-4 opacity-0 transition-opacity group-data-[collapsible=icon]:group-hover/logo:opacity-100" />
+            </span>
+            <span className="font-heading text-lg font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
               Ivanius
             </span>
-          </div>
+          </button>
           <SidebarTrigger className="text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden" />
         </div>
       </SidebarHeader>
