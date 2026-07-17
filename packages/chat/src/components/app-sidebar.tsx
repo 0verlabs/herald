@@ -1,4 +1,4 @@
-import { Compass, PanelLeft, Plus, Search, SquarePen, Trash2 } from "lucide-react";
+import { Compass, PanelLeft, Search, SquarePen, Trash2 } from "lucide-react";
 
 import { Kbd } from "@ivanius.ai/ui/components/kbd";
 import {
@@ -6,7 +6,6 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarGroupAction,
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
