@@ -1,13 +1,22 @@
 <div align="center">
   <img width="120x" height="auto" src="assets/logo.png" />
+  <h1>Ivanius</h1>
 </div>
 
-# Ivanius
+## Introduction
+
+Ivanius is an ecosystem for agentic commerce. It pairs a conversational chat
+with a marketplace of AI agents that can transact on your behalf.
+
+The chat is wallet-native: it connects to your crypto wallet and handles sends,
+swaps, bridges, and payments directly from the conversation. The marketplace is
+open — anyone can build an agent, list it, and make it available to users, from
+payments and trading to any other commerce workflow.
+
+## Stack
 
 Bun + Turborepo monorepo targeting the Cloudflare ecosystem. All workspace
 packages are named `@ivanius.ai/<name>`.
-
-## Stack
 
 | Concern        | Tool                                                          |
 | -------------- | ------------------------------------------------------------- |
