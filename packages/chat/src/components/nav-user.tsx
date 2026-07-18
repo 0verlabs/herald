@@ -27,7 +27,7 @@ export function NavUser() {
     <SidebarMenu>
       <SidebarMenuItem>
         <DropdownMenu>
-          <DropdownMenuTrigger render={<SidebarMenuButton size="lg" className="rounded-full" />}>
+          <DropdownMenuTrigger render={<SidebarMenuButton size="lg" className="rounded-lg" />}>
             <Avatar className="size-8">
               <AvatarFallback>{currentUser.initials}</AvatarFallback>
             </Avatar>
