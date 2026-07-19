@@ -13,13 +13,16 @@
     "check:staged": "biome check . --write --staged --files-ignore-unknown=true --no-errors-on-unmatched"
   },
   "dependencies": {
+    "@hookform/resolvers": "catalog:",
     "@ivanius.ai/ui": "workspace:",
     "@tanstack/react-router": "catalog:",
     "class-variance-authority": "catalog:",
     "date-fns": "catalog:",
     "lucide-react": "catalog:",
     "react": "catalog:",
-    "react-dom": "catalog:"
+    "react-dom": "catalog:",
+    "react-hook-form": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
