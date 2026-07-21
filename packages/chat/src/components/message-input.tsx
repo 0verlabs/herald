@@ -33,10 +33,11 @@ import { cn } from "@ivanius.ai/ui/lib/utils";
 import type { Attachment as MessageAttachment } from "../types/attachment";
 import type { ModelId } from "../types/model";
 import { MAX_ATTACHMENTS } from "../config/attachment";
-import { DEFAULT_MODEL, MODEL_IDS, MODEL_LABELS } from "../config/model";
+import { DEFAULT_MODEL, MODEL_IDS, MODELS } from "../config/model";
 import { formatSize, parseDataUrl, readAsDataUrl } from "../lib/attachment";
 import { attachmentSchema } from "../types/attachment";
 import { modelIdSchema } from "../types/model";
+import { ModelProviderLogo } from "./model-provider-logo";
 
 export const messageInputSchema = z.object({
   message: z.string().trim(),
@@ -221,17 +222,25 @@ export function MessageInput({
                       disabled={formState.isSubmitting}
                       render={<InputGroupButton size="sm" />}
                     >
-                      {MODEL_LABELS[field.value]}
+                      <ModelProviderLogo
+                        provider={MODELS[field.value].provider}
+                        className="text-foreground"
+                      />
+                      {MODELS[field.value].label}
                       <ChevronDown />
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent className="w-auto min-w-44">
+                    <DropdownMenuContent className="w-auto min-w-52 max-h-50">
                       <DropdownMenuRadioGroup
                         value={field.value}
                         onValueChange={(value) => field.onChange(value as ModelId)}
                       >
                         {MODEL_IDS.map((id) => (
                           <DropdownMenuRadioItem key={id} value={id} closeOnClick>
-                            {MODEL_LABELS[id]}
+                            <ModelProviderLogo
+                              provider={MODELS[id].provider}
+                              className="text-foreground"
+                            />
+                            {MODELS[id].label}
                           </DropdownMenuRadioItem>
                         ))}
                       </DropdownMenuRadioGroup>
