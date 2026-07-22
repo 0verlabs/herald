@@ -13,6 +13,8 @@
     "@base-ui/react": "1.6.0",
     "@fontsource-variable/figtree": "5.2.9",
     "@fontsource-variable/lora": "5.2.8",
+    "@fontsource-variable/geist-mono": "5.2.8",
+    "@shadcn/react": "0.2.1",
     "class-variance-authority": "catalog:",
     "clsx": "2.1.1",
     "cmdk": "1.1.1",
