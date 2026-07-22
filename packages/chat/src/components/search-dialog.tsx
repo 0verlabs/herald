@@ -13,8 +13,8 @@ import {
 } from "@ivanius.ai/ui/components/command";
 import { cn } from "@ivanius.ai/ui/lib/utils";
 
-import type { ChatSummary } from "../lib/mock-data";
-import { chats } from "../lib/mock-data";
+import type { ChatSummary } from "../types/chat";
+import { useChats } from "./chats-provider";
 
 /**
  * Substring match, ranked so earlier hits sort first. Replaces cmdk's default
@@ -59,6 +59,7 @@ interface SearchDialogProps {
 
 export function SearchDialog({ open, onOpenChange, onSelectChat }: SearchDialogProps) {
   const [query, setQuery] = useState("");
+  const { chats } = useChats();
 
   return (
     <CommandDialog

@@ -1,3 +1,4 @@
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { ClipboardCheck, Compass, PanelLeft, Search, SquarePen, Trash2 } from "lucide-react";
 import { useState } from "react";
 
@@ -19,7 +20,7 @@ import {
   useSidebar,
 } from "@ivanius.ai/ui/components/sidebar";
 
-import { chats } from "../lib/mock-data";
+import { useChats } from "./chats-provider";
 import { Logo } from "./logo";
 import { NavUser } from "./nav-user";
 import { SearchDialog } from "./search-dialog";
@@ -27,10 +28,17 @@ import { SearchDialog } from "./search-dialog";
 export function AppSidebar() {
   const { open, toggleSidebar } = useSidebar();
   const [searchOpen, setSearchOpen] = useState(false);
+  const { chats, removeChat } = useChats();
+  const navigate = useNavigate();
+  const { chatId: activeChatId } = useParams({ strict: false });
 
   return (
     <>
-      <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
+      <SearchDialog
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        onSelectChat={(chat) => void navigate({ to: "/chat/$chatId", params: { chatId: chat.id } })}
+      />
       <Sidebar collapsible="icon">
         <SidebarHeader>
           <div className="flex h-8 items-center justify-between gap-1 group-data-[collapsible=icon]:justify-center">
@@ -62,7 +70,7 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
-                  <SidebarMenuButton tooltip="New chat">
+                  <SidebarMenuButton tooltip="New chat" render={<Link to="/" />}>
                     <SquarePen />
                     <span>New chat</span>
                   </SidebarMenuButton>
@@ -95,12 +103,20 @@ export function AppSidebar() {
               <SidebarMenu>
                 {chats.map((chat) => (
                   <SidebarMenuItem key={chat.id}>
-                    <SidebarMenuButton className="text-sidebar-foreground/80">
-                      <span>{chat.title}</span>
+                    <SidebarMenuButton
+                      className="text-sidebar-foreground/80"
+                      isActive={chat.id === activeChatId}
+                      render={<Link to="/chat/$chatId" params={{ chatId: chat.id }} />}
+                    >
+                      <span className="truncate">{chat.title}</span>
                     </SidebarMenuButton>
                     <SidebarMenuAction
                       onClick={(e) => {
                         e.currentTarget.blur();
+                        removeChat(chat.id);
+                        if (chat.id === activeChatId) {
+                          void navigate({ to: "/" });
+                        }
                       }}
                       showOnHover
                       aria-label={`Delete ${chat.title}`}

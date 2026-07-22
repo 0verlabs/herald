@@ -1,10 +1,6 @@
 import { subDays, subHours } from "date-fns";
 
-export interface ChatSummary {
-  id: string;
-  title: string;
-  updatedAt: Date;
-}
+import type { ChatSummary } from "../types/chat";
 
 const daysAgo = (days: number) => subDays(new Date(), days);
 
