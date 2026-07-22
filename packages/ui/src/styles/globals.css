@@ -129,15 +129,6 @@
   --sidebar-ring: oklch(0.552 0.016 285.938);
 }
 
-.typeset-message {
-  --typeset-font-body: var(--font-sans);
-  --typeset-font-heading: var(--font-heading);
-  --typeset-font-mono: var(--font-mono);
-  --typeset-size: 15px;
-  --typeset-leading: 1.75;
-  --typeset-flow: 1.25em;
-}
-
 @layer base {
   * {
     @apply border-border outline-ring/50;
