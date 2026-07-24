@@ -1,6 +1,6 @@
-import type { UIMessage } from "@tanstack/ai-client";
-import { useChat } from "@tanstack/ai-react";
+import { useChat } from "@ai-sdk/react";
 import { createFileRoute } from "@tanstack/react-router";
+import { DefaultChatTransport } from "ai";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -13,13 +13,18 @@ import {
 } from "@ivanius.ai/ui/components/message-scroller";
 import { SidebarTrigger } from "@ivanius.ai/ui/components/sidebar";
 
+import type { ChatUIMessage } from "../../lib/ai/message";
+import type { MessageDraft } from "../../types/message";
+import type { ModelId } from "../../types/model";
 import { ChatMessage } from "../../components/chat-message";
 import { ChatTitle } from "../../components/chat-title";
-import { useChats } from "../../components/chats-provider";
 import { Logo } from "../../components/logo";
-import { MessageInput } from "../../components/message-input";
-import { createChatConnection, getChatScript } from "../../lib/conversations";
-import { getMessageText } from "../../lib/message";
+import { MessageComposer } from "../../components/message-composer";
+import { filePartsToAttachments } from "../../lib/ai/attachment";
+import { getMessageFiles, getMessageText } from "../../lib/ai/message";
+import { draftToSendContent } from "../../lib/ai/send";
+import { useChats } from "../../providers/chats-provider";
+import { useModel } from "../../providers/model-provider";
 
 export const Route = createFileRoute("/chat/$chatId")({
   component: ChatRoute,
@@ -27,7 +32,7 @@ export const Route = createFileRoute("/chat/$chatId")({
 
 function ChatRoute() {
   const { chatId } = Route.useParams();
-  // Remount per chat so useChat starts from that chat's scripted messages.
+  // Remount per chat so useChat starts from that chat's messages.
   return <ChatScreen key={chatId} chatId={chatId} />;
 }
 
@@ -39,7 +44,7 @@ function ChatRoute() {
  */
 interface BranchEntry {
   anchorIndex: number;
-  snapshots: UIMessage[][];
+  snapshots: ChatUIMessage[][];
   active: number;
 }
 
@@ -47,15 +52,22 @@ function ChatScreen({ chatId }: { chatId: string }) {
   const { chats, renameChat, consumePendingMessage } = useChats();
   const summary = chats.find((chat) => chat.id === chatId);
 
-  const [script] = useState(() => getChatScript(chatId));
-  const [initialMessages] = useState(() => script.get());
-  const [connection] = useState(() => createChatConnection(script));
+  const [transport] = useState(() => new DefaultChatTransport<ChatUIMessage>({ api: "/api/chat" }));
+  const { model, setModel } = useModel();
 
-  const { messages, sendMessage, setMessages, reload, status } = useChat({
-    initialMessages,
-    connection,
+  const { messages, sendMessage, setMessages, regenerate, status } = useChat<ChatUIMessage>({
+    transport,
   });
   const isBusy = status === "submitted" || status === "streaming";
+
+  function send(draft: MessageDraft, sendModel: ModelId = model) {
+    const content = draftToSendContent(draft);
+    if (!content) return;
+    void sendMessage(
+      { ...content, metadata: { createdAt: new Date().toISOString() } },
+      { body: { model: sendModel } }
+    );
+  }
 
   const [branches, setBranches] = useState<BranchEntry[]>([]);
 
@@ -65,11 +77,11 @@ function ChatScreen({ chatId }: { chatId: string }) {
     if (startedRef.current) return;
     startedRef.current = true;
     const pending = consumePendingMessage(chatId);
-    if (pending) void sendMessage(pending);
-  }, [chatId, consumePendingMessage, sendMessage]);
+    if (pending) send(pending.draft, pending.model);
+  });
 
   /** Replace the conversation from `index` on with a re-sent user message. */
-  function createBranch(index: number, text: string) {
+  function createBranch(index: number, draft: MessageDraft) {
     const tail = messages.slice(index);
     setBranches((prev) => {
       // Branches recorded deeper in the replaced tail are no longer reachable.
@@ -84,7 +96,7 @@ function ChatScreen({ chatId }: { chatId: string }) {
       return [...kept, { ...existing, snapshots, active: snapshots.length - 1 }];
     });
     setMessages(messages.slice(0, index));
-    void sendMessage(text);
+    send(draft);
   }
 
   function switchBranch(index: number, direction: 1 | -1) {
@@ -147,10 +159,14 @@ function ChatScreen({ chatId }: { chatId: string }) {
                       onBranchChange={(direction) => switchBranch(index, direction)}
                       onRetry={
                         message.role === "user"
-                          ? () => createBranch(index, getMessageText(message))
-                          : () => void reload()
+                          ? () =>
+                              createBranch(index, {
+                                text: getMessageText(message),
+                                attachments: filePartsToAttachments(getMessageFiles(message)),
+                              })
+                          : () => void regenerate({ body: { model } })
                       }
-                      onEditSubmit={(text) => createBranch(index, text)}
+                      onEditSubmit={(text) => createBranch(index, { text, attachments: [] })}
                     />
                   </MessageScrollerItem>
                 );
@@ -165,11 +181,11 @@ function ChatScreen({ chatId }: { chatId: string }) {
           <MessageScrollerButton />
         </MessageScroller>
         <div className="mx-auto w-full max-w-3xl px-4">
-          <MessageInput
+          <MessageComposer
             placeholder="Write a message..."
-            onSubmit={({ message }) => {
-              if (message.length > 0) void sendMessage(message);
-            }}
+            model={model}
+            onModelChange={setModel}
+            onSend={(draft) => send(draft)}
           />
           <p className="py-2 text-center text-xs text-muted-foreground">
             Ivanius can make mistakes. Please double-check responses.

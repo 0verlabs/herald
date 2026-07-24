@@ -86,4 +86,4 @@ export const MODELS: Record<ModelId, Model> = {
   },
 };
 
-export const DEFAULT_MODEL: ModelId = "minimax-m3";
+export const DEFAULT_MODEL: ModelId = "glm-5.1";

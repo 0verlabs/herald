@@ -20,7 +20,7 @@ import {
   useSidebar,
 } from "@ivanius.ai/ui/components/sidebar";
 
-import { useChats } from "./chats-provider";
+import { useChats } from "../providers/chats-provider";
 import { Logo } from "./logo";
 import { NavUser } from "./nav-user";
 import { SearchDialog } from "./search-dialog";

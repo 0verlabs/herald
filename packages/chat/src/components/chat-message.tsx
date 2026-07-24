@@ -1,10 +1,16 @@
-import type { UIMessage } from "@tanstack/ai-client";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ChevronLeft, ChevronRight, Copy, Info, Pencil, RefreshCcw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, FileText, Info, Pencil, RefreshCcw } from "lucide-react";
 import { useId, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
+import {
+  Attachment,
+  AttachmentContent,
+  AttachmentGroup,
+  AttachmentMedia,
+  AttachmentTitle,
+} from "@ivanius.ai/ui/components/attachment";
 import { Bubble, BubbleContent } from "@ivanius.ai/ui/components/bubble";
 import { Button } from "@ivanius.ai/ui/components/button";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@ivanius.ai/ui/components/field";
@@ -12,9 +18,10 @@ import { Message, MessageContent, MessageFooter } from "@ivanius.ai/ui/component
 import { Textarea } from "@ivanius.ai/ui/components/textarea";
 import { cn } from "@ivanius.ai/ui/lib/utils";
 
+import type { ChatUIMessage } from "../lib/ai/message";
+import { getMessageFiles, getMessageReasoning, getMessageText } from "../lib/ai/message";
 import { copyText } from "../lib/clipboard";
 import { formatTime } from "../lib/datetime";
-import { getMessageReasoning, getMessageText } from "../lib/message";
 import { ChatReasoning } from "./chat-reasoning";
 import { Markdown } from "./markdown";
 
@@ -24,7 +31,7 @@ export interface BranchInfo {
 }
 
 interface ChatMessageProps {
-  message: UIMessage;
+  message: ChatUIMessage;
   /** This message is the assistant turn currently streaming in. */
   streaming?: boolean;
   /** Actions that mutate the conversation are unavailable (a response is running). */
@@ -78,6 +85,7 @@ function UserMessage({
 >) {
   const [editing, setEditing] = useState(false);
   const text = getMessageText(message);
+  const files = getMessageFiles(message);
 
   if (editing) {
     return (
@@ -99,16 +107,37 @@ function UserMessage({
   return (
     <Message align="end">
       <MessageContent>
-        <Bubble variant="muted" align="end">
-          <BubbleContent className="whitespace-pre-wrap">{text}</BubbleContent>
-        </Bubble>
+        {files.length > 0 && (
+          <AttachmentGroup className="justify-end gap-1">
+            {files.map((file) => {
+              const isImage = file.mediaType.startsWith("image/");
+              return (
+                <Attachment key={file.url} size="sm">
+                  <AttachmentMedia variant={isImage ? "image" : "icon"}>
+                    {isImage ? <img src={file.url} alt="" /> : <FileText />}
+                  </AttachmentMedia>
+                  <AttachmentContent>
+                    <AttachmentTitle>{file.filename ?? "file"}</AttachmentTitle>
+                  </AttachmentContent>
+                </Attachment>
+              );
+            })}
+          </AttachmentGroup>
+        )}
+        {text.length > 0 && (
+          <Bubble variant="muted" align="end">
+            <BubbleContent className="whitespace-pre-wrap">{text}</BubbleContent>
+          </Bubble>
+        )}
         <MessageFooter
           className={cn(
             "gap-0.5 opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100",
             branch && "opacity-100"
           )}
         >
-          {message.createdAt && <span className="mr-1">{formatTime(message.createdAt)}</span>}
+          {message.metadata?.createdAt && (
+            <span className="mr-1">{formatTime(new Date(message.metadata.createdAt))}</span>
+          )}
           <Button
             variant="ghost"
             size="icon-xs"

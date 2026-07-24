@@ -1,0 +1,9 @@
+# Copy to `.dev.vars` and fill in real keys for local `wrangler dev`.
+# Base URLs default from wrangler.jsonc `vars`; override here if needed.
+ANTHROPIC_API_KEY=""
+OPENAI_API_KEY=""
+DEEPSEEK_API_KEY=""
+MOONSHOTAI_API_KEY=""
+MINIMAX_API_KEY=""
+ALIBABA_API_KEY=""
+ZHIPUAI_API_KEY=""

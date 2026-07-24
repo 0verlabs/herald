@@ -14,7 +14,7 @@ import {
 import { cn } from "@ivanius.ai/ui/lib/utils";
 
 import type { ChatSummary } from "../types/chat";
-import { useChats } from "./chats-provider";
+import { useChats } from "../providers/chats-provider";
 
 /**
  * Substring match, ranked so earlier hits sort first. Replaces cmdk's default
