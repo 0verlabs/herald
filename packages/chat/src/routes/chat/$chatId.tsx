@@ -1,6 +1,10 @@
 import { useChat } from "@ai-sdk/react";
 import { createFileRoute } from "@tanstack/react-router";
-import { DefaultChatTransport } from "ai";
+import {
+  DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+  lastAssistantMessageIsCompleteWithToolCalls,
+} from "ai";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -21,7 +25,7 @@ import { ChatTitle } from "../../components/chat-title";
 import { Logo } from "../../components/logo";
 import { MessageComposer } from "../../components/message-composer";
 import { filePartsToAttachments } from "../../lib/ai/attachment";
-import { getMessageFiles, getMessageText } from "../../lib/ai/message";
+import { getMessageFiles, getMessageText, getMessageToolParts } from "../../lib/ai/message";
 import { draftToSendContent } from "../../lib/ai/send";
 import { useChats } from "../../providers/chats-provider";
 import { useModel } from "../../providers/model-provider";
@@ -55,10 +59,34 @@ function ChatScreen({ chatId }: { chatId: string }) {
   const [transport] = useState(() => new DefaultChatTransport<ChatUIMessage>({ api: "/api/chat" }));
   const { model, setModel } = useModel();
 
-  const { messages, sendMessage, setMessages, regenerate, status } = useChat<ChatUIMessage>({
-    transport,
-  });
+  const { messages, sendMessage, setMessages, regenerate, status, addToolApprovalResponse } =
+    useChat<ChatUIMessage>({
+      transport,
+      // Resume the turn once every tool call has a result or every approval
+      // request has been answered — unless anything was denied: a denial
+      // stops the turn and leaves the user in control of the next message.
+      sendAutomaticallyWhen: (options) => {
+        const last = options.messages.at(-1);
+        if (last?.role !== "assistant") return false;
+        const denied = getMessageToolParts(last).some(
+          (part) => part.state === "approval-responded" && !part.approval.approved
+        );
+        if (denied) return false;
+        return (
+          lastAssistantMessageIsCompleteWithToolCalls(options) ||
+          lastAssistantMessageIsCompleteWithApprovalResponses(options)
+        );
+      },
+    });
   const isBusy = status === "submitted" || status === "streaming";
+
+  function respondToApproval(approvalId: string, approved: boolean) {
+    void addToolApprovalResponse({
+      id: approvalId,
+      approved,
+      options: { body: { model } },
+    });
+  }
 
   function send(draft: MessageDraft, sendModel: ModelId = model) {
     const content = draftToSendContent(draft);
@@ -167,6 +195,7 @@ function ChatScreen({ chatId }: { chatId: string }) {
                           : () => void regenerate({ body: { model } })
                       }
                       onEditSubmit={(text) => createBranch(index, { text, attachments: [] })}
+                      onApproval={respondToApproval}
                     />
                   </MessageScrollerItem>
                 );

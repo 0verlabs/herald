@@ -1,4 +1,6 @@
+import type { ReactNode } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { isToolUIPart } from "ai";
 import { ChevronLeft, ChevronRight, Copy, FileText, Info, Pencil, RefreshCcw } from "lucide-react";
 import { useId, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
@@ -19,10 +21,17 @@ import { Textarea } from "@ivanius.ai/ui/components/textarea";
 import { cn } from "@ivanius.ai/ui/lib/utils";
 
 import type { ChatUIMessage } from "../lib/ai/message";
-import { getMessageFiles, getMessageReasoning, getMessageText } from "../lib/ai/message";
+import {
+  getMessageFiles,
+  getMessageText,
+  getMessageToolParts,
+  isPendingToolPart,
+  splitReasoningSteps,
+} from "../lib/ai/message";
 import { copyText } from "../lib/clipboard";
 import { formatTime } from "../lib/datetime";
 import { ChatReasoning } from "./chat-reasoning";
+import { ChatToolCall } from "./chat-tool-call";
 import { Markdown } from "./markdown";
 
 export interface BranchInfo {
@@ -43,6 +52,8 @@ interface ChatMessageProps {
   /** User messages: re-send this text as a new branch. Assistant: regenerate. */
   onRetry?: () => void;
   onEditSubmit?: (text: string) => void;
+  /** Assistant tool calls: respond to an approval request. */
+  onApproval?: (approvalId: string, approved: boolean) => void;
 }
 
 export function ChatMessage({
@@ -54,6 +65,7 @@ export function ChatMessage({
   onBranchChange,
   onRetry,
   onEditSubmit,
+  onApproval,
 }: ChatMessageProps) {
   if (message.role === "user") {
     return (
@@ -68,7 +80,14 @@ export function ChatMessage({
     );
   }
   return (
-    <AssistantMessage message={message} streaming={streaming} isLast={isLast} onRetry={onRetry} />
+    <AssistantMessage
+      message={message}
+      streaming={streaming}
+      disabled={disabled}
+      isLast={isLast}
+      onRetry={onRetry}
+      onApproval={onApproval}
+    />
   );
 }
 
@@ -198,26 +217,71 @@ function UserMessage({
 function AssistantMessage({
   message,
   streaming,
+  disabled,
   isLast,
   onRetry,
-}: Pick<ChatMessageProps, "message" | "onRetry"> & { streaming: boolean; isLast: boolean }) {
+  onApproval,
+}: Pick<ChatMessageProps, "message" | "disabled" | "onRetry" | "onApproval"> & {
+  streaming: boolean;
+  isLast: boolean;
+}) {
   const text = getMessageText(message);
-  const reasoning = getMessageReasoning(message);
+
+  // Render parts in stream order, merging consecutive text parts into one
+  // markdown block so tool calls interleave with the surrounding prose.
+  const nodes: ReactNode[] = [];
+  let textBuffer = "";
+  const flushText = (key: number) => {
+    if (textBuffer.length === 0) return;
+    nodes.push(
+      <Bubble key={`text-${key}`} variant="ghost" className="w-full max-w-full">
+        <BubbleContent className="w-full">
+          <Markdown>{textBuffer}</Markdown>
+        </BubbleContent>
+      </Bubble>
+    );
+    textBuffer = "";
+  };
+  message.parts.forEach((part, index) => {
+    if (part.type === "text") {
+      textBuffer += part.text;
+      return;
+    }
+    flushText(index);
+    if (part.type === "reasoning") {
+      const steps = splitReasoningSteps(part.text);
+      if (steps.length === 0) return;
+      nodes.push(
+        <ChatReasoning
+          key={`reasoning-${index}`}
+          steps={steps}
+          streaming={streaming && index === message.parts.length - 1}
+        />
+      );
+      return;
+    }
+    if (isToolUIPart(part)) {
+      nodes.push(
+        <ChatToolCall
+          key={part.toolCallId}
+          part={part}
+          disabled={disabled}
+          onApprove={onApproval}
+        />
+      );
+    }
+  });
+  flushText(message.parts.length);
+
+  // A call still streaming input or awaiting approval means the turn isn't
+  // finished even though the stream has paused — keep the footer hidden.
+  const hasPendingTool = getMessageToolParts(message).some(isPendingToolPart);
 
   return (
     <Message align="start">
       <MessageContent className="gap-4">
-        {reasoning.length > 0 && (
-          <ChatReasoning steps={reasoning} streaming={streaming && text.length === 0} />
-        )}
-        {text.length > 0 && (
-          <Bubble variant="ghost" className="w-full max-w-full">
-            <BubbleContent className="w-full">
-              <Markdown>{text}</Markdown>
-            </BubbleContent>
-          </Bubble>
-        )}
-        {!streaming && (
+        {nodes}
+        {!streaming && !hasPendingTool && (
           <MessageFooter
             className={cn(
               "-ml-1.5 gap-0.5",
