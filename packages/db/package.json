@@ -1,0 +1,26 @@
+{
+  "name": "@ivanius.ai/db",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./utils": "./src/utils/index.ts"
+  },
+  "scripts": {
+    "check": "bun run check:lint && bun run check:types",
+    "check:lint": "biome check . --write",
+    "check:types": "tsc --noEmit",
+    "check:staged": "biome check . --write --staged --files-ignore-unknown=true --no-errors-on-unmatched",
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "drizzle-orm": "catalog:"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@types/node": "catalog:",
+    "drizzle-kit": "catalog:",
+    "typescript": "catalog:"
+  }
+}
