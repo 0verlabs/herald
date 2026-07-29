@@ -1,19 +1,10 @@
 import type { ClerkProviderProps } from "@clerk/react";
 
-/**
- * Themes Clerk's prebuilt components with our design tokens.
- *
- * Colors point at the shadcn CSS variables rather than literal values, so the
- * components follow the `.dark` class along with the rest of the app. The
- * `simple` base theme strips Clerk's own decoration down to a plain card,
- * which leaves the shadcn look to come from these variables. `cssLayerName`
- * puts Clerk's stylesheet in the `clerk` layer declared in `styles.css` so
- * Tailwind utilities passed through `elements` win the cascade.
- */
 export const clerkAppearance: ClerkProviderProps["appearance"] = {
   theme: "simple",
   cssLayerName: "clerk",
   variables: {
+    colorNeutral: "var(--primary)",
     colorPrimary: "var(--primary)",
     colorPrimaryForeground: "var(--primary-foreground)",
     colorBackground: "var(--card)",

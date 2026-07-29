@@ -1,11 +1,11 @@
 import { ClerkProvider } from "@clerk/react";
 
-import { calculatorToolRenderer } from "../components/tools/calculator";
 import type { ToolRendererMap } from "../lib/ai/tool-renderers";
+import { calculatorToolRenderer } from "../components/tools/calculator";
+import { clerkAppearance } from "../lib/clerk";
 import { ChatsProvider } from "./chats-provider";
 import { ModelProvider } from "./model-provider";
 import { ToolRenderersProvider } from "./tool-renderers-provider";
-import { clerkAppearance } from "../lib/clerk-appearance";
 
 /** Tool call renderers keyed by the agent's tool names. */
 const toolRenderers = {
