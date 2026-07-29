@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 
+import auth from "./handlers/auth";
 import chat from "./handlers/chat";
 
 const app = new Hono<{ Bindings: Env }>()
@@ -11,6 +12,7 @@ const app = new Hono<{ Bindings: Env }>()
     console.error(err);
     return c.json({ error: "Internal Server Error" }, 500);
   })
+  .route("/auth", auth)
   .route("/chat", chat);
 
 export type AppType = typeof app;
