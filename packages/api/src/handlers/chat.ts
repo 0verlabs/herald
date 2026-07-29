@@ -8,13 +8,12 @@ import {
   toUIMessageStream,
 } from "ai";
 import { Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 
-import { createModel } from "./adapters";
-import { providerEnv } from "./env";
-import { DEFAULT_MODEL, MODEL_PROVIDERS, modelIdSchema } from "./models";
-import { createCalculatorTools } from "./tools/calculator";
+import { createModel } from "../lib/adapters";
+import { providerEnv } from "../lib/env";
+import { DEFAULT_MODEL, MODEL_PROVIDERS, modelIdSchema } from "../lib/models";
+import { createCalculatorTools } from "../lib/tools/calculator";
 
 // UIMessage wire shape as sent by the AI SDK chat transport. Extra fields
 // (metadata, part payloads) pass through untouched — `convertToModelMessages`
@@ -33,15 +32,10 @@ const chatRequestSchema = z.object({
 const SYSTEM_PROMPT =
   "You are a helpful assistant. Use the calculation tools for any arithmetic instead of computing it yourself.";
 
-const app = new Hono<{ Bindings: Env }>()
-  .onError((err, c) => {
-    if (err instanceof HTTPException) {
-      return c.json({ error: err.message }, err.status);
-    }
-    console.error(err);
-    return c.json({ error: "Internal Server Error" }, 500);
-  })
-  .post("/chat", zValidator("json", chatRequestSchema), async (c) => {
+const chat = new Hono<{ Bindings: Env }>().post(
+  "/",
+  zValidator("json", chatRequestSchema),
+  async (c) => {
     const { messages, model } = c.req.valid("json");
 
     const tools = createCalculatorTools();
@@ -59,8 +53,7 @@ const app = new Hono<{ Bindings: Env }>()
     return createUIMessageStreamResponse({
       stream: toUIMessageStream({ stream: result.stream }),
     });
-  });
+  }
+);
 
-export type AppType = typeof app;
-
-export default app;
+export default chat;
