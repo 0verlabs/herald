@@ -1,4 +1,4 @@
-import { Show } from "@clerk/react";
+import { useUser } from "@clerk/react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { ClipboardCheck, Compass, PanelLeft, Search, SquarePen, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -33,6 +33,7 @@ export function AppSidebar() {
   const { chats, removeChat } = useChats();
   const navigate = useNavigate();
   const { chatId: activeChatId } = useParams({ strict: false });
+  const { isSignedIn } = useUser();
 
   return (
     <>
@@ -132,14 +133,7 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
-        <SidebarFooter>
-          <Show when="signed-in">
-            <NavUser />
-          </Show>
-          <Show when="signed-out">
-            <NavSignIn />
-          </Show>
-        </SidebarFooter>
+        <SidebarFooter>{isSignedIn ? <NavUser /> : <NavSignIn />}</SidebarFooter>
         <SidebarRail />
       </Sidebar>
     </>
