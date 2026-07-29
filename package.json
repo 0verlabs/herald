@@ -10,6 +10,8 @@
     ],
     "catalog": {
       "@biomejs/biome": "2.5.2",
+      "@clerk/backend": "3.13.2",
+      "@clerk/react": "6.12.8",
       "@cloudflare/vite-plugin": "1.43.0",
       "@hookform/resolvers": "5.4.0",
       "@tailwindcss/vite": "4.3.2",

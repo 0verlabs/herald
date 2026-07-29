@@ -1,3 +1,7 @@
+/* `clerk` sits before `components`/`utilities` so Tailwind classes passed to
+   Clerk's `appearance.elements` override its own component styles. */
+@layer theme, base, clerk, components, utilities;
+
 @import "tailwindcss";
 @import "@ivanius.ai/ui/globals.css";
 

@@ -1,3 +1,4 @@
+import { Show } from "@clerk/react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { ClipboardCheck, Compass, PanelLeft, Search, SquarePen, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -22,6 +23,7 @@ import {
 
 import { useChats } from "../providers/chats-provider";
 import { Logo } from "./logo";
+import { NavSignIn } from "./nav-sign-in";
 import { NavUser } from "./nav-user";
 import { SearchDialog } from "./search-dialog";
 
@@ -131,7 +133,12 @@ export function AppSidebar() {
           </SidebarGroup>
         </SidebarContent>
         <SidebarFooter>
-          <NavUser />
+          <Show when="signed-in">
+            <NavUser />
+          </Show>
+          <Show when="signed-out">
+            <NavSignIn />
+          </Show>
         </SidebarFooter>
         <SidebarRail />
       </Sidebar>

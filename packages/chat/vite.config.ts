@@ -17,7 +17,7 @@ export default defineConfig({
   ],
   server: {
     proxy: {
-      // The agent worker (`wrangler dev` in packages/agent, default port).
+      // The API worker (`wrangler dev` in packages/api, default port).
       "/api": {
         target: "http://localhost:8787",
         rewrite: (path) => path.replace(/^\/api/, ""),
