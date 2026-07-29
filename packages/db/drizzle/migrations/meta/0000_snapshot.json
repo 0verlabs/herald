@@ -1,16 +1,23 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "c9eef1f7-bb5f-4cf2-8519-0a9c4a591bba",
+  "id": "e58e965b-9233-42b9-a44f-9d1c52b1525e",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "user_wallets": {
       "name": "user_wallets",
       "columns": {
-        "clerk_user_id": {
-          "name": "clerk_user_id",
+        "user_id": {
+          "name": "user_id",
           "type": "text",
-          "primaryKey": true,
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "network": {
+          "name": "network",
+          "type": "text",
+          "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
@@ -18,7 +25,7 @@
           "name": "circle_wallet_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "autoincrement": false
         },
         "created_at": {
@@ -44,7 +51,12 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "compositePrimaryKeys": {
+        "user_wallets_user_id_network_pk": {
+          "columns": ["user_id", "network"],
+          "name": "user_wallets_user_id_network_pk"
+        }
+      },
       "uniqueConstraints": {},
       "checkConstraints": {}
     }
