@@ -19,12 +19,14 @@
     "@cloudflare/vitest-pool-workers": "0.12.21",
     "@types/node": "catalog:",
     "typescript": "catalog:",
+    "uuid": "catalog:",
     "vitest": "3.2.7",
     "wrangler": "catalog:"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.19",
     "@ai-sdk/openai-compatible": "3.0.14",
+    "@circle-fin/developer-controlled-wallets": "10.8.0",
     "@clerk/backend": "catalog:",
     "@hono/zod-validator": "0.9.0",
     "@ivanius.ai/db": "workspace:",
