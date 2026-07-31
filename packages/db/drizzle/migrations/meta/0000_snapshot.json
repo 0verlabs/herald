@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e58e965b-9233-42b9-a44f-9d1c52b1525e",
+  "id": "117a4db3-e8a6-4110-9c61-8220a86d0be2",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "user_wallets": {
@@ -28,6 +28,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "wallet_address": {
+          "name": "wallet_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -47,6 +54,11 @@
         "user_wallets_circle_wallet_id_unique": {
           "name": "user_wallets_circle_wallet_id_unique",
           "columns": ["circle_wallet_id"],
+          "isUnique": true
+        },
+        "user_wallets_wallet_address_unique": {
+          "name": "user_wallets_wallet_address_unique",
+          "columns": ["wallet_address"],
           "isUnique": true
         }
       },

@@ -11,6 +11,7 @@ export const userWallets = sqliteTable(
     userId: text("user_id").notNull(),
     network: text("network", { enum: networks }).notNull(),
     circleWalletId: text("circle_wallet_id").unique().notNull(),
+    walletAddress: text("wallet_address").unique().notNull(),
     ...timestamps,
   },
   (table) => [primaryKey({ columns: [table.userId, table.network] })]
