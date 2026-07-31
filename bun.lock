@@ -22,6 +22,7 @@
         "@ai-sdk/openai-compatible": "3.0.14",
         "@circle-fin/developer-controlled-wallets": "10.8.0",
         "@clerk/backend": "catalog:",
+        "@clerk/hono": "0.1.58",
         "@hono/zod-validator": "0.9.0",
         "@ivanius.ai/db": "workspace:",
         "ai": "catalog:",
@@ -290,6 +291,8 @@
     "@circle-fin/developer-controlled-wallets": ["@circle-fin/developer-controlled-wallets@10.8.0", "", { "dependencies": { "axios": "^1.15.0" }, "peerDependencies": { "@solana/codecs-strings": "^2.0.0", "@solana/kit": "^2.1.0 || ^3.0.0 || ^4.0.0 || ^5.0.0 || ^6.0.0", "@solana/web3.js": "^1.63.0" }, "optionalPeers": ["@solana/codecs-strings", "@solana/kit", "@solana/web3.js"] }, "sha512-eOqhUj6H8FrLh0803DAui15a2qikiqX5e4hzlTVAamq7MQnvPfIbTblO4av+wT499ld4+NWXgxKgAUjV1ouwsw=="],
 
     "@clerk/backend": ["@clerk/backend@3.13.2", "", { "dependencies": { "@clerk/shared": "^4.25.8", "standardwebhooks": "^1.0.0", "tslib": "2.8.1" } }, "sha512-z6rPQzEj1SbGmjMoyGnECY1R7YrcD4dJILlWLXFvSUsWxb8csAYzcXp50T2kVtV3ThlcjOMrI0oDQyqvTdt65A=="],
+
+    "@clerk/hono": ["@clerk/hono@0.1.58", "", { "dependencies": { "@clerk/backend": "^3.14.0", "@clerk/shared": "^4.25.9" }, "peerDependencies": { "hono": ">=4" } }, "sha512-7pXUB8CB+VgV/H+2ZguCWBGTChxdLpz2k9lNCBZeE/0Qa0gFS7oo6RKTggcoOKHRg/IHEX03JC0GI/nL6gPmng=="],
 
     "@clerk/react": ["@clerk/react@6.12.8", "", { "dependencies": { "@clerk/shared": "^4.25.8", "tslib": "2.8.1" }, "peerDependencies": { "react": "^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0", "react-dom": "^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0" } }, "sha512-F/wECRGlE9JtBcS7XqutCQAI5gKXVaOSamAH9x6YPtAP0hMKlNJIaHuLEjVMKNbOerMFm3iV6k8cZ+6JnDFcMQ=="],
 
@@ -1746,6 +1749,10 @@
     "@babel/helper-compilation-targets/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
     "@babel/helper-create-class-features-plugin/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
+
+    "@clerk/hono/@clerk/backend": ["@clerk/backend@3.14.0", "", { "dependencies": { "@clerk/shared": "^4.25.9", "standardwebhooks": "^1.0.0", "tslib": "2.8.1" } }, "sha512-WsphTvDFHDuQilKI7dyVE5qmt7USu8qSrujAq6SqpEHbVFfNBfINDNuzxlF9M2skOTfHFfgiTE8Jjb1egIBGLg=="],
+
+    "@clerk/hono/@clerk/shared": ["@clerk/shared@4.25.9", "", { "dependencies": { "@tanstack/query-core": "^5.100.6", "dequal": "2.0.3", "glob-to-regexp": "0.4.1", "js-cookie": "3.0.7" }, "peerDependencies": { "react": "^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0", "react-dom": "^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0" }, "optionalPeers": ["react", "react-dom"] }, "sha512-nw3maGzqPrwmUKjGffOM9Zvw24IyOllq0TkQGzsTfQX312WLu2u5CNvjKntMb6Ok6kXa1Zdc77zmPLn1/EAIFA=="],
 
     "@cloudflare/vite-plugin/miniflare": ["miniflare@4.20260701.0", "", { "dependencies": { "@cspotcode/source-map-support": "0.8.1", "sharp": "0.34.5", "undici": "7.28.0", "workerd": "1.20260701.1", "ws": "8.21.0", "youch": "4.1.0-beta.10" }, "bin": { "miniflare": "bootstrap.js" } }, "sha512-L6eAAi6IKtyb/7J6L+YsH2vb1yBrJWKRXI293JYDiMl70+6nncdAgigex58w6WBd+CwvdMsqOyNyGs95Op5gWQ=="],
 

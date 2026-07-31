@@ -1,4 +1,5 @@
 import { useChat } from "@ai-sdk/react";
+import { useAuth, useClerk } from "@clerk/react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   DefaultChatTransport,
@@ -59,6 +60,9 @@ function ChatScreen({ chatId }: { chatId: string }) {
   const [transport] = useState(() => new DefaultChatTransport<ChatUIMessage>({ api: "/api/chat" }));
   const { model, setModel } = useModel();
 
+  const { openSignIn } = useClerk();
+  const { getToken } = useAuth();
+
   const { messages, sendMessage, setMessages, regenerate, status, addToolApprovalResponse } =
     useChat<ChatUIMessage>({
       transport,
@@ -80,20 +84,27 @@ function ChatScreen({ chatId }: { chatId: string }) {
     });
   const isBusy = status === "submitted" || status === "streaming";
 
-  function respondToApproval(approvalId: string, approved: boolean) {
+  async function respondToApproval(approvalId: string, approved: boolean) {
+    const token = await getToken();
+    if (!token) throw openSignIn();
+
     void addToolApprovalResponse({
       id: approvalId,
       approved,
-      options: { body: { model } },
+      options: { body: { model }, headers: { Authorization: `Bearer ${token}` } },
     });
   }
 
-  function send(draft: MessageDraft, sendModel: ModelId = model) {
+  async function send(draft: MessageDraft, sendModel: ModelId = model) {
+    const token = await getToken();
+    if (!token) throw openSignIn();
+
     const content = draftToSendContent(draft);
     if (!content) return;
+
     void sendMessage(
       { ...content, metadata: { createdAt: new Date().toISOString() } },
-      { body: { model: sendModel } }
+      { body: { model: sendModel }, headers: { Authorization: `Bearer ${token}` } }
     );
   }
 

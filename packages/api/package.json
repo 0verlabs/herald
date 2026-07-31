@@ -28,6 +28,7 @@
     "@ai-sdk/openai-compatible": "3.0.14",
     "@circle-fin/developer-controlled-wallets": "10.8.0",
     "@clerk/backend": "catalog:",
+    "@clerk/hono": "0.1.58",
     "@hono/zod-validator": "0.9.0",
     "@ivanius.ai/db": "workspace:",
     "ai": "catalog:",

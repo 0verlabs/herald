@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import { clerkMiddleware, getAuth } from "@clerk/hono";
 import { zValidator } from "@hono/zod-validator";
 import {
   convertToModelMessages,
@@ -14,6 +15,7 @@ import { createModel } from "../lib/adapters";
 import { providerEnv } from "../lib/env";
 import { DEFAULT_MODEL, MODEL_PROVIDERS, modelIdSchema } from "../lib/models";
 import { createCalculatorTools } from "../lib/tools/calculator";
+import { unauthorized } from "../utils/response";
 
 // UIMessage wire shape as sent by the AI SDK chat transport. Extra fields
 // (metadata, part payloads) pass through untouched — `convertToModelMessages`
@@ -34,8 +36,16 @@ const SYSTEM_PROMPT =
 
 const chat = new Hono<{ Bindings: Env }>().post(
   "/",
+  (c, next) =>
+    clerkMiddleware({
+      publishableKey: c.env.CLERK_PUBLISHABLE_KEY,
+      secretKey: c.env.CLERK_SECRET_KEY,
+    })(c, next),
   zValidator("json", chatRequestSchema),
   async (c) => {
+    const { userId } = getAuth(c);
+    if (!userId) return unauthorized(c);
+
     const { messages, model } = c.req.valid("json");
 
     const tools = createCalculatorTools();

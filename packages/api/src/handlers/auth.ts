@@ -28,17 +28,10 @@ const auth = new Hono<{ Bindings: Env }>().post("/webhook", async (c) => {
     const userId = event.data.id;
 
     const [existingUserWallet] = await db
-      .select({
-        circleWalletId: userWallets.circleWalletId,
-      })
+      .select({ userId: userWallets.userId })
       .from(userWallets)
       .where(eq(userWallets.userId, userId));
-    if (existingUserWallet) {
-      const existingCircleWallet = await walletClient.getWallet({
-        id: existingUserWallet.circleWalletId,
-      });
-      if (existingCircleWallet) return ok(c);
-    }
+    if (existingUserWallet) return ok(c);
 
     const createWalletResponse = await walletClient.createWallets({
       accountType: "EOA",
@@ -63,7 +56,12 @@ const auth = new Hono<{ Bindings: Env }>().post("/webhook", async (c) => {
 
     await db
       .insert(userWallets)
-      .values({ userId: event.data.id, network: "evm", circleWalletId: wallet.id })
+      .values({
+        userId: event.data.id,
+        network: "evm",
+        circleWalletId: wallet.id,
+        walletAddress: wallet.address,
+      })
       .onConflictDoNothing();
 
     return ok(c);

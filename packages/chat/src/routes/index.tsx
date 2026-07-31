@@ -1,3 +1,4 @@
+import { useAuth, useClerk } from "@clerk/react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 
@@ -19,8 +20,12 @@ function ChatComponent() {
   const navigate = useNavigate();
   const { startChat } = useChats();
   const { model, setModel } = useModel();
+  const { isSignedIn } = useAuth();
+  const { openSignIn } = useClerk();
 
   function begin(draft: MessageDraft) {
+    if (!isSignedIn) throw openSignIn();
+
     const chatId = startChat({ draft, model });
     void navigate({ to: "/chat/$chatId", params: { chatId } });
   }
