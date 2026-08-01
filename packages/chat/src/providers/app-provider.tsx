@@ -1,7 +1,8 @@
 import { ClerkProvider } from "@clerk/react";
 
 import type { ToolRendererMap } from "../lib/ai/tool-renderers";
-import { calculatorToolRenderer } from "../components/tools/calculator";
+import { checkBalanceToolRenderer } from "../components/tools/check-balance";
+import { sendTokenToolRenderer } from "../components/tools/send-token";
 import { clerkAppearance } from "../lib/clerk";
 import { ChatsProvider } from "./chats-provider";
 import { ModelProvider } from "./model-provider";
@@ -9,7 +10,8 @@ import { ToolRenderersProvider } from "./tool-renderers-provider";
 
 /** Tool call renderers keyed by the agent's tool names. */
 const toolRenderers = {
-  calculate: calculatorToolRenderer,
+  check_balance: checkBalanceToolRenderer,
+  send_token: sendTokenToolRenderer,
 };
 
 /** Composes every app-level provider; keeps the root route declarative. */

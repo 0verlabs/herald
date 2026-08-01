@@ -33,8 +33,8 @@ export function createCheckBalanceTools({ client, walletId }: CreateCheckBalance
 
       return (getBalanceResponse.data.tokenBalances ?? []).map(({ token, amount }) => ({
         token: {
-          name: token.name!,
-          symbol: token.symbol!,
+          name: token.name ?? "Unknown",
+          symbol: token.symbol ?? "Unknown",
           tokenAddress: token.tokenAddress,
         },
         amount,
