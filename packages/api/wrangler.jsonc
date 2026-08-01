@@ -13,6 +13,17 @@
   "upload_source_maps": true,
   "compatibility_flags": ["nodejs_compat"],
   /**
+   * Module Aliases
+   * Wrangler's bundler resolves the `browser` export condition, so
+   * `@circle-fin/adapter-circle-wallets` hands us its browser guard stub
+   * (which throws "this entry is server-only"). Point the bare specifier
+   * straight at the server ESM build instead.
+   * https://developers.cloudflare.com/workers/wrangler/configuration/#module-aliasing
+   */
+  "alias": {
+    "@circle-fin/adapter-circle-wallets": "./node_modules/@circle-fin/adapter-circle-wallets/index.mjs"
+  },
+  /**
    * Environment Variables
    * Provider base URLs are plain vars; the matching `<PROVIDER>_API_KEY`
    * values are secrets (`wrangler secret put` in prod, `.dev.vars` locally).

@@ -1,6 +1,7 @@
 {
   "enabledPlugins": {
     "hono-skill@hono-skill": true,
-    "circle-skills@circle": true
+    "circle-skills@circle": true,
+    "cloudflare@cloudflare": true
   }
 }

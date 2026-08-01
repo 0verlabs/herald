@@ -35,7 +35,7 @@ const auth = new Hono<{ Bindings: Env }>().post("/webhook", async (c) => {
 
     const createWalletResponse = await walletClient.createWallets({
       accountType: "EOA",
-      blockchains: ["EVM-TESTNET"],
+      blockchains: ["ARC-TESTNET"],
       walletSetId: c.env.CIRCLE_WALLET_SET_ID,
       count: 1,
       metadata: [{ name: "Agent Wallet", refId: userId }],
@@ -58,8 +58,8 @@ const auth = new Hono<{ Bindings: Env }>().post("/webhook", async (c) => {
       .insert(userWallets)
       .values({
         userId: event.data.id,
-        network: "evm",
-        circleWalletId: wallet.id,
+        chain: "eip155:5042002",
+        walletId: wallet.id,
         walletAddress: wallet.address,
       })
       .onConflictDoNothing();
