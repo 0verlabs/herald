@@ -15,6 +15,7 @@
   "dependencies": {
     "@ai-sdk/react": "4.0.40",
     "@clerk/react": "catalog:",
+    "@crossmint/client-sdk-react-ui": "catalog:",
     "@hookform/resolvers": "catalog:",
     "@ivanius.ai/ui": "workspace:",
     "@tanstack/react-router": "catalog:",

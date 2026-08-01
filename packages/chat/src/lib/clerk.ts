@@ -21,8 +21,8 @@ export const clerkAppearance: ClerkProviderProps["appearance"] = {
     fontFamilyMono: "var(--font-mono)",
   },
   elements: {
-    cardBox: "border border-border shadow-sm",
-    card: "bg-card",
+    cardBox: "border border-border shadow-sm rounded-lg",
+    card: "bg-background",
     headerTitle: "font-heading text-2xl font-semibold tracking-tight",
     headerSubtitle: "text-muted-foreground",
     socialButtonsBlockButton:

@@ -1,4 +1,5 @@
 import { ClerkProvider } from "@clerk/react";
+import { CrossmintProvider, CrossmintWalletProvider } from "@crossmint/client-sdk-react-ui";
 
 import type { ToolRendererMap } from "../lib/ai/tool-renderers";
 import { checkBalanceToolRenderer } from "../components/tools/check-balance";
@@ -22,11 +23,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       afterSignOutUrl="/"
       appearance={clerkAppearance}
     >
-      <ModelProvider>
-        <ToolRenderersProvider renderers={toolRenderers as ToolRendererMap}>
-          <ChatsProvider>{children}</ChatsProvider>
-        </ToolRenderersProvider>
-      </ModelProvider>
+      <CrossmintProvider apiKey={import.meta.env.VITE_CROSSMINT_CLIENT_API_KEY}>
+        <CrossmintWalletProvider>
+          <ModelProvider>
+            <ToolRenderersProvider renderers={toolRenderers as ToolRendererMap}>
+              <ChatsProvider>{children}</ChatsProvider>
+            </ToolRenderersProvider>
+          </ModelProvider>
+        </CrossmintWalletProvider>
+      </CrossmintProvider>
     </ClerkProvider>
   );
 }

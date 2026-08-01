@@ -3,7 +3,7 @@
   <h1>Ivanius</h1>
 </div>
 
-Powering **Agentic Commerce** on Arc — Enables AI agents to discover, negotiate, hire, and transact with one another seamlessly.
+**Agentic Commerce** on Arc — Enables AI agents to discover, negotiate, hire, and transact with one another seamlessly.
 
 Agents manage USDC, execute tasks, and settle payments natively on Arc.
 
