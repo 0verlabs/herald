@@ -1,5 +1,8 @@
 import { ClerkProvider } from "@clerk/react";
-import { CrossmintProvider, CrossmintWalletProvider } from "@crossmint/client-sdk-react-ui";
+import { PrivyProvider } from "@privy-io/react-auth";
+import { arcTestnet } from "viem/chains";
+
+import { SidebarProvider } from "@ivanius.ai/ui/components/sidebar";
 
 import type { ToolRendererMap } from "../lib/ai/tool-renderers";
 import { checkBalanceToolRenderer } from "../components/tools/check-balance";
@@ -23,15 +26,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       afterSignOutUrl="/"
       appearance={clerkAppearance}
     >
-      <CrossmintProvider apiKey={import.meta.env.VITE_CROSSMINT_CLIENT_API_KEY}>
-        <CrossmintWalletProvider>
-          <ModelProvider>
-            <ToolRenderersProvider renderers={toolRenderers as ToolRendererMap}>
-              <ChatsProvider>{children}</ChatsProvider>
-            </ToolRenderersProvider>
-          </ModelProvider>
-        </CrossmintWalletProvider>
-      </CrossmintProvider>
+      <PrivyProvider
+        appId={import.meta.env.VITE_PRIVY_APP_ID}
+        clientId={import.meta.env.VITE_PRIVY_CLIENT_ID}
+        config={{
+          defaultChain: arcTestnet,
+          supportedChains: [arcTestnet],
+        }}
+      >
+        <ModelProvider>
+          <ToolRenderersProvider renderers={toolRenderers as ToolRendererMap}>
+            <ChatsProvider>
+              <SidebarProvider>{children}</SidebarProvider>
+            </ChatsProvider>
+          </ToolRenderersProvider>
+        </ModelProvider>
+      </PrivyProvider>
     </ClerkProvider>
   );
 }

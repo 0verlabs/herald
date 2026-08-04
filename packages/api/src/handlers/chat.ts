@@ -1,7 +1,5 @@
 import type { UIMessage } from "ai";
-import { createCircleWalletsAdapter } from "@circle-fin/adapter-circle-wallets";
 import { AppKit } from "@circle-fin/app-kit";
-import { initiateDeveloperControlledWalletsClient } from "@circle-fin/developer-controlled-wallets";
 import { clerkMiddleware, getAuth } from "@clerk/hono";
 import { zValidator } from "@hono/zod-validator";
 import {
@@ -11,19 +9,17 @@ import {
   streamText,
   toUIMessageStream,
 } from "ai";
-import { eq } from "drizzle-orm";
 import { Hono } from "hono";
-import { getAddress } from "viem";
 import { z } from "zod";
 
-import { userWallets } from "@ivanius.ai/db";
-
+import type { GlobalVariables } from "../env";
 import { createModel } from "../lib/adapters";
-import { createDb } from "../lib/db";
 import { providerEnv } from "../lib/env";
 import { DEFAULT_MODEL, MODEL_PROVIDERS, modelIdSchema } from "../lib/models";
-import { createCheckBalanceTools } from "../lib/tools/check-balance";
-import { createSendTokenTools } from "../lib/tools/send-token";
+import { privy } from "../middlewares/privy";
+import { createCheckBalanceTools } from "../tools/check-balance";
+import { createGetWalletsTools } from "../tools/get-wallets";
+import { createSendTokenTools } from "../tools/send-token";
 import { unauthorized } from "../utils/response";
 
 // UIMessage wire shape as sent by the AI SDK chat transport. Extra fields
@@ -40,16 +36,16 @@ const chatRequestSchema = z.object({
   model: modelIdSchema.default(DEFAULT_MODEL),
 });
 
-const SYSTEM_PROMPT =
-  "You are a helpful assistant. Use the calculation tools for any arithmetic instead of computing it yourself.";
+const SYSTEM_PROMPT = "You are a helpful assistant.";
 
-const chat = new Hono<{ Bindings: Env }>().post(
+const chat = new Hono<{ Bindings: Env; Variables: GlobalVariables }>().post(
   "/",
   (c, next) =>
     clerkMiddleware({
       publishableKey: c.env.CLERK_PUBLISHABLE_KEY,
       secretKey: c.env.CLERK_SECRET_KEY,
     })(c, next),
+  privy(),
   zValidator("json", chatRequestSchema),
   async (c) => {
     const { userId } = getAuth(c);
@@ -57,38 +53,20 @@ const chat = new Hono<{ Bindings: Env }>().post(
 
     const { messages, model } = c.req.valid("json");
 
-    const db = createDb(c.env.DB);
-    const [userWallet] = await db
-      .select({
-        userId: userWallets.userId,
-        walletId: userWallets.walletId,
-        walletAddress: userWallets.walletAddress,
-      })
-      .from(userWallets)
-      .where(eq(userWallets.userId, userId));
-    if (!userWallet) return unauthorized(c);
-
-    const circleAppKit = new AppKit();
-    const circleWalletClient = initiateDeveloperControlledWalletsClient({
-      apiKey: c.env.CIRCLE_API_KEY,
-      entitySecret: c.env.CIRCLE_ENTITY_SECRET,
-    });
-    const circleWalletAdapter = createCircleWalletsAdapter({
-      apiKey: c.env.CIRCLE_API_KEY,
-      entitySecret: c.env.CIRCLE_ENTITY_SECRET,
-    });
-
-    const address = getAddress(userWallet.walletAddress);
+    const db = c.var.db;
+    const privy = c.var.privyClient;
+    const appKit = new AppKit();
 
     const tools = {
-      check_balance: createCheckBalanceTools({
-        client: circleWalletClient,
-        walletId: userWallet.walletId,
-      }),
+      get_wallets: createGetWalletsTools({ db, userId }),
+      check_balance: createCheckBalanceTools({ db, userId }),
       send_token: createSendTokenTools({
-        appKit: circleAppKit,
-        adapter: circleWalletAdapter,
-        address,
+        db,
+        privy,
+        appKit,
+        userId,
+        authorizationId: c.env.PRIVY_AUTHORIZATION_ID,
+        authorizationPrivateKey: c.env.PRIVY_AUTHORIZATION_PRIVATE_KEY,
       }),
     };
     const result = streamText({

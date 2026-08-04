@@ -1,8 +1,11 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 
-import auth from "./handlers/auth";
+import * as schema from "@ivanius.ai/db";
+
 import chat from "./handlers/chat";
+import webhook from "./handlers/webhook";
+import { drizzleDb } from "./middlewares/drizzle";
 
 const app = new Hono<{ Bindings: Env }>()
   .onError((err, c) => {
@@ -12,8 +15,9 @@ const app = new Hono<{ Bindings: Env }>()
     console.error(err);
     return c.json({ error: "Internal Server Error" }, 500);
   })
-  .route("/auth", auth)
-  .route("/chat", chat);
+  .use(drizzleDb(schema))
+  .route("/chat", chat)
+  .route("/webhook", webhook);
 
 export type AppType = typeof app;
 

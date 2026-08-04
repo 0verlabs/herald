@@ -4,15 +4,17 @@ import type { ToolRenderer } from "../../lib/ai/tool-renderers";
 
 /** Mirrors packages/api/src/lib/tools/send-token.ts. */
 interface SendTokenInput {
-  to?: string;
-  amount?: number;
+  chain: "arc";
+  to: string;
+  amount: string;
   token?: "USDC" | "EURC";
 }
 
-interface SendTokenOutput {
+type SendTokenOutput = {
+  address: string;
   txHash: string;
   explorerUrl: string;
-}
+} | null;
 
 function formatTransfer(input: SendTokenInput | undefined) {
   if (input?.to === undefined || input.amount === undefined) return null;
@@ -29,7 +31,7 @@ export const sendTokenToolRenderer: ToolRenderer<SendTokenInput, SendTokenOutput
     return <p className="font-mono text-sm">{transfer}</p>;
   },
   renderOutput: (output) => {
-    if (!output.txHash) return <p className="text-destructive text-sm">Transaction failed.</p>;
+    if (!output?.txHash) return <p className="text-destructive text-sm">Transaction failed.</p>;
     return (
       <a
         href={output.explorerUrl}

@@ -15,9 +15,9 @@
   "dependencies": {
     "@ai-sdk/react": "4.0.40",
     "@clerk/react": "catalog:",
-    "@crossmint/client-sdk-react-ui": "catalog:",
     "@hookform/resolvers": "catalog:",
     "@ivanius.ai/ui": "workspace:",
+    "@privy-io/react-auth": "catalog:",
     "@tanstack/react-router": "catalog:",
     "ai": "catalog:",
     "class-variance-authority": "catalog:",
@@ -28,6 +28,7 @@
     "react-hook-form": "catalog:",
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1",
+    "viem": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

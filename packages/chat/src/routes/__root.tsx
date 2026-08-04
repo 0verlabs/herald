@@ -1,10 +1,11 @@
 import { createRootRoute, Outlet } from "@tanstack/react-router";
 
-import { SidebarInset, SidebarProvider } from "@ivanius.ai/ui/components/sidebar";
+import { SidebarInset } from "@ivanius.ai/ui/components/sidebar";
 
 import { AppSidebar } from "../components/app-sidebar";
 import { AppProvider } from "../providers/app-provider";
 import "../styles.css";
+import { ClerkPrivyJwtSync } from "../components/clerk-privy-jwt-sync";
 
 export const Route = createRootRoute({
   component: RootComponent,
@@ -13,12 +14,11 @@ export const Route = createRootRoute({
 function RootComponent() {
   return (
     <AppProvider>
-      <SidebarProvider>
-        <AppSidebar />
-        <SidebarInset>
-          <Outlet />
-        </SidebarInset>
-      </SidebarProvider>
+      <ClerkPrivyJwtSync />
+      <AppSidebar />
+      <SidebarInset>
+        <Outlet />
+      </SidebarInset>
     </AppProvider>
   );
 }

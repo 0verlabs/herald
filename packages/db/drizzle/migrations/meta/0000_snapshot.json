@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "61231c11-08dd-47c9-a673-ba51207a58df",
+  "id": "039149a1-dc41-494c-a2a5-9ac8e12fbec5",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "user_wallets": {
@@ -14,15 +14,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "chain": {
-          "name": "chain",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "wallet_id": {
-          "name": "wallet_id",
+        "network": {
+          "name": "network",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -51,11 +44,6 @@
         }
       },
       "indexes": {
-        "user_wallets_wallet_id_unique": {
-          "name": "user_wallets_wallet_id_unique",
-          "columns": ["wallet_id"],
-          "isUnique": true
-        },
         "user_wallets_wallet_address_unique": {
           "name": "user_wallets_wallet_address_unique",
           "columns": ["wallet_address"],
@@ -64,9 +52,9 @@
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {
-        "user_wallets_user_id_chain_pk": {
-          "columns": ["user_id", "chain"],
-          "name": "user_wallets_user_id_chain_pk"
+        "user_wallets_user_id_network_pk": {
+          "columns": ["user_id", "network"],
+          "name": "user_wallets_user_id_network_pk"
         }
       },
       "uniqueConstraints": {},

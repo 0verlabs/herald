@@ -1,8 +1,8 @@
 import { useClerk, useUser } from "@clerk/react";
+import { useWallets } from "@privy-io/react-auth";
 import { ChevronsUpDown, CreditCard, LogOut, Settings, Sparkles } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@ivanius.ai/ui/components/avatar";
-import { Badge } from "@ivanius.ai/ui/components/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,14 +18,15 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@ivanius.ai/ui/components/sidebar";
+import { Spinner } from "@ivanius.ai/ui/components/spinner";
 
-import { currentUser } from "../lib/mock-data";
 import { initialsFrom } from "../lib/user";
 
 export function NavUser() {
   const { isMobile, open } = useSidebar();
   const { user } = useUser();
   const { signOut, openUserProfile } = useClerk();
+  const { ready, wallets } = useWallets();
 
   // Rendered under `<Show when="signed-in">`, so this only trips during the
   // brief window before the user resource resolves.
@@ -33,10 +34,10 @@ export function NavUser() {
     return null;
   }
 
+  const wallet = wallets.find((wallet) => wallet.connectorType === "embedded");
+
   const name = user.fullName ?? user.primaryEmailAddress?.emailAddress ?? "Account";
   const initials = initialsFrom(name);
-  // Balance and plan are ours, not Clerk's — still mocked until billing lands.
-  const { balance, plan } = currentUser;
 
   return (
     <SidebarMenu>
@@ -49,7 +50,9 @@ export function NavUser() {
             </Avatar>
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-medium">{name}</span>
-              <span className="truncate text-xs text-muted-foreground tabular-nums">{balance}</span>
+              <span className="truncate font-mono text-xs text-muted-foreground">
+                {ready && wallet ? wallet.address : <Spinner />}
+              </span>
             </div>
             <ChevronsUpDown className="ml-auto size-4" />
           </DropdownMenuTrigger>
@@ -68,11 +71,11 @@ export function NavUser() {
                   </Avatar>
                   <div className="grid flex-1 leading-tight">
                     <span className="truncate font-medium text-foreground">{name}</span>
-                    <span className="truncate text-xs text-muted-foreground tabular-nums">
-                      {balance}
+                    <span className="truncate font-mono text-xs text-muted-foreground">
+                      {ready && wallet ? wallet.address : <Spinner />}
                     </span>
                   </div>
-                  <Badge>{plan}</Badge>
+                  {/*<Badge>{plan}</Badge>*/}
                 </div>
               </DropdownMenuLabel>
             </DropdownMenuGroup>
