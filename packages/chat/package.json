@@ -18,6 +18,7 @@
     "@hookform/resolvers": "catalog:",
     "@ivanius.ai/ui": "workspace:",
     "@privy-io/react-auth": "catalog:",
+    "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
     "ai": "catalog:",
     "class-variance-authority": "catalog:",
