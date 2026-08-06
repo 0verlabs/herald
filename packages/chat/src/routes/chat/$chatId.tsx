@@ -176,7 +176,7 @@ function ChatScreen({ chatId }: { chatId: string }) {
       </header>
       <MessageScrollerProvider autoScroll>
         <MessageScroller className="flex-1">
-          <MessageScrollerViewport>
+          <MessageScrollerViewport tabIndex={-1}>
             <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-8 px-4 py-6">
               {messages.map((message, index) => {
                 const entry = branches.find((candidate) => candidate.anchorIndex === index);

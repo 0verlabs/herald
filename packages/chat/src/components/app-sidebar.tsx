@@ -1,5 +1,5 @@
 import { useUser } from "@clerk/react";
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useMatchRoute, useNavigate, useParams } from "@tanstack/react-router";
 import { ClipboardCheck, Compass, PanelLeft, Search, SquarePen, Trash2 } from "lucide-react";
 import { useState } from "react";
 
@@ -34,6 +34,9 @@ export function AppSidebar() {
   const navigate = useNavigate();
   const { chatId: activeChatId } = useParams({ strict: false });
   const { isSignedIn } = useUser();
+  const matchRoute = useMatchRoute();
+
+  const isAgentsPageActive = !!matchRoute({ to: "/agents", fuzzy: true });
 
   return (
     <>
@@ -86,13 +89,17 @@ export function AppSidebar() {
             <SidebarGroupContent>
               <SidebarMenu>
                 <SidebarMenuItem>
-                  <SidebarMenuButton tooltip="Explore">
+                  <SidebarMenuButton
+                    isActive={isAgentsPageActive}
+                    tooltip="Explore"
+                    render={<Link to="/agents" />}
+                  >
                     <Compass />
                     <span>Explore</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
-                  <SidebarMenuButton tooltip="Explore">
+                  <SidebarMenuButton tooltip="Tasks">
                     <ClipboardCheck />
                     <span>Tasks</span>
                   </SidebarMenuButton>
