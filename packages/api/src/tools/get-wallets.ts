@@ -1,5 +1,5 @@
 import { tool } from "ai";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getAddress } from "viem";
 import { z } from "zod";
 
