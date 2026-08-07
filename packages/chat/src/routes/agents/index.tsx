@@ -71,11 +71,11 @@ function AgentsRoute() {
 
   return (
     <div className="flex h-svh flex-col">
-      <header className="flex md:hidden h-14 shrink-0 items-center gap-2 px-4">
+      <header className="z-1 flex md:hidden h-14 shrink-0 items-center gap-2 px-4">
         <SidebarTrigger />
         <h1 className="truncate font-medium">Explore</h1>
       </header>
-      <div className="-mt-14 bg-primary/8 mask-b-from-70%">
+      <div className="z-0 -mt-14 md:mt-0 bg-primary/8 mask-b-from-70%">
         <FeaturedAgentsCarousel />
       </div>
       <main className="flex flex-col w-full">
