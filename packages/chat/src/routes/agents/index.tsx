@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useDebounce } from "@uidotdev/usehooks";
-import { Compass, Search, SearchX } from "lucide-react";
+import { Search, SearchX } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@ivanius.ai/ui/components/button";
