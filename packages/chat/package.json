@@ -20,6 +20,7 @@
     "@privy-io/react-auth": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
+    "@uidotdev/usehooks": "catalog:",
     "ai": "catalog:",
     "class-variance-authority": "catalog:",
     "date-fns": "catalog:",

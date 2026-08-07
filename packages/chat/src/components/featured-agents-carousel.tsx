@@ -37,13 +37,13 @@ export function FeaturedAgentsCarousel() {
           stopOnMouseEnter: true,
         }),
       ]}
-      className="w-full"
+      className="max-w-6xl mx-auto"
     >
       <CarouselContent>
         {agents.map((agent) => (
-          <CarouselItem key={agent.id} className="bg-accent/5 basis-full">
-            <Link to="/agents/$agentId" params={{ agentId: agent.id }}>
-              <div className="flex min-h-72 mx-auto max-w-6xl px-6 items-center justify-between gap-4">
+          <CarouselItem key={agent.id}>
+            <Link to="/agents/$agentId" params={{ agentId: agent.id.toString() }}>
+              <div className="flex min-h-72 px-6 items-center justify-between gap-4">
                 <div className="flex flex-col gap-3">
                   <div className="max-w-xl">
                     <h2 className="text-2xl font-serif font-medium leading-loose">{agent.name}</h2>
@@ -57,8 +57,8 @@ export function FeaturedAgentsCarousel() {
                     <span>{formatCompactNumber(agent.calls)} calls</span>
                   </div>
                 </div>
-                <Avatar className="rounded-2xl after:rounded-2xl size-32 md:size-48">
-                  <AvatarImage src={agent.image} alt={agent.name} className="rounded-2xl" />
+                <Avatar className="rounded-xl after:rounded-xl size-32 md:size-48">
+                  <AvatarImage src={agent.image} alt={agent.name} className="rounded-xl" />
                 </Avatar>
               </div>
             </Link>
@@ -67,8 +67,8 @@ export function FeaturedAgentsCarousel() {
       </CarouselContent>
       {hasMultipleSlides && (
         <div className="hidden md:block">
-          <CarouselPrevious className="left-24 border-white/20 bg-white/10 text-white hover:bg-white/20" />
-          <CarouselNext className="right-24 border-white/20 bg-white/10 text-white hover:bg-white/20" />
+          <CarouselPrevious className="border-white/20 bg-white/10 text-white hover:bg-white/20" />
+          <CarouselNext className="border-white/20 bg-white/10 text-white hover:bg-white/20" />
         </div>
       )}
     </Carousel>

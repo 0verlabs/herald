@@ -28,6 +28,7 @@
       "@types/react-dom": "19.2.3",
       "@tsconfig/bun": "1.0.10",
       "@tsconfig/node24": "24.0.4",
+      "@uidotdev/usehooks": "2.4.1",
       "@vitejs/plugin-react": "6.0.3",
       "ai": "7.0.37",
       "class-variance-authority": "0.7.1",
