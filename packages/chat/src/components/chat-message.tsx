@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useCopyToClipboard } from "@uidotdev/usehooks";
 import { isToolUIPart } from "ai";
 import { ChevronLeft, ChevronRight, Copy, FileText, Info, Pencil, RefreshCcw } from "lucide-react";
 import { useId, useState } from "react";
@@ -28,7 +29,6 @@ import {
   isPendingToolPart,
   splitReasoningSteps,
 } from "../lib/ai/message";
-import { copyText } from "../lib/clipboard";
 import { formatTime } from "../lib/datetime";
 import { ChatReasoning } from "./chat-reasoning";
 import { ChatToolCall } from "./chat-tool-call";
@@ -103,6 +103,7 @@ function UserMessage({
   "message" | "disabled" | "branch" | "onBranchChange" | "onRetry" | "onEditSubmit"
 >) {
   const [editing, setEditing] = useState(false);
+  const [, copyText] = useCopyToClipboard();
   const text = getMessageText(message);
   const files = getMessageFiles(message);
 
@@ -225,6 +226,7 @@ function AssistantMessage({
   streaming: boolean;
   isLast: boolean;
 }) {
+  const [, copyText] = useCopyToClipboard();
   const text = getMessageText(message);
 
   // Render parts in stream order, merging consecutive text parts into one

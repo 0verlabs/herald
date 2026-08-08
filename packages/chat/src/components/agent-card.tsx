@@ -8,27 +8,12 @@ import { cn } from "@ivanius.ai/ui/lib/utils";
 
 import type { Agent } from "../types/agent";
 import UsdcLogo from "../assets/logos/usdc.svg?react";
+import { agentInitials, agentScoreClassName } from "../lib/agent";
 import { formatCompactNumber, formatPrice } from "../lib/format";
-
-function initialsOf(name: string) {
-  return name
-    .split(" ")
-    .map((word) => word[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
-
-/** Green above 80, amber above 40, red below — plain number, no "/100". */
-function scoreClassName(score: number) {
-  if (score > 80) return "text-green-600 dark:text-green-400";
-  if (score > 40) return "text-amber-500 dark:text-amber-400";
-  return "text-red-600 dark:text-red-400";
-}
 
 function AgentScore({ score }: { score: number }) {
   if (score === 0) return <span>No ratings</span>;
-  return <span className={cn("font-medium", scoreClassName(score))}>{score}</span>;
+  return <span className={cn("font-medium", agentScoreClassName(score))}>{score}</span>;
 }
 
 interface AgentCardProps {
@@ -48,7 +33,7 @@ export function AgentCard({ agent }: AgentCardProps) {
           <div className="flex items-center gap-3">
             <Avatar className="size-12 rounded after:rounded">
               <AvatarImage src={agent.image} alt={agent.name} className="rounded" />
-              <AvatarFallback className="rounded">{initialsOf(agent.name)}</AvatarFallback>
+              <AvatarFallback className="rounded">{agentInitials(agent.name)}</AvatarFallback>
             </Avatar>
             <div className="min-w-0 flex-1">
               <CardTitle className="truncate">{agent.name}</CardTitle>
