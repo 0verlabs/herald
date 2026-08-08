@@ -45,3 +45,6 @@ export const DEFAULT_AGENT_SORT: AgentSortId = "popular";
 
 /** How many agents a single cursor page returns. */
 export const AGENTS_PAGE_SIZE = 15;
+
+/** How many services a single page shows on the agent detail view. */
+export const SERVICES_PAGE_SIZE = 9;

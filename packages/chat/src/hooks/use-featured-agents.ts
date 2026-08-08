@@ -1,13 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 
-import type { FeaturedAgent } from "../types/agent";
+import type { Agent } from "../types/agent";
 import { featuredAgents } from "../mocks/agents";
 
 async function fetchFeaturedAgents() {
-  return await new Promise<FeaturedAgent[]>((resolve) => {
+  return await new Promise<Agent[]>((resolve) => {
     setTimeout(() => {
-      resolve([...featuredAgents].sort((a, b) => a.position - b.position));
-    }, 1000);
+      resolve(featuredAgents);
+    }, 400);
   });
 }
 

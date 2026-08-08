@@ -4,6 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import * as schema from "@ivanius.ai/db";
 
 import chat from "./handlers/chat";
+import wallets from "./handlers/wallet";
 import webhook from "./handlers/webhook";
 import { drizzleDb } from "./middlewares/drizzle";
 
@@ -17,6 +18,7 @@ const app = new Hono<{ Bindings: Env }>()
   })
   .use(drizzleDb(schema))
   .route("/chat", chat)
+  .route("/wallets", wallets)
   .route("/webhook", webhook);
 
 export type AppType = typeof app;
