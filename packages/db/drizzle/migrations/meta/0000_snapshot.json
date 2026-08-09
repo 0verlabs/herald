@@ -1,74 +1,73 @@
 {
-  "version": "6",
-  "dialect": "sqlite",
-  "id": "039149a1-dc41-494c-a2a5-9ac8e12fbec5",
+  "id": "4c3c0651-433f-470a-b453-48aeff6901cd",
   "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
   "tables": {
-    "user_wallets": {
+    "public.user_wallets": {
       "name": "user_wallets",
+      "schema": "",
       "columns": {
         "user_id": {
           "name": "user_id",
-          "type": "text",
+          "type": "varchar",
           "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
+          "notNull": true
         },
         "network": {
           "name": "network",
-          "type": "text",
+          "type": "varchar",
           "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
+          "notNull": true
         },
         "wallet_address": {
           "name": "wallet_address",
-          "type": "text",
+          "type": "varchar",
           "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
+          "notNull": true
         },
         "created_at": {
           "name": "created_at",
-          "type": "integer",
+          "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
+          "notNull": true
         },
         "updated_at": {
           "name": "updated_at",
-          "type": "integer",
+          "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
+          "notNull": true
         }
       },
-      "indexes": {
-        "user_wallets_wallet_address_unique": {
-          "name": "user_wallets_wallet_address_unique",
-          "columns": ["wallet_address"],
-          "isUnique": true
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "user_wallets_user_id_network_pk": {
-          "columns": ["user_id", "network"],
-          "name": "user_wallets_user_id_network_pk"
+          "name": "user_wallets_user_id_network_pk",
+          "columns": ["user_id", "network"]
         }
       },
-      "uniqueConstraints": {},
-      "checkConstraints": {}
+      "uniqueConstraints": {
+        "user_wallets_wallet_address_unique": {
+          "name": "user_wallets_wallet_address_unique",
+          "nullsNotDistinct": false,
+          "columns": ["wallet_address"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
     }
   },
-  "views": {},
   "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
   "_meta": {
+    "columns": {},
     "schemas": {},
-    "tables": {},
-    "columns": {}
-  },
-  "internal": {
-    "indexes": {}
+    "tables": {}
   }
 }

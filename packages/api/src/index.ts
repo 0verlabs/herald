@@ -1,14 +1,16 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { logger } from "hono/logger";
 
 import * as schema from "@ivanius.ai/db";
 
+import { env } from "./env";
 import chat from "./handlers/chat";
-import wallets from "./handlers/wallet";
 import webhook from "./handlers/webhook";
 import { drizzleDb } from "./middlewares/drizzle";
 
-const app = new Hono<{ Bindings: Env }>()
+const app = new Hono()
+  .use(logger())
   .onError((err, c) => {
     if (err instanceof HTTPException) {
       return c.json({ error: err.message }, err.status);
@@ -16,9 +18,8 @@ const app = new Hono<{ Bindings: Env }>()
     console.error(err);
     return c.json({ error: "Internal Server Error" }, 500);
   })
-  .use(drizzleDb(schema))
+  .use(drizzleDb(env.DATABASE_URL, schema))
   .route("/chat", chat)
-  .route("/wallets", wallets)
   .route("/webhook", webhook);
 
 export type AppType = typeof app;

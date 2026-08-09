@@ -9,7 +9,8 @@
     "noEmit": true,
     "paths": {
       "@ivanius.ai/db/*": ["./src/*"]
-    }
+    },
+    "types": ["node"]
   },
   "include": ["."],
   "exclude": ["node_modules", "dist"]

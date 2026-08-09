@@ -36,7 +36,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
-    "@cloudflare/vite-plugin": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@tanstack/router-plugin": "catalog:",
     "@types/node": "catalog:",

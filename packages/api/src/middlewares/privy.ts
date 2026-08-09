@@ -5,12 +5,18 @@ export interface PrivyClientVariables {
   privyClient: PrivyClient;
 }
 
-export const privy = () =>
-  createMiddleware<{ Bindings: Env; Variables: PrivyClientVariables }>((c, next) => {
+export interface PrivyOptions {
+  appId: string;
+  appSecret: string;
+  webhookSigningSecret: string;
+}
+
+export const privy = ({ appId, appSecret, webhookSigningSecret }: PrivyOptions) =>
+  createMiddleware<{ Variables: PrivyClientVariables }>((c, next) => {
     const privyClient = new PrivyClient({
-      appId: c.env.PRIVY_APP_ID,
-      appSecret: c.env.PRIVY_APP_SECRET,
-      webhookSigningSecret: c.env.PRIVY_WEBHOOK_SIGNING_SECRET,
+      appId,
+      appSecret,
+      webhookSigningSecret,
     });
 
     c.set("privyClient", privyClient);

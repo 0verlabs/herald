@@ -5,7 +5,8 @@ import { z } from "zod";
 
 import { userWallets } from "@ivanius.ai/db";
 
-import type { GlobalVariables } from "../env";
+import type { GlobalVariables } from "../vars";
+import { env } from "../env";
 import { privy } from "../middlewares/privy";
 import { badRequest, ok } from "../utils/response";
 
@@ -15,9 +16,13 @@ const privyWebhookHeadersSchema = z.object({
   "svix-timestamp": z.string(),
 });
 
-const webhook = new Hono<{ Bindings: Env; Variables: GlobalVariables }>().post(
+const webhook = new Hono<{ Variables: GlobalVariables }>().post(
   "/privy",
-  privy(),
+  privy({
+    appId: env.PRIVY_APP_ID,
+    appSecret: env.PRIVY_APP_SECRET,
+    webhookSigningSecret: env.PRIVY_WEBHOOK_SIGNING_SECRET,
+  }),
   zValidator("header", privyWebhookHeadersSchema, ({ success }, c) => {
     if (!success)
       return badRequest(c, { code: "invalid_signature", message: "Invalid webhook signature" });

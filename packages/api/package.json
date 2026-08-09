@@ -4,24 +4,20 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "build": "wrangler deploy --dry-run",
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "dev": "bun --hot run src/index.ts",
     "test": "vitest",
     "check": "bun run check:lint && bun run check:types",
     "check:lint": "biome check . --write",
-    "check:types": "wrangler types && tsc --noEmit",
-    "check:staged": "biome check . --write --staged --files-ignore-unknown=true --no-errors-on-unmatched",
-    "db:migrate:local": "wrangler d1 migrations apply ivanius_ai --local"
+    "check:types": "tsc --noEmit",
+    "check:staged": "biome check . --write --staged --files-ignore-unknown=true --no-errors-on-unmatched"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
-    "@cloudflare/vitest-pool-workers": "0.12.21",
-    "@types/node": "catalog:",
+    "@types/bun": "catalog:",
     "typescript": "catalog:",
     "uuid": "catalog:",
-    "vitest": "3.2.7",
-    "wrangler": "catalog:"
+    "vitest": "3.2.7"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.19",
