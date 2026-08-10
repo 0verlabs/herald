@@ -40,10 +40,10 @@ export function AgentHero({ agent }: { agent: Agent }) {
                 <span className={agentScoreClassName(agent.score)}>{agent.score}</span>
               </span>
             )}
-            {agent.calls > 0 && (
+            {agent.feedbackCounts > 0 && (
               <>
                 <Separator orientation="vertical" className="h-3 bg-foreground/40" />
-                <span>{formatCompactNumber(agent.calls)} calls</span>
+                <span>{formatCompactNumber(agent.feedbackCounts)} feedbacks</span>
               </>
             )}
           </div>

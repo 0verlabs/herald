@@ -32,12 +32,12 @@ export function AgentServices({ agent }: { agent: Agent }) {
 
   function showPrompt(service: AgentService) {
     setPrompt({
-      service: service.title,
+      service: service.name,
       text: buildServicePrompt({
         agentId: agent.id,
         agentName: agent.name,
-        title: service.title,
-        summary: service.summary,
+        serviceName: service.name,
+        serviceDescription: service.description,
       }),
     });
   }

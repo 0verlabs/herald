@@ -54,7 +54,7 @@ export function FeaturedAgentsCarousel() {
                   <div className="inline-flex w-fit items-center gap-3 text-xs font-medium font-mono">
                     <span>Score: {agent.score}/100</span>
                     <Separator orientation="vertical" className="bg-foreground/50" />
-                    <span>{formatCompactNumber(agent.calls)} calls</span>
+                    <span>{formatCompactNumber(agent.feedbackCounts)} feedbacks</span>
                   </div>
                 </div>
                 <Avatar className="rounded-xl after:rounded-xl size-32 md:size-48">

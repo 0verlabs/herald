@@ -23,14 +23,13 @@ export interface ServicePrompt {
 export function buildServicePrompt(input: {
   agentId: Agent["id"];
   agentName: string;
-  title: string;
-  summary: string;
+  serviceName: string;
+  serviceDescription: string;
 }): string {
   return [
-    `Call the "${input.agentName}" agent (#${input.agentId}) and use its "${input.title}" service.`,
+    `Call the "${input.agentName}" agent (#${input.agentId}) and use its "${input.serviceName}" service.`,
     "",
-    `What it does: ${input.summary}`,
-    "Each call is standalone — no account, API key or subscription is required.",
+    `What it does: ${input.serviceDescription}`,
   ].join("\n");
 }
 

@@ -27,10 +27,9 @@ export interface AgentSortOption {
   label: string;
 }
 
-export type AgentSortId = "popular" | "top-rated" | "cheapest";
+export type AgentSortId = "top-rated" | "cheapest";
 
 export const AGENT_SORT_OPTIONS: AgentSortOption[] = [
-  { id: "popular", label: "Most called" },
   { id: "top-rated", label: "Highest rated" },
   { id: "cheapest", label: "Lowest price" },
 ];
@@ -41,7 +40,7 @@ export const AGENT_SORT_LABELS = Object.fromEntries(
 ) as Record<AgentSortId, string>;
 
 export const DEFAULT_AGENT_CATEGORY: AgentCategoryFilter = "all";
-export const DEFAULT_AGENT_SORT: AgentSortId = "popular";
+export const DEFAULT_AGENT_SORT: AgentSortId = "top-rated";
 
 /** How many agents a single cursor page returns. */
 export const AGENTS_PAGE_SIZE = 15;

@@ -17,7 +17,6 @@ export interface AgentsPage {
 }
 
 const comparators: Record<AgentSortId, (a: Agent, b: Agent) => number> = {
-  popular: (a, b) => b.calls - a.calls,
   "top-rated": (a, b) => b.score - a.score,
   cheapest: (a, b) => (a.startsFrom ?? 0) - (b.startsFrom ?? 1),
 };

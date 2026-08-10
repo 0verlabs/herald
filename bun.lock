@@ -99,9 +99,12 @@
       "dependencies": {
         "hono": "catalog:",
         "ponder": "^0.17.5",
+        "uuid": "catalog:",
         "viem": "catalog:",
+        "zod": "catalog:",
       },
       "devDependencies": {
+        "@biomejs/biome": "catalog:",
         "@types/node": "catalog:",
         "typescript": "catalog:",
       },
@@ -166,6 +169,7 @@
     "date-fns": "4.4.0",
     "drizzle-kit": "0.31.10",
     "drizzle-orm": "0.45.2",
+    "graphql-request": "7.4.0",
     "hono": "4.12.34",
     "lucide-react": "1.23.0",
     "react": "19.2.7",

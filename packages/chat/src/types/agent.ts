@@ -17,14 +17,14 @@ export type AgentCategory = z.infer<typeof agentCategorySchema>;
 export const agentFeeSchema = z.number().nonnegative().nullable();
 export type AgentFee = z.infer<typeof agentFeeSchema>;
 
-export const agentOfferServiceSchema = z.object({
+export const agentServiceSchema = z.object({
   id: z.string(),
-  title: z.string(),
-  summary: z.string(),
+  name: z.string(),
+  type: z.enum(["mcpTools", "mcpPrompts", "mcpResources"]),
+  action: z.string(),
+  description: z.string(),
   fee: agentFeeSchema,
 });
-
-export const agentServiceSchema = z.union([agentOfferServiceSchema]);
 export type AgentService = z.infer<typeof agentServiceSchema>;
 
 export const agentSchema = z.object({
@@ -34,7 +34,7 @@ export const agentSchema = z.object({
   image: z.string(),
   category: agentCategorySchema,
   score: z.number().min(0).max(100),
-  calls: z.number().nonnegative(),
+  feedbackCounts: z.number().nonnegative(),
   startsFrom: agentFeeSchema,
 });
 export type Agent = z.infer<typeof agentSchema>;

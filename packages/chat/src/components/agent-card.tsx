@@ -39,10 +39,12 @@ export function AgentCard({ agent }: AgentCardProps) {
               <CardTitle className="truncate">{agent.name}</CardTitle>
               <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
                 <AgentScore score={agent.score} />
-                {agent.calls > 0 && (
+                {agent.feedbackCounts > 0 && (
                   <>
                     <Separator orientation="vertical" className="h-3 bg-foreground/40" />
-                    <span className="truncate">{formatCompactNumber(agent.calls)} calls</span>
+                    <span className="truncate">
+                      {formatCompactNumber(agent.feedbackCounts)} feedbacks
+                    </span>
                   </>
                 )}
               </div>

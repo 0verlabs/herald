@@ -3,7 +3,7 @@ import { Card, CardDescription, CardFooter, CardTitle } from "@ivanius.ai/ui/com
 import { Skeleton } from "@ivanius.ai/ui/components/skeleton";
 
 import type { AgentFee, AgentService } from "../types/agent";
-import UsdcLogo from "../../assets/logos/usdc.svg?react";
+import UsdcLogo from "../assets/logos/usdc.svg?react";
 import { formatPrice } from "../lib/format";
 
 function ServiceFee({ fee }: { fee: AgentFee }) {
@@ -31,14 +31,14 @@ export function ServiceCard({
   return (
     <Card className="h-full w-full">
       <div className="flex flex-col gap-3 px-(--card-spacing)">
-        <CardTitle className="truncate">{service.title}</CardTitle>
-        <CardDescription className="line-clamp-2">{service.summary}</CardDescription>
+        <CardTitle className="truncate">{service.name}</CardTitle>
+        <CardDescription className="line-clamp-2">{service.description}</CardDescription>
       </div>
       <CardFooter className="mt-auto justify-end gap-2">
         <ServiceFee fee={service.fee} />
         <Button
           size="sm"
-          aria-label={`Show prompt for the ${service.title} service`}
+          aria-label={`Show prompt for the ${service.name} service`}
           onClick={() => onShowPrompt(service)}
         >
           Run
