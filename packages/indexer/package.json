@@ -1,0 +1,25 @@
+{
+  "name": "@ivanius.ai/indexer",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --bun ponder dev",
+    "start": "bun --bun ponder start",
+    "db": "bun --bun ponder db",
+    "codegen": "bun --bun ponder codegen",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "ponder": "^0.17.5",
+    "hono": "catalog:",
+    "uuid": "catalog:",
+    "viem": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}
