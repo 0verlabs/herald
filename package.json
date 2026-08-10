@@ -64,6 +64,7 @@
     "@biomejs/biome": "catalog:",
     "@changesets/cli": "2.31.0",
     "@total-typescript/ts-reset": "catalog:",
+    "@tsconfig/bun": "catalog:",
     "@types/bun": "catalog:",
     "husky": "9.1.7",
     "turbo": "2.10.3",
