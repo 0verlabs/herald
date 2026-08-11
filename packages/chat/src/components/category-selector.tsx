@@ -5,8 +5,8 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@0verlabs/herald-ui/components/select";
-import { ToggleGroup, ToggleGroupItem } from "@0verlabs/herald-ui/components/toggle-group";
+} from "@hrld/ui/components/select";
+import { ToggleGroup, ToggleGroupItem } from "@hrld/ui/components/toggle-group";
 
 import type { AgentCategoryFilter } from "../config/agents";
 import { AGENT_CATEGORY_FILTER_LABELS, AGENT_CATEGORY_FILTERS } from "../config/agents";

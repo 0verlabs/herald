@@ -1,9 +1,8 @@
 import { ClerkProvider } from "@clerk/react";
+import { SidebarProvider } from "@hrld/ui/components/sidebar";
 import { PrivyProvider } from "@privy-io/react-auth";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { zeroGTestnet } from "viem/chains";
-
-import { SidebarProvider } from "@0verlabs/herald-ui/components/sidebar";
 
 import type { ToolRendererMap } from "../lib/ai/tool-renderers";
 import { checkBalanceToolRenderer } from "../components/tools/check-balance";

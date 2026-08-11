@@ -8,7 +8,7 @@
     "strict": true,
     "noEmit": true,
     "paths": {
-      "@0verlabs/herald-db/*": ["./src/*"]
+      "@hrld/db/*": ["./src/*"]
     },
     "types": ["node"]
   },

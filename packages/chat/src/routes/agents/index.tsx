@@ -1,9 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useDebounce } from "@uidotdev/usehooks";
-import { Search, SearchX } from "lucide-react";
-import { useState } from "react";
-
-import { Button } from "@0verlabs/herald-ui/components/button";
+import { Button } from "@hrld/ui/components/button";
 import {
   Empty,
   EmptyContent,
@@ -11,12 +6,8 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "@0verlabs/herald-ui/components/empty";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@0verlabs/herald-ui/components/input-group";
+} from "@hrld/ui/components/empty";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@hrld/ui/components/input-group";
 import {
   Select,
   SelectContent,
@@ -24,8 +15,12 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@0verlabs/herald-ui/components/select";
-import { SidebarTrigger } from "@0verlabs/herald-ui/components/sidebar";
+} from "@hrld/ui/components/select";
+import { SidebarTrigger } from "@hrld/ui/components/sidebar";
+import { createFileRoute } from "@tanstack/react-router";
+import { useDebounce } from "@uidotdev/usehooks";
+import { Search, SearchX } from "lucide-react";
+import { useState } from "react";
 
 import type { AgentCategoryFilter, AgentSortId } from "../../config/agents";
 import { AgentList } from "../../components/agent-list";

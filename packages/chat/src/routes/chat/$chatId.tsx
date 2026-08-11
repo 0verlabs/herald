@@ -1,13 +1,5 @@
 import { useChat } from "@ai-sdk/react";
 import { useAuth, useClerk } from "@clerk/react";
-import { createFileRoute } from "@tanstack/react-router";
-import {
-  DefaultChatTransport,
-  lastAssistantMessageIsCompleteWithApprovalResponses,
-  lastAssistantMessageIsCompleteWithToolCalls,
-} from "ai";
-import { useEffect, useRef, useState } from "react";
-
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -15,8 +7,15 @@ import {
   MessageScrollerItem,
   MessageScrollerProvider,
   MessageScrollerViewport,
-} from "@0verlabs/herald-ui/components/message-scroller";
-import { SidebarTrigger } from "@0verlabs/herald-ui/components/sidebar";
+} from "@hrld/ui/components/message-scroller";
+import { SidebarTrigger } from "@hrld/ui/components/sidebar";
+import { createFileRoute } from "@tanstack/react-router";
+import {
+  DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+  lastAssistantMessageIsCompleteWithToolCalls,
+} from "ai";
+import { useEffect, useRef, useState } from "react";
 
 import type { ChatUIMessage } from "../../lib/ai/message";
 import type { MessageDraft } from "../../types/message";

@@ -1,13 +1,12 @@
 import type { AppKit } from "@circle-fin/app-kit";
 import type { PrivyClient } from "@privy-io/node";
 import { ViemAdapter } from "@circle-fin/adapter-viem-v2";
+import { userWallets } from "@hrld/db";
 import { createViemAccount } from "@privy-io/node/viem";
 import { tool } from "ai";
 import { and, eq } from "drizzle-orm";
 import { createPublicClient, createWalletClient, getAddress, http, isAddress } from "viem";
 import { z } from "zod";
-
-import { userWallets } from "@0verlabs/herald-db";
 
 import type { Db } from "../lib/db";
 

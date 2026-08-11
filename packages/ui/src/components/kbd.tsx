@@ -1,4 +1,4 @@
-import { cn } from "@0verlabs/herald-ui/lib/utils";
+import { cn } from "@hrld/ui/lib/utils";
 
 function Kbd({ className, ...props }: React.ComponentProps<"kbd">) {
   return (

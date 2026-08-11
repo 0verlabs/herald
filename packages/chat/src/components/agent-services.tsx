@@ -1,16 +1,15 @@
 import type { ReactNode } from "react";
-import { ChevronLeft, ChevronRight, SearchX } from "lucide-react";
-import { useState } from "react";
-
-import { Button } from "@0verlabs/herald-ui/components/button";
+import { Button } from "@hrld/ui/components/button";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "@0verlabs/herald-ui/components/empty";
-import { cn } from "@0verlabs/herald-ui/lib/utils";
+} from "@hrld/ui/components/empty";
+import { cn } from "@hrld/ui/lib/utils";
+import { ChevronLeft, ChevronRight, SearchX } from "lucide-react";
+import { useState } from "react";
 
 import type { Agent, AgentService } from "../types/agent";
 import type { ServicePrompt } from "./service-prompt-dialog";

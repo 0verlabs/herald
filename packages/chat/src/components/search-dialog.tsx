@@ -1,6 +1,3 @@
-import { formatDistanceToNowStrict } from "date-fns";
-import { useState } from "react";
-
 import {
   Command,
   CommandDialog,
@@ -10,8 +7,10 @@ import {
   CommandItem,
   CommandList,
   CommandShortcut,
-} from "@0verlabs/herald-ui/components/command";
-import { cn } from "@0verlabs/herald-ui/lib/utils";
+} from "@hrld/ui/components/command";
+import { cn } from "@hrld/ui/lib/utils";
+import { formatDistanceToNowStrict } from "date-fns";
+import { useState } from "react";
 
 import type { ChatSummary } from "../types/chat";
 import { useChats } from "../providers/chats-provider";

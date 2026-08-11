@@ -1,11 +1,10 @@
 import type { VariantProps } from "class-variance-authority";
 import type * as React from "react";
+import { Button } from "@hrld/ui/components/button";
+import { Input } from "@hrld/ui/components/input";
+import { Textarea } from "@hrld/ui/components/textarea";
+import { cn } from "@hrld/ui/lib/utils";
 import { cva } from "class-variance-authority";
-
-import { Button } from "@0verlabs/herald-ui/components/button";
-import { Input } from "@0verlabs/herald-ui/components/input";
-import { Textarea } from "@0verlabs/herald-ui/components/textarea";
-import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (

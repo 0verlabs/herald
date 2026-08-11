@@ -1,16 +1,15 @@
-import { Link } from "@tanstack/react-router";
-import Autoplay from "embla-carousel-autoplay";
-
-import { Avatar, AvatarImage } from "@0verlabs/herald-ui/components/avatar";
+import { Avatar, AvatarImage } from "@hrld/ui/components/avatar";
 import {
   Carousel,
   CarouselContent,
   CarouselItem,
   CarouselNext,
   CarouselPrevious,
-} from "@0verlabs/herald-ui/components/carousel";
-import { Separator } from "@0verlabs/herald-ui/components/separator";
-import { Skeleton } from "@0verlabs/herald-ui/components/skeleton";
+} from "@hrld/ui/components/carousel";
+import { Separator } from "@hrld/ui/components/separator";
+import { Skeleton } from "@hrld/ui/components/skeleton";
+import { Link } from "@tanstack/react-router";
+import Autoplay from "embla-carousel-autoplay";
 
 import { useFeaturedAgents } from "../hooks/use-featured-agents";
 import { formatCompactNumber } from "../lib/format";

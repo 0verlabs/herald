@@ -1,11 +1,6 @@
 import { SignInButton } from "@clerk/react";
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@hrld/ui/components/sidebar";
 import { LogIn } from "lucide-react";
-
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "@0verlabs/herald-ui/components/sidebar";
 
 /**
  * Signed-out counterpart to `NavUser`. `SignInButton` is unstyled — it clones

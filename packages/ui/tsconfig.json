@@ -9,7 +9,7 @@
     "strict": true,
     "noEmit": true,
     "paths": {
-      "@0verlabs/herald-ui/*": ["./src/*"]
+      "@hrld/ui/*": ["./src/*"]
     }
   },
   "include": ["."],

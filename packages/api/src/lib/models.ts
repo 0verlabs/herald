@@ -12,7 +12,7 @@ export const modelProviderSchema = z.enum([
 
 export type ModelProvider = z.infer<typeof modelProviderSchema>;
 
-// Mirrors the model list exposed by @0verlabs/herald-chat.
+// Mirrors the model list exposed by @hrld/chat.
 export const modelIdSchema = z.enum([
   "claude-fable-5",
   "claude-opus-4-8",

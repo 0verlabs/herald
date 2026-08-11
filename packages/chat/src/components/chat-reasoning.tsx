@@ -1,12 +1,11 @@
-import { ChevronDown, CircleCheck, Clock } from "lucide-react";
-import { useState } from "react";
-
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@0verlabs/herald-ui/components/collapsible";
-import { cn } from "@0verlabs/herald-ui/lib/utils";
+} from "@hrld/ui/components/collapsible";
+import { cn } from "@hrld/ui/lib/utils";
+import { ChevronDown, CircleCheck, Clock } from "lucide-react";
+import { useState } from "react";
 
 interface ChatReasoningProps {
   /** Thinking parts in order; the first one is the one-line summary. */

@@ -2,10 +2,9 @@ import type { VariantProps } from "class-variance-authority";
 import type * as React from "react";
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
+import { Separator } from "@hrld/ui/components/separator";
+import { cn } from "@hrld/ui/lib/utils";
 import { cva } from "class-variance-authority";
-
-import { Separator } from "@0verlabs/herald-ui/components/separator";
-import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 function ItemGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (

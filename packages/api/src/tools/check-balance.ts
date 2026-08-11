@@ -1,11 +1,10 @@
+import { userWallets } from "@hrld/db";
 import { tool } from "ai";
 import { and, eq } from "drizzle-orm";
 import { createPublicClient, erc20Abi, formatEther, formatUnits, getAddress, http } from "viem";
 import { arcTestnet } from "viem/chains";
 import { eurc } from "viem/tokens";
 import { z } from "zod";
-
-import { userWallets } from "@0verlabs/herald-db";
 
 import type { Db } from "../lib/db";
 

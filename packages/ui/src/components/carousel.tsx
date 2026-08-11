@@ -1,10 +1,9 @@
 import type { UseEmblaCarouselType } from "embla-carousel-react";
+import { Button } from "@hrld/ui/components/button";
+import { cn } from "@hrld/ui/lib/utils";
 import useEmblaCarousel from "embla-carousel-react";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import * as React from "react";
-
-import { Button } from "@0verlabs/herald-ui/components/button";
-import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 type CarouselApi = UseEmblaCarouselType[1];
 type UseCarouselParameters = Parameters<typeof useEmblaCarousel>;

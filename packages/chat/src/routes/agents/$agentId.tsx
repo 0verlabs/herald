@@ -1,7 +1,4 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { SearchX } from "lucide-react";
-
-import { Button } from "@0verlabs/herald-ui/components/button";
+import { Button } from "@hrld/ui/components/button";
 import {
   Empty,
   EmptyContent,
@@ -9,9 +6,11 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "@0verlabs/herald-ui/components/empty";
-import { SidebarTrigger } from "@0verlabs/herald-ui/components/sidebar";
-import { Skeleton } from "@0verlabs/herald-ui/components/skeleton";
+} from "@hrld/ui/components/empty";
+import { SidebarTrigger } from "@hrld/ui/components/sidebar";
+import { Skeleton } from "@hrld/ui/components/skeleton";
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { SearchX } from "lucide-react";
 
 import { AgentHero } from "../../components/agent-hero";
 import { AgentServices } from "../../components/agent-services";

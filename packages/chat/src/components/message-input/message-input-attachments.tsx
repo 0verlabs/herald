@@ -1,5 +1,3 @@
-import { FileText, ImageIcon, X } from "lucide-react";
-
 import {
   Attachment,
   AttachmentAction,
@@ -9,8 +7,9 @@ import {
   AttachmentGroup,
   AttachmentMedia,
   AttachmentTitle,
-} from "@0verlabs/herald-ui/components/attachment";
-import { InputGroupAddon } from "@0verlabs/herald-ui/components/input-group";
+} from "@hrld/ui/components/attachment";
+import { InputGroupAddon } from "@hrld/ui/components/input-group";
+import { FileText, ImageIcon, X } from "lucide-react";
 
 import type { Attachment as DraftAttachment } from "../../types/attachment";
 import { formatSize, parseDataUrl } from "../../lib/attachment";

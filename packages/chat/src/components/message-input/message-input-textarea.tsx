@@ -1,8 +1,7 @@
+import { FieldLabel } from "@hrld/ui/components/field";
+import { InputGroupTextarea } from "@hrld/ui/components/input-group";
+import { cn } from "@hrld/ui/lib/utils";
 import { useId } from "react";
-
-import { FieldLabel } from "@0verlabs/herald-ui/components/field";
-import { InputGroupTextarea } from "@0verlabs/herald-ui/components/input-group";
-import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 interface MessageInputTextareaProps {
   value: string;

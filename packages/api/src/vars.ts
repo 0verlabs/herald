@@ -1,4 +1,4 @@
-import type * as schema from "@0verlabs/herald-db";
+import type * as schema from "@hrld/db";
 
 import type { DrizzleDbVariables } from "./middlewares/drizzle";
 

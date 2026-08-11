@@ -1,9 +1,8 @@
 import { zValidator } from "@hono/zod-validator";
+import { userWallets } from "@hrld/db";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
-
-import { userWallets } from "@0verlabs/herald-db";
 
 import type { GlobalVariables } from "../vars";
 import { env } from "../env";

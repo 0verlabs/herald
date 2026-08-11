@@ -2,7 +2,7 @@
 
 Bun + Turborepo monorepo for Herald (agentic commerce on 0G Testnet). Root package is
 `herald`; workspaces live in `packages/*` and are named
-`@0verlabs/herald-<name>` (currently: `api`, `chat`, `db`, `indexer`, `ui`).
+`@hrld/<name>` (currently: `api`, `chat`, `db`, `indexer`, `ui`).
 
 Note: the stack is expected to change significantly during early development;
 don't treat current tooling choices as long-term commitments.
@@ -15,7 +15,7 @@ don't treat current tooling choices as long-term commitments.
 - `bun run check:staged` — Turbo `biome check --write` of staged files only; run by the pre-commit hook
 - `bun run changeset` — add a changeset (required for versioned changes)
 - `bun run version-packages` — apply pending changesets and bump versions
-- Filter to one package: `bun run build --filter=@0verlabs/herald-<name>`
+- Filter to one package: `bun run build --filter=@hrld/<name>`
 - Local Postgres databases run via `docker compose up -d` (see `docker-compose.yaml`);
   copy each package's `.env.example` to `.env` before first run.
 
@@ -40,21 +40,21 @@ don't treat current tooling choices as long-term commitments.
 
 ## New package checklist
 
-1. `packages/<name>`, name `@0verlabs/herald-<name>`, `"private": true`.
+1. `packages/<name>`, name `@hrld/<name>`, `"private": true`.
 2. tsconfig follows the existing packages setup (`strict`,
    `"moduleResolution": "Bundler"`, `noEmit`).
 3. Scripts contract for Turbo: `build`, `dev`, `check` (runs `check:lint` +
    `check:types`), `check:lint` (`biome check .` — format + lint + imports),
    `check:types` (`tsc --noEmit`), `check:staged`
    (`biome check . --write --staged …`, run by the pre-commit hook).
-4. Depend on sibling packages with `bun add @0verlabs/herald-<name>`
+4. Depend on sibling packages with `bun add @hrld/<name>`
    (workspace protocol).
 
 ## Repository layout
 
 ```
 .
-├── packages/          # All workspaces live here (@0verlabs/herald-<name>)
+├── packages/          # All workspaces live here (@hrld/<name>)
 ├── turbo.json         # Task pipeline
 ├── tsconfig.json      # Root TS config (extends @tsconfig/bun)
 ├── biome.jsonc        # Lint + format rules (repo-wide)
@@ -68,7 +68,7 @@ don't treat current tooling choices as long-term commitments.
 
 UI code uses shadcn/ui (https://ui.shadcn.com) on Tailwind. Shared components
 live in `packages/ui` (see its `components.json`); frontend packages import
-them via `@0verlabs/herald-ui/components/<name>`. Add or update a component
+them via `@hrld/ui/components/<name>`. Add or update a component
 from inside `packages/ui`:
 
 ```sh

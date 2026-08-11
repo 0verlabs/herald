@@ -1,24 +1,23 @@
 import type { VariantProps } from "class-variance-authority";
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
-import { cva } from "class-variance-authority";
-import { PanelLeftIcon } from "lucide-react";
-import * as React from "react";
-
-import { Button } from "@0verlabs/herald-ui/components/button";
-import { Input } from "@0verlabs/herald-ui/components/input";
-import { Separator } from "@0verlabs/herald-ui/components/separator";
+import { Button } from "@hrld/ui/components/button";
+import { Input } from "@hrld/ui/components/input";
+import { Separator } from "@hrld/ui/components/separator";
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from "@0verlabs/herald-ui/components/sheet";
-import { Skeleton } from "@0verlabs/herald-ui/components/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@0verlabs/herald-ui/components/tooltip";
-import { useIsMobile } from "@0verlabs/herald-ui/hooks/use-mobile";
-import { cn } from "@0verlabs/herald-ui/lib/utils";
+} from "@hrld/ui/components/sheet";
+import { Skeleton } from "@hrld/ui/components/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@hrld/ui/components/tooltip";
+import { useIsMobile } from "@hrld/ui/hooks/use-mobile";
+import { cn } from "@hrld/ui/lib/utils";
+import { cva } from "class-variance-authority";
+import { PanelLeftIcon } from "lucide-react";
+import * as React from "react";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;

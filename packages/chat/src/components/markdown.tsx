@@ -1,8 +1,7 @@
 import type { Components } from "react-markdown";
+import { cn } from "@hrld/ui/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-
-import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 const components: Components = {
   // Wide tables scroll inside their own container instead of the page.

@@ -16,10 +16,9 @@
       },
     },
     "packages/api": {
-      "name": "@0verlabs/herald-api",
+      "name": "@hrld/api",
       "version": "0.0.0",
       "dependencies": {
-        "@0verlabs/herald-db": "workspace:",
         "@ai-sdk/anthropic": "4.0.19",
         "@ai-sdk/openai-compatible": "3.0.14",
         "@circle-fin/adapter-viem-v2": "1.14.1",
@@ -27,6 +26,7 @@
         "@clerk/backend": "catalog:",
         "@clerk/hono": "0.1.58",
         "@hono/zod-validator": "0.9.0",
+        "@hrld/db": "workspace:",
         "@privy-io/node": "catalog:",
         "ai": "catalog:",
         "drizzle-orm": "catalog:",
@@ -43,13 +43,13 @@
       },
     },
     "packages/chat": {
-      "name": "@0verlabs/herald-chat",
+      "name": "@hrld/chat",
       "version": "0.0.0",
       "dependencies": {
-        "@0verlabs/herald-ui": "workspace:",
         "@ai-sdk/react": "4.0.40",
         "@clerk/react": "catalog:",
         "@hookform/resolvers": "catalog:",
+        "@hrld/ui": "workspace:",
         "@privy-io/react-auth": "catalog:",
         "@tanstack/react-query": "catalog:",
         "@tanstack/react-router": "catalog:",
@@ -82,7 +82,7 @@
       },
     },
     "packages/db": {
-      "name": "@0verlabs/herald-db",
+      "name": "@hrld/db",
       "version": "0.0.0",
       "dependencies": {
         "drizzle-orm": "catalog:",
@@ -95,7 +95,7 @@
       },
     },
     "packages/indexer": {
-      "name": "@0verlabs/herald-indexer",
+      "name": "@hrld/indexer",
       "version": "0.0.1",
       "dependencies": {
         "hono": "catalog:",
@@ -111,7 +111,7 @@
       },
     },
     "packages/ui": {
-      "name": "@0verlabs/herald-ui",
+      "name": "@hrld/ui",
       "version": "0.0.0",
       "dependencies": {
         "@base-ui/react": "1.6.0",
@@ -185,16 +185,6 @@
     "zod": "4.4.3",
   },
   "packages": {
-    "@0verlabs/herald-api": ["@0verlabs/herald-api@workspace:packages/api"],
-
-    "@0verlabs/herald-chat": ["@0verlabs/herald-chat@workspace:packages/chat"],
-
-    "@0verlabs/herald-db": ["@0verlabs/herald-db@workspace:packages/db"],
-
-    "@0verlabs/herald-indexer": ["@0verlabs/herald-indexer@workspace:packages/indexer"],
-
-    "@0verlabs/herald-ui": ["@0verlabs/herald-ui@workspace:packages/ui"],
-
     "@adraffy/ens-normalize": ["@adraffy/ens-normalize@1.11.1", "", {}, "sha512-nhCBV3quEgesuf7c7KYfperqSS14T8bYuvJ8PcLJp6znkZpFc0AuW4qBtr8eKVyPPe/8RSr7sglCWPU5eaxwKQ=="],
 
     "@ai-sdk/anthropic": ["@ai-sdk/anthropic@4.0.19", "", { "dependencies": { "@ai-sdk/provider": "4.0.3", "@ai-sdk/provider-utils": "5.0.12" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-74XMHUG4Jc7fu923HkIhAxd/HMcd21br7U68W+GVnrd3INXwdUx3XhRUc5zVsE03sIUh37gTg7KUYhfhn6bP+A=="],
@@ -558,6 +548,16 @@
     "@hpke/common": ["@hpke/common@1.10.1", "", {}, "sha512-moJwhmtLtuxiUzzNp1jpfBfx8yefKoO9D/RCR9dmwrnc7qjJqId1rEtQz+lSlU5cabX8daToMSx/7HayXOiaFw=="],
 
     "@hpke/core": ["@hpke/core@1.9.0", "", { "dependencies": { "@hpke/common": "^1.10.0" } }, "sha512-pFxWl1nNJeQCSUFs7+GAblHvXBCjn9EPN65vdKlYQil2aURaRxfGMO6vBKGqm1YHTKwiAxJQNEI70PbSowMP9Q=="],
+
+    "@hrld/api": ["@hrld/api@workspace:packages/api"],
+
+    "@hrld/chat": ["@hrld/chat@workspace:packages/chat"],
+
+    "@hrld/db": ["@hrld/db@workspace:packages/db"],
+
+    "@hrld/indexer": ["@hrld/indexer@workspace:packages/indexer"],
+
+    "@hrld/ui": ["@hrld/ui@workspace:packages/ui"],
 
     "@inquirer/external-editor": ["@inquirer/external-editor@1.0.3", "", { "dependencies": { "chardet": "^2.1.1", "iconv-lite": "^0.7.0" }, "peerDependencies": { "@types/node": ">=18" }, "optionalPeers": ["@types/node"] }, "sha512-RWbSrDiYmO4LbejWY7ttpxczuwQyZLBUyygsA9Nsv95hpzUWwnNTVQmAq3xuh7vNwCp07UTmE5i11XAEExx4RA=="],
 

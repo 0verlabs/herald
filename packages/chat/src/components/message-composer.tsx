@@ -1,10 +1,9 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Field, FieldError, FieldGroup } from "@hrld/ui/components/field";
+import { InputGroup } from "@hrld/ui/components/input-group";
+import { cn } from "@hrld/ui/lib/utils";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
-
-import { Field, FieldError, FieldGroup } from "@0verlabs/herald-ui/components/field";
-import { InputGroup } from "@0verlabs/herald-ui/components/input-group";
-import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 import type { Attachment } from "../types/attachment";
 import type { MessageDraft } from "../types/message";

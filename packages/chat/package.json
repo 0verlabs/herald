@@ -1,5 +1,5 @@
 {
-  "name": "@0verlabs/herald-chat",
+  "name": "@hrld/chat",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -16,7 +16,7 @@
     "@ai-sdk/react": "4.0.40",
     "@clerk/react": "catalog:",
     "@hookform/resolvers": "catalog:",
-    "@0verlabs/herald-ui": "workspace:",
+    "@hrld/ui": "workspace:",
     "@privy-io/react-auth": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",

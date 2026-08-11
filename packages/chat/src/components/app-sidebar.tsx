@@ -1,8 +1,4 @@
 import { useUser } from "@clerk/react";
-import { Link, useMatchRoute, useNavigate, useParams } from "@tanstack/react-router";
-import { ClipboardCheck, Compass, PanelLeft, Search, SquarePen, Trash2 } from "lucide-react";
-import { useState } from "react";
-
 import {
   Sidebar,
   SidebarContent,
@@ -19,7 +15,10 @@ import {
   SidebarSeparator,
   SidebarTrigger,
   useSidebar,
-} from "@0verlabs/herald-ui/components/sidebar";
+} from "@hrld/ui/components/sidebar";
+import { Link, useMatchRoute, useNavigate, useParams } from "@tanstack/react-router";
+import { ClipboardCheck, Compass, PanelLeft, Search, SquarePen, Trash2 } from "lucide-react";
+import { useState } from "react";
 
 import { useChats } from "../providers/chats-provider";
 import { Logo } from "./logo";

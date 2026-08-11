@@ -1,7 +1,6 @@
+import { SidebarInset } from "@hrld/ui/components/sidebar";
+import { Toaster } from "@hrld/ui/components/toast";
 import { createRootRoute, Outlet } from "@tanstack/react-router";
-
-import { SidebarInset } from "@0verlabs/herald-ui/components/sidebar";
-import { Toaster } from "@0verlabs/herald-ui/components/toast";
 
 import { AppSidebar } from "../components/app-sidebar";
 import { ClerkPrivyJwtSync } from "../components/clerk-privy-jwt-sync";

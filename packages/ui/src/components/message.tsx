@@ -1,6 +1,5 @@
 import type * as React from "react";
-
-import { cn } from "@0verlabs/herald-ui/lib/utils";
+import { cn } from "@hrld/ui/lib/utils";
 
 function MessageGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (

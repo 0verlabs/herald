@@ -1,16 +1,15 @@
 import type { ReactNode } from "react";
-import { useIntersectionObserver } from "@uidotdev/usehooks";
-import { SearchX } from "lucide-react";
-import { useEffect } from "react";
-
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "@0verlabs/herald-ui/components/empty";
-import { cn } from "@0verlabs/herald-ui/lib/utils";
+} from "@hrld/ui/components/empty";
+import { cn } from "@hrld/ui/lib/utils";
+import { useIntersectionObserver } from "@uidotdev/usehooks";
+import { SearchX } from "lucide-react";
+import { useEffect } from "react";
 
 import type { Agent } from "../types/agent";
 import { AGENTS_PAGE_SIZE } from "../config/agents";

@@ -1,6 +1,6 @@
-import { Button } from "@0verlabs/herald-ui/components/button";
-import { Card, CardDescription, CardFooter, CardTitle } from "@0verlabs/herald-ui/components/card";
-import { Skeleton } from "@0verlabs/herald-ui/components/skeleton";
+import { Button } from "@hrld/ui/components/button";
+import { Card, CardDescription, CardFooter, CardTitle } from "@hrld/ui/components/card";
+import { Skeleton } from "@hrld/ui/components/skeleton";
 
 import type { AgentFee, AgentService } from "../types/agent";
 import UsdcLogo from "../assets/logos/usdc.svg?react";

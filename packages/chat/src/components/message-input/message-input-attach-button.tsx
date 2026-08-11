@@ -1,7 +1,6 @@
+import { InputGroupButton } from "@hrld/ui/components/input-group";
 import { Paperclip } from "lucide-react";
 import { useRef } from "react";
-
-import { InputGroupButton } from "@0verlabs/herald-ui/components/input-group";
 
 interface MessageInputAttachButtonProps {
   /** Files the user picked; conversion/storage is the parent's concern. */

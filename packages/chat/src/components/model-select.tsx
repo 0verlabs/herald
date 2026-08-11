@@ -1,13 +1,12 @@
-import { ChevronDown } from "lucide-react";
-
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "@0verlabs/herald-ui/components/dropdown-menu";
-import { InputGroupButton } from "@0verlabs/herald-ui/components/input-group";
+} from "@hrld/ui/components/dropdown-menu";
+import { InputGroupButton } from "@hrld/ui/components/input-group";
+import { ChevronDown } from "lucide-react";
 
 import type { ModelId } from "../types/model";
 import { MODEL_IDS, MODELS } from "../config/model";

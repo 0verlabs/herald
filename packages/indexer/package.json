@@ -1,5 +1,5 @@
 {
-  "name": "@0verlabs/herald-indexer",
+  "name": "@hrld/indexer",
   "version": "0.0.1",
   "private": true,
   "type": "module",

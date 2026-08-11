@@ -1,5 +1,5 @@
 {
-  "name": "@0verlabs/herald-db",
+  "name": "@hrld/db",
   "version": "0.0.0",
   "type": "module",
   "private": true,

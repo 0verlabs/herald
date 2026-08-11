@@ -1,16 +1,15 @@
 import type * as React from "react";
-import { Command as CommandPrimitive } from "cmdk";
-import { CheckIcon, SearchIcon } from "lucide-react";
-
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@0verlabs/herald-ui/components/dialog";
-import { InputGroup, InputGroupAddon } from "@0verlabs/herald-ui/components/input-group";
-import { cn } from "@0verlabs/herald-ui/lib/utils";
+} from "@hrld/ui/components/dialog";
+import { InputGroup, InputGroupAddon } from "@hrld/ui/components/input-group";
+import { cn } from "@hrld/ui/lib/utils";
+import { Command as CommandPrimitive } from "cmdk";
+import { CheckIcon, SearchIcon } from "lucide-react";
 
 function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {
   return (

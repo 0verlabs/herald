@@ -1,9 +1,8 @@
+import { userWallets } from "@hrld/db";
 import { tool } from "ai";
 import { eq } from "drizzle-orm";
 import { getAddress } from "viem";
 import { z } from "zod";
-
-import { userWallets } from "@0verlabs/herald-db";
 
 import type { Db } from "../lib/db";
 

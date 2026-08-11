@@ -1,7 +1,4 @@
-import { useCopyToClipboard } from "@uidotdev/usehooks";
-import { Copy } from "lucide-react";
-
-import { Button } from "@0verlabs/herald-ui/components/button";
+import { Button } from "@hrld/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -9,8 +6,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@0verlabs/herald-ui/components/dialog";
-import { toast } from "@0verlabs/herald-ui/components/toast";
+} from "@hrld/ui/components/dialog";
+import { toast } from "@hrld/ui/components/toast";
+import { useCopyToClipboard } from "@uidotdev/usehooks";
+import { Copy } from "lucide-react";
 
 import type { Agent } from "../types/agent";
 

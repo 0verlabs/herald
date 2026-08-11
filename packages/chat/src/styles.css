@@ -3,7 +3,7 @@
 @layer theme, base, clerk, components, utilities;
 
 @import "tailwindcss";
-@import "@0verlabs/herald-ui/globals.css";
+@import "@hrld/ui/globals.css";
 
 .typeset-message {
   --typeset-font-body: var(--font-sans);

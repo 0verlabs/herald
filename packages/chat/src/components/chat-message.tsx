@@ -1,30 +1,24 @@
 import type { ReactNode } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useCopyToClipboard } from "@uidotdev/usehooks";
-import { isToolUIPart } from "ai";
-import { ChevronLeft, ChevronRight, Copy, FileText, Info, Pencil, RefreshCcw } from "lucide-react";
-import { useId, useState } from "react";
-import { Controller, useForm, useWatch } from "react-hook-form";
-import { z } from "zod";
-
 import {
   Attachment,
   AttachmentContent,
   AttachmentGroup,
   AttachmentMedia,
   AttachmentTitle,
-} from "@0verlabs/herald-ui/components/attachment";
-import { Bubble, BubbleContent } from "@0verlabs/herald-ui/components/bubble";
-import { Button } from "@0verlabs/herald-ui/components/button";
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@0verlabs/herald-ui/components/field";
-import { Message, MessageContent, MessageFooter } from "@0verlabs/herald-ui/components/message";
-import { Textarea } from "@0verlabs/herald-ui/components/textarea";
-import { cn } from "@0verlabs/herald-ui/lib/utils";
+} from "@hrld/ui/components/attachment";
+import { Bubble, BubbleContent } from "@hrld/ui/components/bubble";
+import { Button } from "@hrld/ui/components/button";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@hrld/ui/components/field";
+import { Message, MessageContent, MessageFooter } from "@hrld/ui/components/message";
+import { Textarea } from "@hrld/ui/components/textarea";
+import { cn } from "@hrld/ui/lib/utils";
+import { useCopyToClipboard } from "@uidotdev/usehooks";
+import { isToolUIPart } from "ai";
+import { ChevronLeft, ChevronRight, Copy, FileText, Info, Pencil, RefreshCcw } from "lucide-react";
+import { useId, useState } from "react";
+import { Controller, useForm, useWatch } from "react-hook-form";
+import { z } from "zod";
 
 import type { ChatUIMessage } from "../lib/ai/message";
 import {

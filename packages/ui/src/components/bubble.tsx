@@ -2,9 +2,8 @@ import type { VariantProps } from "class-variance-authority";
 import type * as React from "react";
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
+import { cn } from "@hrld/ui/lib/utils";
 import { cva } from "class-variance-authority";
-
-import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 function BubbleGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (

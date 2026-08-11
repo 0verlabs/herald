@@ -1,6 +1,5 @@
+import { timestamps } from "@hrld/db/utils";
 import { pgTable, primaryKey, varchar } from "drizzle-orm/pg-core";
-
-import { timestamps } from "@0verlabs/herald-db/utils";
 
 import { networks } from "./networks";
 

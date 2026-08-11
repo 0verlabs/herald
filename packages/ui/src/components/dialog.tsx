@@ -1,9 +1,8 @@
 import type * as React from "react";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
+import { Button } from "@hrld/ui/components/button";
+import { cn } from "@hrld/ui/lib/utils";
 import { XIcon } from "lucide-react";
-
-import { Button } from "@0verlabs/herald-ui/components/button";
-import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
