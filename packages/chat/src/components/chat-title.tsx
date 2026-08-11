@@ -1,8 +1,8 @@
 import { Pencil } from "lucide-react";
 import { useState } from "react";
 
-import { Button } from "@ivanius.ai/ui/components/button";
-import { Input } from "@ivanius.ai/ui/components/input";
+import { Button } from "@0verlabs/herald-ui/components/button";
+import { Input } from "@0verlabs/herald-ui/components/input";
 
 export function ChatTitle({
   title,

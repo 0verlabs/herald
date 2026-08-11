@@ -4,7 +4,7 @@ import type { ModelId } from "../types/model";
 import { DEFAULT_MODEL } from "../config/model";
 import { modelIdSchema } from "../types/model";
 
-const STORAGE_KEY = "ivanius.chat.model";
+const STORAGE_KEY = "herald.chat.model";
 
 function readStoredModel(): ModelId {
   const parsed = modelIdSchema.safeParse(localStorage.getItem(STORAGE_KEY));

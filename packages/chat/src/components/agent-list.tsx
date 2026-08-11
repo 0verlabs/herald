@@ -9,8 +9,8 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "@ivanius.ai/ui/components/empty";
-import { cn } from "@ivanius.ai/ui/lib/utils";
+} from "@0verlabs/herald-ui/components/empty";
+import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 import type { Agent } from "../types/agent";
 import { AGENTS_PAGE_SIZE } from "../config/agents";

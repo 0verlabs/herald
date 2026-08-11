@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
 
-import * as schema from "@ivanius.ai/db";
+import * as schema from "@0verlabs/herald-db";
 
 import { env } from "./env";
 import chat from "./handlers/chat";

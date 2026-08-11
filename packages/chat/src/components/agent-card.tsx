@@ -1,10 +1,10 @@
 import { Link } from "@tanstack/react-router";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@ivanius.ai/ui/components/avatar";
-import { Card, CardDescription, CardFooter, CardTitle } from "@ivanius.ai/ui/components/card";
-import { Separator } from "@ivanius.ai/ui/components/separator";
-import { Skeleton } from "@ivanius.ai/ui/components/skeleton";
-import { cn } from "@ivanius.ai/ui/lib/utils";
+import { Avatar, AvatarFallback, AvatarImage } from "@0verlabs/herald-ui/components/avatar";
+import { Card, CardDescription, CardFooter, CardTitle } from "@0verlabs/herald-ui/components/card";
+import { Separator } from "@0verlabs/herald-ui/components/separator";
+import { Skeleton } from "@0verlabs/herald-ui/components/skeleton";
+import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 import type { Agent } from "../types/agent";
 import UsdcLogo from "../assets/logos/usdc.svg?react";

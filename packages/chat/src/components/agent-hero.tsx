@@ -1,8 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { ChevronLeft } from "lucide-react";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@ivanius.ai/ui/components/avatar";
-import { Separator } from "@ivanius.ai/ui/components/separator";
+import { Avatar, AvatarFallback, AvatarImage } from "@0verlabs/herald-ui/components/avatar";
+import { Separator } from "@0verlabs/herald-ui/components/separator";
 
 import type { Agent } from "../types/agent";
 import { agentInitials, agentScoreClassName } from "../lib/agent";

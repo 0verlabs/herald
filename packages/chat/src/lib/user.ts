@@ -1,4 +1,4 @@
-/** Two-letter monogram for an avatar fallback, e.g. "Lucky Ivanius" -> "LI". */
+/** Two-letter monogram for an avatar fallback, e.g. "Jane Doe" -> "JD". */
 export function initialsFrom(name: string): string {
   const letters = name
     .split(/\s+/)

@@ -9,8 +9,8 @@ import {
   AttachmentGroup,
   AttachmentMedia,
   AttachmentTitle,
-} from "@ivanius.ai/ui/components/attachment";
-import { InputGroupAddon } from "@ivanius.ai/ui/components/input-group";
+} from "@0verlabs/herald-ui/components/attachment";
+import { InputGroupAddon } from "@0verlabs/herald-ui/components/input-group";
 
 import type { Attachment as DraftAttachment } from "../../types/attachment";
 import { formatSize, parseDataUrl } from "../../lib/attachment";

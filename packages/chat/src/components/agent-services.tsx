@@ -2,15 +2,15 @@ import type { ReactNode } from "react";
 import { ChevronLeft, ChevronRight, SearchX } from "lucide-react";
 import { useState } from "react";
 
-import { Button } from "@ivanius.ai/ui/components/button";
+import { Button } from "@0verlabs/herald-ui/components/button";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "@ivanius.ai/ui/components/empty";
-import { cn } from "@ivanius.ai/ui/lib/utils";
+} from "@0verlabs/herald-ui/components/empty";
+import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 import type { Agent, AgentService } from "../types/agent";
 import type { ServicePrompt } from "./service-prompt-dialog";

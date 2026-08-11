@@ -2,16 +2,16 @@ import { getToolName } from "ai";
 import { Ban, Check, ChevronDown, TriangleAlert, X } from "lucide-react";
 import { useState } from "react";
 
-import { Badge } from "@ivanius.ai/ui/components/badge";
-import { Button } from "@ivanius.ai/ui/components/button";
-import { Card, CardContent, CardFooter } from "@ivanius.ai/ui/components/card";
+import { Badge } from "@0verlabs/herald-ui/components/badge";
+import { Button } from "@0verlabs/herald-ui/components/button";
+import { Card, CardContent, CardFooter } from "@0verlabs/herald-ui/components/card";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@ivanius.ai/ui/components/collapsible";
-import { Spinner } from "@ivanius.ai/ui/components/spinner";
-import { cn } from "@ivanius.ai/ui/lib/utils";
+} from "@0verlabs/herald-ui/components/collapsible";
+import { Spinner } from "@0verlabs/herald-ui/components/spinner";
+import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 import type { ChatToolPart } from "../lib/ai/message";
 import type { ToolRenderContext } from "../lib/ai/tool-renderers";

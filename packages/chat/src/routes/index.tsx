@@ -2,8 +2,8 @@ import { useAuth, useClerk } from "@clerk/react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 
-import { Button } from "@ivanius.ai/ui/components/button";
-import { SidebarTrigger } from "@ivanius.ai/ui/components/sidebar";
+import { Button } from "@0verlabs/herald-ui/components/button";
+import { SidebarTrigger } from "@0verlabs/herald-ui/components/sidebar";
 
 import type { MessageDraft } from "../types/message";
 import { MessageComposer } from "../components/message-composer";

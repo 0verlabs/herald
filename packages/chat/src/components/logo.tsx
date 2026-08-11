@@ -1,7 +1,7 @@
 import type { VariantProps } from "class-variance-authority";
 import { cva } from "class-variance-authority";
 
-import { cn } from "@ivanius.ai/ui/lib/utils";
+import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 const logoVariants = cva(
   "rounded-md transition-opacity group-data-[collapsible=icon]:group-hover/logo:opacity-0",

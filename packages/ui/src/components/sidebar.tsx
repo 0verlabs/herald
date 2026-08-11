@@ -7,20 +7,20 @@ import { cva } from "class-variance-authority";
 import { PanelLeftIcon } from "lucide-react";
 import * as React from "react";
 
-import { Button } from "@ivanius.ai/ui/components/button";
-import { Input } from "@ivanius.ai/ui/components/input";
-import { Separator } from "@ivanius.ai/ui/components/separator";
+import { Button } from "@0verlabs/herald-ui/components/button";
+import { Input } from "@0verlabs/herald-ui/components/input";
+import { Separator } from "@0verlabs/herald-ui/components/separator";
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from "@ivanius.ai/ui/components/sheet";
-import { Skeleton } from "@ivanius.ai/ui/components/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@ivanius.ai/ui/components/tooltip";
-import { useIsMobile } from "@ivanius.ai/ui/hooks/use-mobile";
-import { cn } from "@ivanius.ai/ui/lib/utils";
+} from "@0verlabs/herald-ui/components/sheet";
+import { Skeleton } from "@0verlabs/herald-ui/components/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@0verlabs/herald-ui/components/tooltip";
+import { useIsMobile } from "@0verlabs/herald-ui/hooks/use-mobile";
+import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;

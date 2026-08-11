@@ -9,7 +9,7 @@
     "strict": true,
     "noEmit": true,
     "paths": {
-      "@ivanius.ai/ui/*": ["./src/*"]
+      "@0verlabs/herald-ui/*": ["./src/*"]
     }
   },
   "include": ["."],

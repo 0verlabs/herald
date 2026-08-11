@@ -1,7 +1,7 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { SearchX } from "lucide-react";
 
-import { Button } from "@ivanius.ai/ui/components/button";
+import { Button } from "@0verlabs/herald-ui/components/button";
 import {
   Empty,
   EmptyContent,
@@ -9,9 +9,9 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "@ivanius.ai/ui/components/empty";
-import { SidebarTrigger } from "@ivanius.ai/ui/components/sidebar";
-import { Skeleton } from "@ivanius.ai/ui/components/skeleton";
+} from "@0verlabs/herald-ui/components/empty";
+import { SidebarTrigger } from "@0verlabs/herald-ui/components/sidebar";
+import { Skeleton } from "@0verlabs/herald-ui/components/skeleton";
 
 import { AgentHero } from "../../components/agent-hero";
 import { AgentServices } from "../../components/agent-services";

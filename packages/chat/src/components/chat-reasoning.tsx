@@ -5,8 +5,8 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@ivanius.ai/ui/components/collapsible";
-import { cn } from "@ivanius.ai/ui/lib/utils";
+} from "@0verlabs/herald-ui/components/collapsible";
+import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 interface ChatReasoningProps {
   /** Thinking parts in order; the first one is the one-line summary. */

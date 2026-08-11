@@ -1,6 +1,6 @@
 import { ArrowUp } from "lucide-react";
 
-import { InputGroupButton } from "@ivanius.ai/ui/components/input-group";
+import { InputGroupButton } from "@0verlabs/herald-ui/components/input-group";
 
 /** Send button; submits the enclosing form. */
 export function MessageInputSubmit({ disabled }: { disabled?: boolean }) {

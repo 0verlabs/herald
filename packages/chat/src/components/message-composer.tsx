@@ -2,9 +2,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
-import { Field, FieldError, FieldGroup } from "@ivanius.ai/ui/components/field";
-import { InputGroup } from "@ivanius.ai/ui/components/input-group";
-import { cn } from "@ivanius.ai/ui/lib/utils";
+import { Field, FieldError, FieldGroup } from "@0verlabs/herald-ui/components/field";
+import { InputGroup } from "@0verlabs/herald-ui/components/input-group";
+import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 import type { Attachment } from "../types/attachment";
 import type { MessageDraft } from "../types/message";

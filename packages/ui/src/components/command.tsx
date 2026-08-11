@@ -8,9 +8,9 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@ivanius.ai/ui/components/dialog";
-import { InputGroup, InputGroupAddon } from "@ivanius.ai/ui/components/input-group";
-import { cn } from "@ivanius.ai/ui/lib/utils";
+} from "@0verlabs/herald-ui/components/dialog";
+import { InputGroup, InputGroupAddon } from "@0verlabs/herald-ui/components/input-group";
+import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {
   return (

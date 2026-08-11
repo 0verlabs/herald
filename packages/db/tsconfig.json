@@ -8,7 +8,7 @@
     "strict": true,
     "noEmit": true,
     "paths": {
-      "@ivanius.ai/db/*": ["./src/*"]
+      "@0verlabs/herald-db/*": ["./src/*"]
     },
     "types": ["node"]
   },

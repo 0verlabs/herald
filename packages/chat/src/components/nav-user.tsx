@@ -1,7 +1,7 @@
 import { useClerk, useUser } from "@clerk/react";
 import { ChevronsUpDown, CreditCard, LogOut, Settings, Sparkles } from "lucide-react";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@ivanius.ai/ui/components/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@0verlabs/herald-ui/components/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,13 +10,13 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@ivanius.ai/ui/components/dropdown-menu";
+} from "@0verlabs/herald-ui/components/dropdown-menu";
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
-} from "@ivanius.ai/ui/components/sidebar";
+} from "@0verlabs/herald-ui/components/sidebar";
 
 import { initialsFrom } from "../lib/user";
 

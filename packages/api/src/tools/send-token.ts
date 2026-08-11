@@ -7,7 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { createPublicClient, createWalletClient, getAddress, http, isAddress } from "viem";
 import { z } from "zod";
 
-import { userWallets } from "@ivanius.ai/db";
+import { userWallets } from "@0verlabs/herald-db";
 
 import type { Db } from "../lib/db";
 

@@ -19,7 +19,7 @@ import {
   SidebarSeparator,
   SidebarTrigger,
   useSidebar,
-} from "@ivanius.ai/ui/components/sidebar";
+} from "@0verlabs/herald-ui/components/sidebar";
 
 import { useChats } from "../providers/chats-provider";
 import { Logo } from "./logo";
@@ -59,7 +59,7 @@ export function AppSidebar() {
                 <PanelLeft className="absolute size-4 opacity-0 transition-opacity group-data-[collapsible=icon]:group-hover/logo:opacity-100" />
               </span>
               <span className="ml-2 font-heading text-2xl leading-none font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-                Ivanius
+                Herald
               </span>
             </button>
             <SidebarTrigger className="text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden" />

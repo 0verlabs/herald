@@ -1,5 +1,5 @@
 {
-  "name": "@ivanius.ai/api",
+  "name": "@0verlabs/herald-api",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -27,7 +27,7 @@
     "@clerk/backend": "catalog:",
     "@clerk/hono": "0.1.58",
     "@hono/zod-validator": "0.9.0",
-    "@ivanius.ai/db": "workspace:",
+    "@0verlabs/herald-db": "workspace:",
     "@privy-io/node": "catalog:",
     "ai": "catalog:",
     "drizzle-orm": "catalog:",

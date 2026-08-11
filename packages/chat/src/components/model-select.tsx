@@ -6,8 +6,8 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "@ivanius.ai/ui/components/dropdown-menu";
-import { InputGroupButton } from "@ivanius.ai/ui/components/input-group";
+} from "@0verlabs/herald-ui/components/dropdown-menu";
+import { InputGroupButton } from "@0verlabs/herald-ui/components/input-group";
 
 import type { ModelId } from "../types/model";
 import { MODEL_IDS, MODELS } from "../config/model";

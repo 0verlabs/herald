@@ -66,14 +66,14 @@
 
               {
                 "type": true,
-                "source": [":PACKAGE:", ":PACKAGE_WITH_PROTOCOL:", ":URL:", "!@ivanius.ai/**"]
+                "source": [":PACKAGE:", ":PACKAGE_WITH_PROTOCOL:", ":URL:", "!@0verlabs/**"]
               },
-              [":PACKAGE:", ":PACKAGE_WITH_PROTOCOL:", ":URL:", "!@ivanius.ai/**"],
+              [":PACKAGE:", ":PACKAGE_WITH_PROTOCOL:", ":URL:", "!@0verlabs/**"],
 
               ":BLANK_LINE:",
 
-              { "type": true, "source": "@ivanius.ai/**" },
-              "@ivanius.ai/**",
+              { "type": true, "source": "@0verlabs/**" },
+              "@0verlabs/**",
 
               ":BLANK_LINE:",
 

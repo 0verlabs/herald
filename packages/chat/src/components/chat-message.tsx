@@ -13,13 +13,18 @@ import {
   AttachmentGroup,
   AttachmentMedia,
   AttachmentTitle,
-} from "@ivanius.ai/ui/components/attachment";
-import { Bubble, BubbleContent } from "@ivanius.ai/ui/components/bubble";
-import { Button } from "@ivanius.ai/ui/components/button";
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@ivanius.ai/ui/components/field";
-import { Message, MessageContent, MessageFooter } from "@ivanius.ai/ui/components/message";
-import { Textarea } from "@ivanius.ai/ui/components/textarea";
-import { cn } from "@ivanius.ai/ui/lib/utils";
+} from "@0verlabs/herald-ui/components/attachment";
+import { Bubble, BubbleContent } from "@0verlabs/herald-ui/components/bubble";
+import { Button } from "@0verlabs/herald-ui/components/button";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@0verlabs/herald-ui/components/field";
+import { Message, MessageContent, MessageFooter } from "@0verlabs/herald-ui/components/message";
+import { Textarea } from "@0verlabs/herald-ui/components/textarea";
+import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 import type { ChatUIMessage } from "../lib/ai/message";
 import {

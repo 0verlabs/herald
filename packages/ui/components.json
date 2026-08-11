@@ -11,11 +11,11 @@
   },
   "iconLibrary": "lucide",
   "aliases": {
-    "components": "@ivanius.ai/ui/components",
-    "utils": "@ivanius.ai/ui/lib/utils",
-    "hooks": "@ivanius.ai/ui/hooks",
-    "lib": "@ivanius.ai/ui/lib",
-    "ui": "@ivanius.ai/ui/components"
+    "components": "@0verlabs/herald-ui/components",
+    "utils": "@0verlabs/herald-ui/lib/utils",
+    "hooks": "@0verlabs/herald-ui/hooks",
+    "lib": "@0verlabs/herald-ui/lib",
+    "ui": "@0verlabs/herald-ui/components"
   },
   "rtl": false,
   "menuColor": "default",

@@ -1,17 +1,23 @@
-# ivanius.ai monorepo
+# Herald monorepo
 
 Bun + Turborepo monorepo for the Cloudflare ecosystem (Workers, D1, KV, Durable
-Objects). Root package is `ivanius.ai`; workspaces live in `packages/*` and are
-named `@ivanius.ai/<name>`.
+Objects). Root package is `herald`; workspaces live in `packages/*` and are
+named `@0verlabs/herald-<name>` (currently: `api`, `chat`, `db`, `indexer`, `ui`).
+
+Note: the stack is expected to change significantly during early development;
+don't treat current tooling choices as long-term commitments.
 
 ## Commands
 
+- `bun install` — install (also installs Husky git hooks via `prepare`)
 - `bun run build | dev | check` — run via Turbo across packages (`check` runs
   `check:lint` (Biome) + `check:types` (tsc); both also runnable standalone)
 - `bun run check:staged` — Turbo `biome check --write` of staged files only; run by the pre-commit hook
 - `bun run changeset` — add a changeset (required for versioned changes)
 - `bun run version-packages` — apply pending changesets and bump versions
-- Filter to one package: `bun run build --filter=@ivanius.ai/<name>`
+- Filter to one package: `bun run build --filter=@0verlabs/herald-<name>`
+- Local Postgres databases run via `docker compose up -d` (see `docker-compose.yaml`);
+  copy each package's `.env.example` to `.env` before first run.
 
 ## Hard rules
 
@@ -28,13 +34,13 @@ named `@ivanius.ai/<name>`.
 - **Bun everywhere**: `bun`/`bunx`, never `npm`/`npx`/`node`. Scaffold new
   packages with `bun create <template>` when one exists (e.g. `bun create
   hono@latest`, `bunx create-tsrouter-app@latest`).
-- Stack choices are fixed: Hono for APIs, Drizzle for DB (D1), Zod for
+- Stack choices for now: Hono for APIs, Drizzle for DB (D1), Zod for
   validation, React + Vite + TailwindCSS + TanStack Router (file routing) for
   frontend, Wrangler for all Cloudflare infra.
 
 ## New package checklist
 
-1. `packages/<name>`, name `@ivanius.ai/<name>`, `"private": true`.
+1. `packages/<name>`, name `@0verlabs/herald-<name>`, `"private": true`.
 2. tsconfig extends `../../tsconfig.base.json`; add `reset.d.ts` with
    `import "@total-typescript/ts-reset";` and include it.
 3. Scripts contract for Turbo: `build`, `dev`, `check` (runs `check:lint` +
@@ -49,17 +55,34 @@ named `@ivanius.ai/<name>`.
    `"types": ["./worker-configuration.d.ts"]`, and commit the generated
    `worker-configuration.d.ts`. Re-run `wrangler types` after changing
    wrangler config/bindings.
+5. Depend on sibling packages with `bun add @0verlabs/herald-<name>`
+   (workspace protocol).
+
+## Repository layout
+
+```
+.
+├── packages/          # All workspaces live here (@0verlabs/herald-<name>)
+├── turbo.json         # Task pipeline
+├── tsconfig.base.json # Shared TS config — every package extends this
+├── biome.jsonc        # Lint + format rules (repo-wide)
+├── bunfig.toml        # install.exact = true — versions are always pinned
+├── docker-compose.yaml# Local databases
+├── .agents/skills/    # Agent skills (shadcn, Vercel guidelines, …)
+└── .github/workflows  # CI, Cloudflare deploy, Changesets release
+```
 
 ## UI: shadcn/ui
 
 UI code uses shadcn/ui (https://ui.shadcn.com) on Tailwind. Shared components
 live in `packages/ui` (see its `components.json`); frontend packages import
-them via `@ivanius.ai/ui/components/<name>`. Add or update a component from
-inside `packages/ui`:
+them via `@0verlabs/herald-ui/components/<name>`. Add or update a component
+from inside `packages/ui`:
 
 ```sh
 bunx shadcn add <component>
 ```
 
-Use the `shadcn` Claude Code skill (installed at the repo root) when adding,
-styling, or composing components instead of hand-rolling them.
+Use the `shadcn` skill (`.agents/skills/shadcn`, symlinked into
+`.claude/skills/`) when adding, styling, or composing components instead of
+hand-rolling them.

@@ -1,5 +1,5 @@
-import { InputGroupAddon } from "@ivanius.ai/ui/components/input-group";
-import { cn } from "@ivanius.ai/ui/lib/utils";
+import { InputGroupAddon } from "@0verlabs/herald-ui/components/input-group";
+import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 /** Bottom action row of the composer (attach, model select, send, ...). */
 export function MessageInputToolbar({

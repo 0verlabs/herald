@@ -3,7 +3,7 @@ import { useDebounce } from "@uidotdev/usehooks";
 import { Search, SearchX } from "lucide-react";
 import { useState } from "react";
 
-import { Button } from "@ivanius.ai/ui/components/button";
+import { Button } from "@0verlabs/herald-ui/components/button";
 import {
   Empty,
   EmptyContent,
@@ -11,12 +11,12 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "@ivanius.ai/ui/components/empty";
+} from "@0verlabs/herald-ui/components/empty";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
-} from "@ivanius.ai/ui/components/input-group";
+} from "@0verlabs/herald-ui/components/input-group";
 import {
   Select,
   SelectContent,
@@ -24,8 +24,8 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@ivanius.ai/ui/components/select";
-import { SidebarTrigger } from "@ivanius.ai/ui/components/sidebar";
+} from "@0verlabs/herald-ui/components/select";
+import { SidebarTrigger } from "@0verlabs/herald-ui/components/sidebar";
 
 import type { AgentCategoryFilter, AgentSortId } from "../../config/agents";
 import { AgentList } from "../../components/agent-list";

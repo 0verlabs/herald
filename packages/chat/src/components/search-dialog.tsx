@@ -10,8 +10,8 @@ import {
   CommandItem,
   CommandList,
   CommandShortcut,
-} from "@ivanius.ai/ui/components/command";
-import { cn } from "@ivanius.ai/ui/lib/utils";
+} from "@0verlabs/herald-ui/components/command";
+import { cn } from "@0verlabs/herald-ui/lib/utils";
 
 import type { ChatSummary } from "../types/chat";
 import { useChats } from "../providers/chats-provider";

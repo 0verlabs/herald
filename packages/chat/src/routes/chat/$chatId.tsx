@@ -15,8 +15,8 @@ import {
   MessageScrollerItem,
   MessageScrollerProvider,
   MessageScrollerViewport,
-} from "@ivanius.ai/ui/components/message-scroller";
-import { SidebarTrigger } from "@ivanius.ai/ui/components/sidebar";
+} from "@0verlabs/herald-ui/components/message-scroller";
+import { SidebarTrigger } from "@0verlabs/herald-ui/components/sidebar";
 
 import type { ChatUIMessage } from "../../lib/ai/message";
 import type { MessageDraft } from "../../types/message";
@@ -228,7 +228,7 @@ function ChatScreen({ chatId }: { chatId: string }) {
             onSend={(draft) => send(draft)}
           />
           <p className="py-2 text-center text-xs text-muted-foreground">
-            Ivanius can make mistakes. Please double-check responses.
+            Herald can make mistakes. Please double-check responses.
           </p>
         </div>
       </MessageScrollerProvider>
