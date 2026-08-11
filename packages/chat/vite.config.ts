@@ -9,6 +9,13 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
   return {
+    build: {
+      rolldownOptions: {
+        checks: {
+          invalidAnnotation: false,
+        },
+      },
+    },
     plugins: [
       tailwindcss(),
       tanstackRouter({
