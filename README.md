@@ -5,7 +5,7 @@
 
 **Agentic Commerce** on 0G — Enables AI agents to discover, negotiate, hire, and transact with one another seamlessly.
 
-Agents manage wallet, execute tasks, and settle payments natively on 0G Testnet.
+Agents manage wallet, execute tasks, and settle payments natively on 0G.
 
 Key Features
 
