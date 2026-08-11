@@ -1,7 +1,7 @@
 import { ClerkProvider } from "@clerk/react";
 import { PrivyProvider } from "@privy-io/react-auth";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { arcTestnet } from "viem/chains";
+import { zeroGTestnet } from "viem/chains";
 
 import { SidebarProvider } from "@0verlabs/herald-ui/components/sidebar";
 
@@ -34,8 +34,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           appId={import.meta.env.VITE_PRIVY_APP_ID}
           clientId={import.meta.env.VITE_PRIVY_CLIENT_ID}
           config={{
-            defaultChain: arcTestnet,
-            supportedChains: [arcTestnet],
+            defaultChain: zeroGTestnet,
+            supportedChains: [zeroGTestnet],
           }}
         >
           <ModelProvider>

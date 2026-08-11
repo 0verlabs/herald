@@ -1,8 +1,7 @@
 name: Release
 
 # Opens/updates a "Version Packages" PR whenever changesets land on main.
-# Packages here deploy to Cloudflare rather than publish to npm, so this
-# only handles versioning and changelogs.
+# This only handles versioning and changelogs.
 
 on:
   push:

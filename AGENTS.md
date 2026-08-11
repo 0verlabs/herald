@@ -1,8 +1,8 @@
 # Herald monorepo
 
-Bun + Turborepo monorepo for the Cloudflare ecosystem (Workers, D1, KV, Durable
-Objects). Root package is `herald`; workspaces live in `packages/*` and are
-named `@0verlabs/herald-<name>` (currently: `api`, `chat`, `db`, `indexer`, `ui`).
+Bun + Turborepo monorepo for Herald (agentic commerce on 0G Testnet). Root package is
+`herald`; workspaces live in `packages/*` and are named
+`@0verlabs/herald-<name>` (currently: `api`, `chat`, `db`, `indexer`, `ui`).
 
 Note: the stack is expected to change significantly during early development;
 don't treat current tooling choices as long-term commitments.
@@ -22,7 +22,7 @@ don't treat current tooling choices as long-term commitments.
 ## Hard rules
 
 - **Shared stack deps come from the catalog.** Versions for React, Vite,
-  Tailwind, TanStack Router, Hono, Drizzle, Wrangler, Zod, TypeScript, etc. are
+  Tailwind, TanStack Router, Hono, Drizzle, Zod, TypeScript, etc. are
   pinned once in root `package.json` → `workspaces.catalog`. In packages,
   reference them as `"react": "catalog:"` and run `bun install`. `bun add`
   does NOT write `catalog:` references — this is the one case where you edit
@@ -34,28 +34,20 @@ don't treat current tooling choices as long-term commitments.
 - **Bun everywhere**: `bun`/`bunx`, never `npm`/`npx`/`node`. Scaffold new
   packages with `bun create <template>` when one exists (e.g. `bun create
   hono@latest`, `bunx create-tsrouter-app@latest`).
-- Stack choices for now: Hono for APIs, Drizzle for DB (D1), Zod for
+- Stack choices for now: Hono for APIs, Drizzle for DB (Postgres), Zod for
   validation, React + Vite + TailwindCSS + TanStack Router (file routing) for
-  frontend, Wrangler for all Cloudflare infra.
+  frontend.
 
 ## New package checklist
 
 1. `packages/<name>`, name `@0verlabs/herald-<name>`, `"private": true`.
-2. tsconfig extends `../../tsconfig.base.json`; add `reset.d.ts` with
-   `import "@total-typescript/ts-reset";` and include it.
+2. tsconfig follows the existing packages setup (`strict`,
+   `"moduleResolution": "Bundler"`, `noEmit`).
 3. Scripts contract for Turbo: `build`, `dev`, `check` (runs `check:lint` +
    `check:types`), `check:lint` (`biome check .` — format + lint + imports),
    `check:types` (`tsc --noEmit`), `check:staged`
-   (`biome check . --write --staged …`, run by the pre-commit hook); Cloudflare
-   packages also add `deploy` (`wrangler deploy`) — CI deploys `main` via
-   `turbo run deploy`.
-4. Worker packages: types come from `wrangler types` (NOT
-   `@cloudflare/workers-types` — only pure libraries without a wrangler config
-   use that). Set `"check:types": "wrangler types && tsc --noEmit"`, tsconfig
-   `"types": ["./worker-configuration.d.ts"]`, and commit the generated
-   `worker-configuration.d.ts`. Re-run `wrangler types` after changing
-   wrangler config/bindings.
-5. Depend on sibling packages with `bun add @0verlabs/herald-<name>`
+   (`biome check . --write --staged …`, run by the pre-commit hook).
+4. Depend on sibling packages with `bun add @0verlabs/herald-<name>`
    (workspace protocol).
 
 ## Repository layout
@@ -64,12 +56,12 @@ don't treat current tooling choices as long-term commitments.
 .
 ├── packages/          # All workspaces live here (@0verlabs/herald-<name>)
 ├── turbo.json         # Task pipeline
-├── tsconfig.base.json # Shared TS config — every package extends this
+├── tsconfig.json      # Root TS config (extends @tsconfig/bun)
 ├── biome.jsonc        # Lint + format rules (repo-wide)
 ├── bunfig.toml        # install.exact = true — versions are always pinned
 ├── docker-compose.yaml# Local databases
 ├── .agents/skills/    # Agent skills (shadcn, Vercel guidelines, …)
-└── .github/workflows  # CI, Cloudflare deploy, Changesets release
+└── .github/workflows  # CI, Changesets release
 ```
 
 ## UI: shadcn/ui

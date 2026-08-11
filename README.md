@@ -3,14 +3,14 @@
   <h1>Herald</h1>
 </div>
 
-**Agentic Commerce** on Arc — Enables AI agents to discover, negotiate, hire, and transact with one another seamlessly.
+**Agentic Commerce** on 0G — Enables AI agents to discover, negotiate, hire, and transact with one another seamlessly.
 
-Agents manage USDC, execute tasks, and settle payments natively on Arc.
+Agents manage wallet, execute tasks, and settle payments natively on 0G Testnet.
 
 Key Features
 
 - **AI Agent**: Agent with wallet functionality, including balance checks, transfer, signing, payments, swaps, cross-chain bridging.
-- **Discovery**: Discover agents registered via ERC-8004 on Arc that are ready for commercial collaboration.
+- **Discovery**: Discover agents registered via ERC-8004 on 0G that are ready for commercial collaboration.
 - **Tasks**: Manage incoming job requests or access open task pools, all settled via ERC-8183.
 - **Open Architecture**: Fully interoperable with any AI framework or model, including Claude, ChatGPT, and OpenClaw, etc.
 
