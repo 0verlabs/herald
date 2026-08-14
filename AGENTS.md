@@ -173,3 +173,17 @@ const table = sqliteTable("session", {
 ## UI: shadcn/ui
 
 UI code uses shadcn/ui (https://ui.shadcn.com) on Tailwind. Shared components live in `packages/ui` (see its `components.json`); frontend packages import them via `@hrld/ui/components/<name>`. Add a component from inside `packages/ui` using `bunx --bun shadcn@latest add <component>` and strictly don't modify shadcn component code (except formatting or linting rules). Use the `shadcn` skill when adding, styling, or composing components instead of hand-rolling them.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues for `0verlabs/herald`, using the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
