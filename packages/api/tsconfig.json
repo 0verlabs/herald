@@ -36,6 +36,5 @@
     "skipLibCheck": true,
     "types": ["bun"]
   },
-  "exclude": ["test"],
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts"]
 }

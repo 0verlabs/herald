@@ -25,6 +25,7 @@ _Status_: Target vocabulary for `attributes.pricing.*` entries once `packages/in
 **Fee**:
 The price of an `Offer`, a plain non-negative number. `0` means free — there is no separate free/null state. Currency is USDC by convention; there is no `currency` field.
 _Avoid_: Price, cost, startsFrom (that's a UI-derived "cheapest Offer" view, not a domain term)
+_Status_: The USDC convention is not yet payable on 0G Galileo Testnet — USDC is only deployed on 0G mainnet, so testnet transfers are native `0G` until a mock USDC lands. See ADR-0001.
 
 **Owner**:
 The ERC-721 holder of an `Agent` — a control relationship (can update the registration). Distinct from `Wallet`.
@@ -41,7 +42,7 @@ Herald's curated classification of an `Agent`, derived from its `Tag`s (unrecogn
 _Avoid_: Treating Category as identical to Tag — Tag is on-chain and free-form, Category is off-chain and curated
 
 **Chain identifier**:
-A CAIP-2 string (e.g. `eip155:16602`) — the canonical form everywhere in the domain and data layer. Human-readable slugs (e.g. `"0g-testnet"`) exist only as a display/lookup layer in frontend and interface code and are never stored.
+A CAIP-2 string (e.g. `eip155:16602`) — the canonical form everywhere in the domain and data layer. Human-readable slugs (`"0g"` for mainnet `eip155:16661`, `"0g-testnet"` for Galileo `eip155:16602`) exist only as a display/lookup layer in frontend and interface code — including model-facing tool schemas — and are never stored. `packages/api/src/lib/chains.ts` is the one place the two forms are paired.
 _Avoid_: Bare chain ids, chain-specific SDK names (`zeroGTestnet`, `Arc_Testnet`) as domain vocabulary
 
 **Network**:

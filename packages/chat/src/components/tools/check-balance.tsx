@@ -2,9 +2,15 @@ import { Wallet } from "lucide-react";
 
 import type { ToolRenderer } from "../../lib/ai/tool-renderers";
 
-/** Mirrors packages/api/src/lib/tools/check-balance.ts. */
+/** Mirrors packages/api/src/tools/check-balance.ts. */
+interface CheckBalanceInput {
+  chain: "0g-testnet";
+  hideZeroBalance: boolean;
+}
+
 interface CheckBalanceOutput {
   address: string;
+  chain: string;
   balances: {
     token: {
       name: string;
@@ -15,11 +21,11 @@ interface CheckBalanceOutput {
   }[];
 }
 
-export const checkBalanceToolRenderer: ToolRenderer<Record<string, never>, CheckBalanceOutput> = {
+export const checkBalanceToolRenderer: ToolRenderer<CheckBalanceInput, CheckBalanceOutput> = {
   icon: Wallet,
   label: () => "Check balance",
   renderOutput: (output) => {
-    if (!output.balances)
+    if (!output.balances?.length)
       return <p className="text-muted-foreground text-sm">No balances found.</p>;
     return (
       <ul className="flex flex-col gap-1">
