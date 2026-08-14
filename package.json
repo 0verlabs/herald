@@ -57,6 +57,7 @@
     "check:types": "turbo run check:types",
     "check:staged": "turbo run check:staged",
     "changeset": "changeset",
+    "test": "echo 'do not run tests from root' && exit 1",
     "version-packages": "changeset version",
     "prepare": "husky"
   },
