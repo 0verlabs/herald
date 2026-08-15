@@ -3,6 +3,9 @@ import { z } from "zod";
 export const envSchema = z.object({
   // Databases
   DATABASE_URL: z.url(),
+  // Chain RPCs, keyed by caip2.
+  RPC_URL_0G: z.url().optional(),
+  RPC_URL_0G_TESTNET: z.url().optional(),
   // Privy
   PRIVY_APP_ID: z.string(),
   PRIVY_APP_SECRET: z.string(),

@@ -1,22 +1,25 @@
-import type { AppKit } from "@circle-fin/app-kit";
 import type { PrivyClient } from "@privy-io/node";
-import { ViemAdapter } from "@circle-fin/adapter-viem-v2";
+import { chainSchema, Token, tokenSchema } from "@hrld/core/types";
 import { userWallets } from "@hrld/db";
 import { createViemAccount } from "@privy-io/node/viem";
 import { tool } from "ai";
 import { and, eq } from "drizzle-orm";
-import { createPublicClient, createWalletClient, getAddress, http, isAddress } from "viem";
+import { createWalletClient, erc20Abi, getAddress, http, isAddress, parseUnits } from "viem";
 import { z } from "zod";
 
 import type { Db } from "../lib/db";
+import { chainConfigs, viemChains } from "../config/chain";
+import { tokenConfigs } from "../config/token";
+import { isTokenConfig } from "../lib/tokens";
+import { NativeTokenConfig, TokenConfig } from "../types/token";
 
 export const sendTokenInputSchema = z.object({
-  chain: z.enum(["arc"]).default("arc"),
+  chain: chainSchema,
   to: z
     .string()
     .refine((address) => isAddress(address, { strict: true }), "Invalid recipient address"),
   amount: z.string().transform(parseFloat).transform(String),
-  token: z.enum(["USDC", "EURC"]).optional(),
+  token: tokenSchema,
 });
 
 export type SendTokenInput = z.infer<typeof sendTokenInputSchema>;
@@ -24,7 +27,7 @@ export type SendTokenInput = z.infer<typeof sendTokenInputSchema>;
 export const sendTokenOutputSchema = z.object({
   address: z.string(),
   txHash: z.string(),
-  explorerUrl: z.string(),
+  // explorerUrl: z.string(),
 });
 
 export type SendTokenOutput = z.infer<typeof sendTokenOutputSchema>;
@@ -32,7 +35,6 @@ export type SendTokenOutput = z.infer<typeof sendTokenOutputSchema>;
 export interface CreateSendTokenToolArgs {
   db: Db;
   privy: PrivyClient;
-  appKit: AppKit;
   userId: string;
   authorizationId: string;
   authorizationPrivateKey: string;
@@ -41,92 +43,70 @@ export interface CreateSendTokenToolArgs {
 export function createSendTokenTools({
   db,
   privy,
-  appKit,
   userId,
   authorizationId,
   authorizationPrivateKey,
 }: CreateSendTokenToolArgs) {
   return tool({
-    description: `Perform token transfer for a specific chain from user wallet.
-    NOTE:
-    - Empty token input = native token transfer`,
+    description: `Perform token transfer for a specific chain from user wallet.`,
     inputSchema: sendTokenInputSchema,
     outputSchema: sendTokenOutputSchema,
     needsApproval: true,
     execute: async ({ chain, to, amount, token }) => {
-      switch (chain) {
-        case "arc": {
-          const [wallet] = await db
-            .select({
-              address: userWallets.walletAddress,
-            })
-            .from(userWallets)
-            .where(and(eq(userWallets.userId, userId), eq(userWallets.network, "evm")));
-          if (!wallet) throw new Error("Arc wallet not initialized for this user");
+      const chainConfig = chainConfigs[chain];
 
-          const privyWallet = await privy.wallets().getWalletByAddress({
-            address: wallet.address,
+      const [wallet] = await db
+        .select({
+          address: userWallets.walletAddress,
+        })
+        .from(userWallets)
+        .where(and(eq(userWallets.userId, userId), eq(userWallets.network, chainConfig.network)));
+      if (!wallet) throw new Error("Wallet not initialized for this user");
+
+      const privyWallet = await privy.wallets().getWalletByAddress({
+        address: wallet.address,
+      });
+
+      const hasServerSigner = privyWallet.additional_signers.some(
+        (signer) => signer.signer_id === authorizationId
+      );
+      if (!hasServerSigner)
+        throw new Error("Agent didn't have access to perform token transfer for this wallet");
+
+      const address = getAddress(wallet.address);
+
+      const walletClient = createWalletClient({
+        account: createViemAccount(privy, {
+          walletId: privyWallet.id,
+          address,
+          authorizationContext: {
+            authorization_private_keys: [authorizationPrivateKey],
+          },
+        }),
+        chain: viemChains[chain],
+        transport: http(chainConfig.rpcUrl),
+      });
+
+      const tokenConfig = tokenConfigs[chain][token];
+      if (!tokenConfig) throw new Error("Token not supported for this chain");
+
+      const txHash = isTokenConfig(tokenConfig)
+        ? await walletClient.writeContract({
+            abi: erc20Abi,
+            address: getAddress(tokenConfig.address),
+            functionName: "transfer",
+            args: [getAddress(to), parseUnits(amount, tokenConfig.decimals)],
+          })
+        : await walletClient.sendTransaction({
+            to: getAddress(to),
+            value: parseUnits(amount, tokenConfig.decimals),
           });
 
-          const hasServerSigner = privyWallet.additional_signers.some(
-            (signer) => signer.signer_id === authorizationId
-          );
-          if (!hasServerSigner)
-            throw new Error("Agent didn't have access to perform token transfer for this wallet");
-
-          const address = getAddress(wallet.address);
-
-          const account = createViemAccount(privy, {
-            walletId: privyWallet.id,
-            address,
-            authorizationContext: {
-              authorization_private_keys: [authorizationPrivateKey],
-            },
-          });
-
-          const supportedChains = appKit
-            .getSupportedChains()
-            .filter((chain) => chain.type === "evm");
-
-          const adapter = new ViemAdapter(
-            {
-              getPublicClient: ({ chain }) =>
-                createPublicClient({
-                  chain,
-                  transport: http(),
-                }),
-              getWalletClient: ({ chain }) =>
-                createWalletClient({
-                  account,
-                  chain,
-                  transport: http(),
-                }),
-            },
-            { addressContext: "user-controlled", supportedChains }
-          );
-
-          const sendResult = await appKit.send({
-            from: {
-              adapter,
-              chain: "Arc_Testnet",
-            },
-            to,
-            amount: amount.toString(),
-            token: !token ? "NATIVE" : token,
-          });
-
-          if (sendResult.state === "error" || !sendResult.txHash || !sendResult.explorerUrl)
-            throw new Error(sendResult.errorMessage);
-
-          return {
-            address,
-            txHash: sendResult.txHash,
-            explorerUrl: sendResult.explorerUrl,
-          };
-        }
-        default:
-          throw new Error("Invalid chain provided");
-      }
+      return {
+        address,
+        txHash,
+        // explorerUrl: chains[chain].txUrl(txHash),
+      };
     },
   });
 }

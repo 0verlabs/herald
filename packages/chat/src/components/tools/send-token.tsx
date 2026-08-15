@@ -2,23 +2,26 @@ import { Send } from "lucide-react";
 
 import type { ToolRenderer } from "../../lib/ai/tool-renderers";
 
-/** Mirrors packages/api/src/lib/tools/send-token.ts. */
+/** Mirrors packages/api/src/tools/send-token.ts. */
 interface SendTokenInput {
-  chain: "arc";
+  chain: "0g-testnet";
   to: string;
   amount: string;
-  token?: "USDC" | "EURC";
+  token?: "USDC";
 }
 
 type SendTokenOutput = {
   address: string;
+  chain: string;
   txHash: string;
   explorerUrl: string;
 } | null;
 
 function formatTransfer(input: SendTokenInput | undefined) {
   if (input?.to === undefined || input.amount === undefined) return null;
-  return `${input.amount.toLocaleString()} ${input.token ?? "USDC"} → ${input.to}`;
+  // No token means a native transfer. The chain is always named: an approval prompt that can't
+  // distinguish testnet from mainnet is not an approval.
+  return `${input.amount.toLocaleString()} ${input.token ?? "0G"} → ${input.to} on ${input.chain}`;
 }
 
 export const sendTokenToolRenderer: ToolRenderer<SendTokenInput, SendTokenOutput> = {

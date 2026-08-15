@@ -1,5 +1,4 @@
 import type { UIMessage } from "ai";
-import { AppKit } from "@circle-fin/app-kit";
 import { clerkMiddleware, getAuth } from "@clerk/hono";
 import { zValidator } from "@hono/zod-validator";
 import {
@@ -65,7 +64,6 @@ const chat = new Hono<{ Variables: GlobalVariables }>().post(
 
     const db = c.var.db;
     const privy = c.var.privyClient;
-    const appKit = new AppKit();
 
     const tools = {
       get_wallets: createGetWalletsTools({ db, userId }),
@@ -73,7 +71,6 @@ const chat = new Hono<{ Variables: GlobalVariables }>().post(
       send_token: createSendTokenTools({
         db,
         privy,
-        appKit,
         userId,
         authorizationId: env.PRIVY_AUTHORIZATION_ID,
         authorizationPrivateKey: env.PRIVY_AUTHORIZATION_PRIVATE_KEY,

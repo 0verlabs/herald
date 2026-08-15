@@ -1,15 +1,16 @@
+import { chainSchema } from "@hrld/core/types";
 import { userWallets } from "@hrld/db";
 import { tool } from "ai";
 import { and, eq } from "drizzle-orm";
-import { createPublicClient, erc20Abi, formatEther, formatUnits, getAddress, http } from "viem";
-import { arcTestnet } from "viem/chains";
-import { eurc } from "viem/tokens";
+import { createPublicClient, erc20Abi, formatUnits, getAddress, http } from "viem";
 import { z } from "zod";
 
 import type { Db } from "../lib/db";
+import { chainConfigs, viemChains } from "../config/chain";
+import { tokenConfigs } from "../config/token";
 
 export const checkBalanceInputSchema = z.object({
-  chain: z.enum(["arc"]).default("arc"),
+  chain: chainSchema,
   hideZeroBalance: z.boolean().default(true),
 });
 
@@ -39,66 +40,71 @@ export interface CreateCheckBalanceToolArgs {
 export function createCheckBalanceTools({ db, userId }: CreateCheckBalanceToolArgs) {
   return tool({
     type: "dynamic",
-    description: `Fetch current wallet balance on a specific chain.
-      NOTE: native token and USDC (ERC-20) token are the same token on Arc, treat them as one entity.`,
+    description: `Fetch current wallet balance on a specific chain.`,
     inputSchema: checkBalanceInputSchema,
     outputSchema: checkBalanceOutputSchema,
     execute: async ({ chain, hideZeroBalance }) => {
-      switch (chain) {
-        case "arc": {
-          const [wallet] = await db
-            .select({
-              address: userWallets.walletAddress,
-            })
-            .from(userWallets)
-            .where(and(eq(userWallets.userId, userId), eq(userWallets.network, "evm")));
-          if (!wallet) throw new Error("Arc wallet not initialized for this user");
+      const [wallet] = await db
+        .select({
+          address: userWallets.walletAddress,
+        })
+        .from(userWallets)
+        .where(and(eq(userWallets.userId, userId), eq(userWallets.network, "evm")));
+      if (!wallet) throw new Error("Wallet not initialized for this user");
 
-          const resolvedAddress = getAddress(wallet.address);
+      const address = getAddress(wallet.address);
 
-          const publicClient = createPublicClient({
-            transport: http(),
-            chain: arcTestnet,
-          });
+      const chainConfig = chainConfigs[chain];
 
-          const [usdcBalance, eurcBalance] = await Promise.all([
-            publicClient.getBalance({ address: resolvedAddress }),
-            publicClient.readContract({
+      const publicClient = createPublicClient({
+        chain: viemChains[chain],
+        transport: http(chainConfig.rpcUrl),
+      });
+
+      const native = tokenConfigs[chain].native;
+      const usdc = tokenConfigs[chain].usdc;
+
+      const [nativeBalance, usdcBalance] = await Promise.all([
+        publicClient.getBalance({ address }),
+        usdc
+          ? publicClient.readContract({
               abi: erc20Abi,
-              address: eurc.addresses["5042002"],
+              address: getAddress(usdc.address),
               functionName: "balanceOf",
-              args: [resolvedAddress],
-            }),
-          ]);
+              args: [address],
+            })
+          : undefined,
+      ]);
 
-          return {
-            address: resolvedAddress,
-            balances: [
+      const tokenBalances =
+        usdc && usdcBalance !== undefined
+          ? [
               {
-                amount: formatEther(usdcBalance),
+                amount: formatUnits(usdcBalance, usdc.decimals),
                 token: {
-                  name: publicClient.chain.nativeCurrency.name,
-                  symbol: publicClient.chain.nativeCurrency.symbol,
+                  name: usdc.name,
+                  symbol: usdc.symbol,
+                  tokenAddress: usdc.address,
                 },
               },
-              ...(eurcBalance >= 0n && !hideZeroBalance
-                ? [
-                    {
-                      amount: formatUnits(eurcBalance, eurc.decimals),
-                      token: {
-                        name: eurc.name,
-                        symbol: eurc.symbol,
-                        tokenAddress: eurc.addresses["5042002"],
-                      },
-                    },
-                  ]
-                : []),
-            ],
-          };
-        }
-        default:
-          throw new Error("Invalid chain provided");
-      }
+            ]
+          : [];
+
+      return {
+        address,
+        balances: [
+          {
+            amount: formatUnits(nativeBalance, native.decimals),
+            token: {
+              name: native.name,
+              symbol: native.symbol,
+            },
+          },
+          ...(hideZeroBalance
+            ? tokenBalances.filter((balance) => Number(balance.amount) > 0)
+            : tokenBalances),
+        ],
+      };
     },
   });
 }
