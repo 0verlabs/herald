@@ -3,10 +3,9 @@ import { z } from "zod";
 export const envSchema = z.object({
   // Databases
   DATABASE_URL: z.url(),
-  // Chain RPCs, keyed by chain id to match the indexer's convention.
-  // Mainnet is optional — omitting it falls back to the chain's public RPC.
-  RPC_URL_16602: z.url(),
-  RPC_URL_16661: z.url().optional(),
+  // Chain RPCs, keyed by caip2.
+  RPC_URL_0G: z.url().optional(),
+  RPC_URL_0G_TESTNET: z.url().optional(),
   // Privy
   PRIVY_APP_ID: z.string(),
   PRIVY_APP_SECRET: z.string(),

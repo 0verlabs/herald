@@ -1,3 +1,4 @@
+import { chainSchema } from "@hrld/core/types";
 import { userWallets } from "@hrld/db";
 import { tool } from "ai";
 import { and, eq } from "drizzle-orm";
@@ -5,13 +6,11 @@ import { createPublicClient, erc20Abi, formatUnits, getAddress, http } from "vie
 import { z } from "zod";
 
 import type { Db } from "../lib/db";
-import type { EvmChainConfig } from "../types/chain";
-import { chains } from "../lib/chains";
-import { rpcUrls } from "../lib/rpc";
-import { callableChainSlugSchema } from "../types/chain";
+import { chainConfigs, viemChains } from "../config/chain";
+import { tokenConfigs } from "../config/token";
 
 export const checkBalanceInputSchema = z.object({
-  chain: callableChainSlugSchema.default("0g-testnet"),
+  chain: chainSchema,
   hideZeroBalance: z.boolean().default(true),
 });
 
@@ -19,7 +18,6 @@ export type CheckBalanceInput = z.infer<typeof checkBalanceInputSchema>;
 
 export const checkBalanceOutputSchema = z.object({
   address: z.string(),
-  chain: z.string(),
   balances: z.array(
     z.object({
       token: z.object({
@@ -42,9 +40,7 @@ export interface CreateCheckBalanceToolArgs {
 export function createCheckBalanceTools({ db, userId }: CreateCheckBalanceToolArgs) {
   return tool({
     type: "dynamic",
-    description: `Fetch current wallet balance on a specific chain.
-      NOTE: the native token of 0G is 0G. USDC is a separate token and is not deployed on
-      0G Galileo Testnet, so it is absent from testnet balances.`,
+    description: `Fetch current wallet balance on a specific chain.`,
     inputSchema: checkBalanceInputSchema,
     outputSchema: checkBalanceOutputSchema,
     execute: async ({ chain, hideZeroBalance }) => {
@@ -57,17 +53,16 @@ export function createCheckBalanceTools({ db, userId }: CreateCheckBalanceToolAr
       if (!wallet) throw new Error("Wallet not initialized for this user");
 
       const address = getAddress(wallet.address);
-      // Widened to the general config on purpose: every currently-callable chain happens to have
-      // no USDC deployment, and without this the compiler narrows `usdc` to `never` and the token
-      // branch below becomes unreachable code that has to be deleted and rewritten later.
-      const config: EvmChainConfig = chains[chain];
-      const native = config.tokens.native;
-      const usdc = config.tokens.usdc;
+
+      const chainConfig = chainConfigs[chain];
 
       const publicClient = createPublicClient({
-        chain: config.chain,
-        transport: http(rpcUrls[chain]),
+        chain: viemChains[chain],
+        transport: http(chainConfig.rpcUrl),
       });
+
+      const native = tokenConfigs[chain].native;
+      const usdc = tokenConfigs[chain].usdc;
 
       const [nativeBalance, usdcBalance] = await Promise.all([
         publicClient.getBalance({ address }),
@@ -97,9 +92,6 @@ export function createCheckBalanceTools({ db, userId }: CreateCheckBalanceToolAr
 
       return {
         address,
-        chain,
-        // The native balance is always reported, even at zero: "you hold no 0G" is an answer,
-        // whereas an empty list reads as "we couldn't find out".
         balances: [
           {
             amount: formatUnits(nativeBalance, native.decimals),

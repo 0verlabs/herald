@@ -26,6 +26,7 @@
     "@clerk/backend": "catalog:",
     "@clerk/hono": "0.1.58",
     "@hono/zod-validator": "0.9.0",
+    "@hrld/core": "workspace:",
     "@hrld/db": "workspace:",
     "@privy-io/node": "catalog:",
     "ai": "catalog:",

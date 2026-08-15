@@ -24,6 +24,7 @@
         "@clerk/backend": "catalog:",
         "@clerk/hono": "0.1.58",
         "@hono/zod-validator": "0.9.0",
+        "@hrld/core": "workspace:",
         "@hrld/db": "workspace:",
         "@privy-io/node": "catalog:",
         "ai": "catalog:",
@@ -77,6 +78,19 @@
         "typescript": "catalog:",
         "vite": "catalog:",
         "vite-plugin-svgr": "5.2.0",
+      },
+    },
+    "packages/core": {
+      "name": "@hrld/core",
+      "version": "0.0.0",
+      "dependencies": {
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@biomejs/biome": "catalog:",
+        "@types/node": "catalog:",
+        "drizzle-kit": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "packages/db": {
@@ -486,6 +500,8 @@
     "@hrld/api": ["@hrld/api@workspace:packages/api"],
 
     "@hrld/chat": ["@hrld/chat@workspace:packages/chat"],
+
+    "@hrld/core": ["@hrld/core@workspace:packages/core"],
 
     "@hrld/db": ["@hrld/db@workspace:packages/db"],
 

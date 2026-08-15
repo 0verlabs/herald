@@ -1,4 +1,5 @@
 import type { PrivyClient } from "@privy-io/node";
+import { chainSchema, Token, tokenSchema } from "@hrld/core/types";
 import { userWallets } from "@hrld/db";
 import { createViemAccount } from "@privy-io/node/viem";
 import { tool } from "ai";
@@ -7,26 +8,26 @@ import { createWalletClient, erc20Abi, getAddress, http, isAddress, parseUnits }
 import { z } from "zod";
 
 import type { Db } from "../lib/db";
-import { chains, requireUsdc } from "../lib/chains";
-import { rpcUrls } from "../lib/rpc";
-import { callableChainSlugSchema } from "../types/chain";
+import { chainConfigs, viemChains } from "../config/chain";
+import { tokenConfigs } from "../config/token";
+import { isTokenConfig } from "../lib/tokens";
+import { NativeTokenConfig, TokenConfig } from "../types/token";
 
 export const sendTokenInputSchema = z.object({
-  chain: callableChainSlugSchema.default("0g-testnet"),
+  chain: chainSchema,
   to: z
     .string()
     .refine((address) => isAddress(address, { strict: true }), "Invalid recipient address"),
   amount: z.string().transform(parseFloat).transform(String),
-  token: z.enum(["USDC"]).optional(),
+  token: tokenSchema,
 });
 
 export type SendTokenInput = z.infer<typeof sendTokenInputSchema>;
 
 export const sendTokenOutputSchema = z.object({
   address: z.string(),
-  chain: z.string(),
   txHash: z.string(),
-  explorerUrl: z.string(),
+  // explorerUrl: z.string(),
 });
 
 export type SendTokenOutput = z.infer<typeof sendTokenOutputSchema>;
@@ -47,19 +48,19 @@ export function createSendTokenTools({
   authorizationPrivateKey,
 }: CreateSendTokenToolArgs) {
   return tool({
-    description: `Perform token transfer for a specific chain from user wallet.
-    NOTE:
-    - Empty token input = native token transfer`,
+    description: `Perform token transfer for a specific chain from user wallet.`,
     inputSchema: sendTokenInputSchema,
     outputSchema: sendTokenOutputSchema,
     needsApproval: true,
     execute: async ({ chain, to, amount, token }) => {
+      const chainConfig = chainConfigs[chain];
+
       const [wallet] = await db
         .select({
           address: userWallets.walletAddress,
         })
         .from(userWallets)
-        .where(and(eq(userWallets.userId, userId), eq(userWallets.network, "evm")));
+        .where(and(eq(userWallets.userId, userId), eq(userWallets.network, chainConfig.network)));
       if (!wallet) throw new Error("Wallet not initialized for this user");
 
       const privyWallet = await privy.wallets().getWalletByAddress({
@@ -82,32 +83,29 @@ export function createSendTokenTools({
             authorization_private_keys: [authorizationPrivateKey],
           },
         }),
-        chain: chains[chain].chain,
-        transport: http(rpcUrls[chain]),
+        chain: viemChains[chain],
+        transport: http(chainConfig.rpcUrl),
       });
 
-      // `requireUsdc` throws where the token has no deployment, so an unsupported token never
-      // reaches the network. Both branches take their decimals from the registry so a chain
-      // whose native currency isn't 18-decimal can't silently send the wrong amount.
-      const usdc = token ? requireUsdc(chain) : undefined;
+      const tokenConfig = tokenConfigs[chain][token];
+      if (!tokenConfig) throw new Error("Token not supported for this chain");
 
-      const txHash = usdc
+      const txHash = isTokenConfig(tokenConfig)
         ? await walletClient.writeContract({
             abi: erc20Abi,
-            address: getAddress(usdc.address),
+            address: getAddress(tokenConfig.address),
             functionName: "transfer",
-            args: [getAddress(to), parseUnits(amount, usdc.decimals)],
+            args: [getAddress(to), parseUnits(amount, tokenConfig.decimals)],
           })
         : await walletClient.sendTransaction({
             to: getAddress(to),
-            value: parseUnits(amount, chains[chain].tokens.native.decimals),
+            value: parseUnits(amount, tokenConfig.decimals),
           });
 
       return {
         address,
-        chain,
         txHash,
-        explorerUrl: chains[chain].txUrl(txHash),
+        // explorerUrl: chains[chain].txUrl(txHash),
       };
     },
   });
