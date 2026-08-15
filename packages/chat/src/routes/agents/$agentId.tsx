@@ -1,3 +1,4 @@
+import { agentIdSchema } from "@hrld/core";
 import { Button } from "@hrld/ui/components/button";
 import {
   Empty,
@@ -12,6 +13,7 @@ import { Skeleton } from "@hrld/ui/components/skeleton";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { SearchX } from "lucide-react";
 
+import type { AgentId } from "../../types/agent";
 import { AgentHero } from "../../components/agent-hero";
 import { AgentServices } from "../../components/agent-services";
 import { ServiceCardSkeleton } from "../../components/service-card";
@@ -23,8 +25,8 @@ export const Route = createFileRoute("/agents/$agentId")({
   component: AgentDetailRoute,
   notFoundComponent: AgentNotFound,
   loader: ({ params }) => {
-    const id = Number(params.agentId);
-    if (!Number.isInteger(id) || !agents.some((agent) => agent.id === id)) {
+    const parsed = agentIdSchema.safeParse(params.agentId);
+    if (!parsed.success || !agents.some((agent) => agent.id === parsed.data)) {
       throw notFound();
     }
   },
@@ -32,7 +34,7 @@ export const Route = createFileRoute("/agents/$agentId")({
 
 function AgentDetailRoute() {
   const { agentId } = Route.useParams();
-  const { data: agent, isPending } = useAgent(Number(agentId));
+  const { data: agent, isPending } = useAgent(agentId as AgentId);
 
   return (
     <div className="flex h-svh flex-col">

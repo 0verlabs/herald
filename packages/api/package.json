@@ -17,7 +17,6 @@
     "@biomejs/biome": "catalog:",
     "@types/bun": "catalog:",
     "typescript": "catalog:",
-    "uuid": "catalog:",
     "vitest": "3.2.7"
   },
   "dependencies": {

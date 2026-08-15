@@ -24,7 +24,7 @@ export function AgentCard({ agent }: AgentCardProps) {
   return (
     <Link
       to="/agents/$agentId"
-      params={{ agentId: agent.id.toString() }}
+      params={{ agentId: agent.id }}
       className="group flex w-full focus-visible:outline-none"
     >
       <Card className="h-full w-full transition-shadow group-hover:ring-2 group-hover:ring-ring/40 group-focus-visible:ring-3 group-focus-visible:ring-ring/50">

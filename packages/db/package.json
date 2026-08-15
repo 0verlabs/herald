@@ -15,6 +15,7 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@hrld/core": "workspace:*",
     "drizzle-orm": "catalog:"
   },
   "devDependencies": {

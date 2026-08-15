@@ -22,16 +22,16 @@ import { useDebounce } from "@uidotdev/usehooks";
 import { Search, SearchX } from "lucide-react";
 import { useState } from "react";
 
-import type { AgentCategoryFilter, AgentSortId } from "../../config/agents";
+import type { AgentSortId, AgentTagFilter } from "../../config/agents";
 import { AgentList } from "../../components/agent-list";
-import { CategorySelector } from "../../components/category-selector";
 import { FeaturedAgentsCarousel } from "../../components/featured-agents-carousel";
+import { TagSelector } from "../../components/tag-selector";
 import {
   AGENT_SORT_LABELS,
   AGENT_SORT_OPTIONS,
   AGENTS_PAGE_SIZE,
-  DEFAULT_AGENT_CATEGORY,
   DEFAULT_AGENT_SORT,
+  DEFAULT_AGENT_TAG,
 } from "../../config/agents";
 import { useAgents } from "../../hooks/use-agents";
 
@@ -42,7 +42,7 @@ export const Route = createFileRoute("/agents/")({
 function AgentsRoute() {
   const [query, setQuery] = useState("");
   const throttledQuery = useDebounce(query, 300);
-  const [category, setCategory] = useState<AgentCategoryFilter>(DEFAULT_AGENT_CATEGORY);
+  const [tag, setTag] = useState<AgentTagFilter>(DEFAULT_AGENT_TAG);
   const [sort, setSort] = useState<AgentSortId>(DEFAULT_AGENT_SORT);
 
   const {
@@ -53,15 +53,15 @@ function AgentsRoute() {
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
-  } = useAgents({ query: throttledQuery, category, sort, pageSize: AGENTS_PAGE_SIZE });
+  } = useAgents({ query: throttledQuery, tag, sort, pageSize: AGENTS_PAGE_SIZE });
 
   const agents = data?.pages.flatMap((page) => page.agents);
 
-  const hasActiveFilters = category !== "all" || query.trim() !== "";
+  const hasActiveFilters = tag !== "all" || query.trim() !== "";
 
   function clearFilters() {
     setQuery("");
-    setCategory(DEFAULT_AGENT_CATEGORY);
+    setTag(DEFAULT_AGENT_TAG);
   }
 
   return (
@@ -77,7 +77,7 @@ function AgentsRoute() {
         <div className="sticky top-0 z-10 flex w-full py-4 bg-background mask-b-from-90%">
           <div className="px-4 mx-auto flex w-full max-w-6xl flex-col gap-4">
             <div className="grid grid-cols-[1fr_auto] items-center gap-3">
-              <CategorySelector value={category} onValueChange={setCategory} />
+              <TagSelector value={tag} onValueChange={setTag} />
               <InputGroup className="col-span-2 row-start-2 md:col-span-1 md:col-start-1">
                 <InputGroupAddon align="inline-start">
                   <Search />

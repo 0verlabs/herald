@@ -27,7 +27,6 @@ export type SendTokenInput = z.infer<typeof sendTokenInputSchema>;
 export const sendTokenOutputSchema = z.object({
   address: z.string(),
   txHash: z.string(),
-  // explorerUrl: z.string(),
 });
 
 export type SendTokenOutput = z.infer<typeof sendTokenOutputSchema>;
@@ -105,7 +104,6 @@ export function createSendTokenTools({
       return {
         address,
         txHash,
-        // explorerUrl: chains[chain].txUrl(txHash),
       };
     },
   });

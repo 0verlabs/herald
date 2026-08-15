@@ -1,17 +1,14 @@
+import type { Agent as CoreAgent } from "@hrld/core";
+import { agentSchema as coreAgentSchema } from "@hrld/core";
 import { z } from "zod";
 
-export const agentIdSchema = z.number();
-export type AgentId = z.infer<typeof agentIdSchema>;
+export type { AgentId } from "@hrld/core";
 
-export const agentCategorySchema = z.enum([
-  "finance",
-  "productivity",
-  "developer-tools",
-  "writing",
-  "research",
-  "others",
-]);
-export type AgentCategory = z.infer<typeof agentCategorySchema>;
+/**
+ * TEMPORARY — everything below feeds the mock-backed marketplace and dies with
+ * the services redesign. The canonical Agent lives in `@hrld/core`; this module
+ * only layers mock-only pricing/service shapes on top of it.
+ */
 
 /** null = free. Assumed USDC — matches Agent.startsFrom and <UsdcLogo> in agent-card.tsx. */
 export const agentFeeSchema = z.number().nonnegative().nullable();
@@ -27,14 +24,8 @@ export const agentServiceSchema = z.object({
 });
 export type AgentService = z.infer<typeof agentServiceSchema>;
 
-export const agentSchema = z.object({
-  id: agentIdSchema,
-  name: z.string(),
-  description: z.string(),
-  image: z.string(),
-  category: agentCategorySchema,
-  score: z.number().min(0).max(100),
-  feedbackCounts: z.number().nonnegative(),
+/** Canonical Agent plus the mock-only, derived `startsFrom` display fee. */
+export const agentSchema = coreAgentSchema.extend({
   startsFrom: agentFeeSchema,
 });
-export type Agent = z.infer<typeof agentSchema>;
+export type Agent = CoreAgent & { startsFrom: AgentFee };

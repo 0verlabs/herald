@@ -5,22 +5,13 @@ import { chainSchema } from "./chain";
 export const agentIdSchema = z.templateLiteral([chainSchema, ":", z.number()]);
 export type AgentId = z.infer<typeof agentIdSchema>;
 
-export const agentCategorySchema = z.enum([
-  "finance",
-  "productivity",
-  "developer-tools",
-  "writing",
-  "research",
-  "others",
-]);
-export type AgentCategory = z.infer<typeof agentCategorySchema>;
-
 export const agentSchema = z.object({
   id: agentIdSchema,
   name: z.string(),
   description: z.string(),
   image: z.string(),
-  category: z.array(agentCategorySchema),
+  // Free-text tags self-declared in the agent's registration file.
+  tags: z.array(z.string()),
   score: z.number().min(0).max(100),
   feedbackCounts: z.number().nonnegative(),
 });

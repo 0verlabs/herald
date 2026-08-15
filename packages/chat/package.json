@@ -16,6 +16,7 @@
     "@ai-sdk/react": "4.0.40",
     "@clerk/react": "catalog:",
     "@hookform/resolvers": "catalog:",
+    "@hrld/core": "workspace:",
     "@hrld/ui": "workspace:",
     "@privy-io/react-auth": "catalog:",
     "@tanstack/react-query": "catalog:",

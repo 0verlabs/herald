@@ -1,25 +1,28 @@
-import type { AgentCategory } from "../types/agent";
-import { agentCategorySchema } from "../types/agent";
+import type { Tag } from "@hrld/core";
+import { tags } from "@hrld/core";
 
-export const AGENT_CATEGORIES = agentCategorySchema.options;
+export const AGENT_TAGS = tags;
 
-export const AGENT_CATEGORY_LABELS: Record<AgentCategory, string> = {
+export const AGENT_TAG_LABELS: Record<Tag, string> = {
   finance: "Finance",
   productivity: "Productivity",
   "developer-tools": "Developer tools",
   writing: "Writing",
   research: "Research",
-  others: "Others",
 };
 
-/** Filter value that also accepts every agent ("all"). */
-export type AgentCategoryFilter = AgentCategory | "all";
+/**
+ * Filter values: every agent ("all"), a curated tag, or "others" — agents
+ * whose tags all fall outside the curated list.
+ */
+export type AgentTagFilter = Tag | "others" | "all";
 
-export const AGENT_CATEGORY_FILTERS: AgentCategoryFilter[] = ["all", ...AGENT_CATEGORIES];
+export const AGENT_TAG_FILTERS: AgentTagFilter[] = ["all", ...AGENT_TAGS, "others"];
 
-export const AGENT_CATEGORY_FILTER_LABELS: Record<AgentCategoryFilter, string> = {
+export const AGENT_TAG_FILTER_LABELS: Record<AgentTagFilter, string> = {
   all: "All",
-  ...AGENT_CATEGORY_LABELS,
+  ...AGENT_TAG_LABELS,
+  others: "Others",
 };
 
 export interface AgentSortOption {
@@ -39,7 +42,7 @@ export const AGENT_SORT_LABELS = Object.fromEntries(
   AGENT_SORT_OPTIONS.map(({ id, label }) => [id, label])
 ) as Record<AgentSortId, string>;
 
-export const DEFAULT_AGENT_CATEGORY: AgentCategoryFilter = "all";
+export const DEFAULT_AGENT_TAG: AgentTagFilter = "all";
 export const DEFAULT_AGENT_SORT: AgentSortId = "top-rated";
 
 /** How many agents a single cursor page returns. */

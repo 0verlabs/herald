@@ -8,7 +8,7 @@ const avatar = (seed: string) => `https://api.dicebear.com/9.x/bottts-neutral/sv
  * to a specific caller.
  */
 export const agentServices: Record<AgentId, AgentService[]> = {
-  1: [
+  "0g-testnet:1": [
     {
       id: "1_1",
       name: "Spot Price",
@@ -111,7 +111,7 @@ export const agentServices: Record<AgentId, AgentService[]> = {
       fee: 0.01,
     },
   ],
-  2: [
+  "0g-testnet:2": [
     {
       id: "2_1",
       name: "Top Yields",
@@ -138,7 +138,7 @@ export const agentServices: Record<AgentId, AgentService[]> = {
       fee: 0.004,
     },
   ],
-  3: [
+  "0g-testnet:3": [
     {
       id: "3_1",
       name: "RPC Read",
@@ -192,7 +192,7 @@ export const agentServices: Record<AgentId, AgentService[]> = {
       fee: 0.0003,
     },
   ],
-  4: [
+  "0g-testnet:4": [
     {
       id: "4_1",
       name: "Summarize Thread",
@@ -220,7 +220,7 @@ export const agentServices: Record<AgentId, AgentService[]> = {
       fee: 0.0008,
     },
   ],
-  5: [
+  "0g-testnet:5": [
     {
       id: "5_1",
       name: "Headline Variants",
@@ -248,7 +248,7 @@ export const agentServices: Record<AgentId, AgentService[]> = {
       fee: 0.006,
     },
   ],
-  6: [
+  "0g-testnet:6": [
     {
       id: "6_1",
       name: "Summarize Paper",
@@ -276,7 +276,7 @@ export const agentServices: Record<AgentId, AgentService[]> = {
       fee: 0.02,
     },
   ],
-  7: [
+  "0g-testnet:7": [
     {
       id: "7_1",
       name: "Translate",
@@ -308,78 +308,78 @@ export const agentServices: Record<AgentId, AgentService[]> = {
 
 export const agents: Agent[] = [
   {
-    id: 1,
+    id: "0g-testnet:1",
     name: "ChainPulse",
     description:
       "Feeds other agents live crypto market data — spot prices, candles and derivatives flow — one micropayment per call, no API key required.",
     image: avatar("chainpulse"),
-    category: "finance",
+    tags: ["finance"],
     score: 96,
     feedbackCounts: 48_300,
     startsFrom: 0.0005,
   },
   {
-    id: 2,
+    id: "0g-testnet:2",
     name: "YieldScout",
     description:
       "Surveys DeFi yield opportunities for calling agents — pool scans, risk scores and APY history, priced per look-up.",
     image: avatar("yieldscout"),
-    category: "finance",
+    tags: ["finance"],
     score: 89,
     feedbackCounts: 12_600,
     startsFrom: 0.002,
   },
   {
-    id: 3,
+    id: "0g-testnet:3",
     name: "RelayNode",
     description:
       "Runs blockchain JSON-RPC feedbackCounts through a globally replicated node fleet — each call priced individually, no rate limits or subscriptions.",
     image: avatar("relaynode"),
-    category: "developer-tools",
+    tags: ["developer-tools"],
     score: 97,
     feedbackCounts: 61_200,
     startsFrom: 0.0002,
   },
   {
-    id: 4,
+    id: "0g-testnet:4",
     name: "ThreadSense",
     description:
       "Distills raw conversations for other agents — summaries, action items and urgency signals come back as structured data.",
     image: avatar("threadsense"),
-    category: "productivity",
+    tags: ["productivity"],
     score: 93,
     feedbackCounts: 30_500,
     startsFrom: 0.0008,
   },
   {
-    id: 5,
+    id: "0g-testnet:5",
     name: "CopySmith",
     description:
       "Writes short-form copy on demand for other agents — every generation priced per call, with tone and style controls.",
     image: avatar("copysmith"),
-    category: "writing",
+    tags: ["writing"],
     score: 90,
     feedbackCounts: 15_200,
     startsFrom: 0.004,
   },
   {
-    id: 6,
+    id: "0g-testnet:6",
     name: "PaperTrail",
     description:
       "Reads the research so calling agents don't have to — paper digests, literature scans and citations priced per call.",
     image: avatar("papertrail"),
-    category: "research",
+    tags: ["research"],
     score: 94,
     feedbackCounts: 10_300,
     startsFrom: 0.02,
   },
   {
-    id: 7,
+    id: "0g-testnet:7",
     name: "LinguaRelay",
     description:
       "Translates and localizes text for other agents — stateless feedbackCounts that carry no memory of the caller between requests.",
     image: avatar("linguarelay"),
-    category: "others",
+    tags: ["translation"],
     score: 95,
     feedbackCounts: 25_700,
     startsFrom: 0.002,

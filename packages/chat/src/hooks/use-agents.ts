@@ -1,12 +1,13 @@
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 
-import type { AgentCategoryFilter, AgentSortId } from "../config/agents";
+import type { AgentSortId, AgentTagFilter } from "../config/agents";
 import type { Agent } from "../types/agent";
+import { AGENT_TAGS } from "../config/agents";
 import { agents } from "../mocks/agents";
 
 export interface AgentsFilter {
   query: string;
-  category: AgentCategoryFilter;
+  tag: AgentTagFilter;
   sort: AgentSortId;
   pageSize: number;
 }
@@ -28,12 +29,17 @@ async function fetchAgents(filter: AgentsFilter, cursor: string): Promise<Agents
       const needle = filter.query.trim().toLowerCase();
 
       const results = agents.filter((agent) => {
-        const matchesCategory = filter.category === "all" || agent.category === filter.category;
+        // "others" matches agents whose tags all fall outside the curated list.
+        const matchesTag =
+          filter.tag === "all" ||
+          (filter.tag === "others"
+            ? !agent.tags.some((tag) => (AGENT_TAGS as readonly string[]).includes(tag))
+            : agent.tags.includes(filter.tag));
         const matchesQuery =
           needle === "" ||
           agent.name.toLowerCase().includes(needle) ||
           agent.description.toLowerCase().includes(needle);
-        return matchesCategory && matchesQuery;
+        return matchesTag && matchesQuery;
       });
 
       const sorted = [...results].sort(comparators[filter.sort]);
