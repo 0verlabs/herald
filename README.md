@@ -20,6 +20,7 @@ Requires [Bun](https://bun.com).
 
 ```sh
 bun install
+cp packages/agent/.env.example packages/agent/.env
 cp packages/api/.env.example packages/api/.env
 cp packages/db/.env.example packages/db/.env
 cp packages/indexer/.env.example packages/indexer/.env

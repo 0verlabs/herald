@@ -28,9 +28,10 @@ export default defineConfig(({ mode }) => {
     server: {
       proxy: {
         "/api": {
-          target: env.VITE_API_URL,
+          target: env.VITE_AGENT_URL,
           changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api/, ""),
+          // `@hrld/agent` serves the chat stream at its root.
+          rewrite: (path) => path.replace(/^\/api/, "") || "/",
         },
       },
     },

@@ -2,7 +2,7 @@ import { Send } from "lucide-react";
 
 import type { ToolRenderer } from "../../lib/ai/tool-renderers";
 
-/** Mirrors packages/api/src/tools/send-token.ts. */
+/** Mirrors packages/agent/src/tools/send-token.ts. */
 interface SendTokenInput {
   chain: "0g-testnet";
   to: string;

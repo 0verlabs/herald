@@ -2,7 +2,7 @@ import { Wallet } from "lucide-react";
 
 import type { ToolRenderer } from "../../lib/ai/tool-renderers";
 
-/** Mirrors packages/api/src/tools/check-balance.ts. */
+/** Mirrors packages/agent/src/tools/check-balance.ts. */
 interface CheckBalanceInput {
   chain: "0g-testnet";
   hideZeroBalance: boolean;
