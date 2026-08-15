@@ -1,5 +1,5 @@
 {
-  "name": "@hrld/api",
+  "name": "@hrld/agent",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -19,11 +19,18 @@
     "typescript": "catalog:"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.19",
+    "@ai-sdk/openai-compatible": "3.0.14",
+    "@clerk/backend": "catalog:",
+    "@clerk/hono": "0.1.58",
     "@hono/zod-validator": "0.9.0",
+    "@hrld/core": "workspace:",
     "@hrld/db": "workspace:",
     "@privy-io/node": "catalog:",
+    "ai": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "catalog:",
+    "viem": "catalog:",
     "zod": "catalog:"
   }
 }

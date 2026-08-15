@@ -1,3 +1,4 @@
+import type { PrivyClient } from "@privy-io/node";
 import { zValidator } from "@hono/zod-validator";
 import { userWallets } from "@hrld/db";
 import { and, eq } from "drizzle-orm";
@@ -29,13 +30,14 @@ const webhook = new Hono<{ Variables: GlobalVariables }>().post(
   async (c) => {
     const privy = c.var.privyClient;
 
-    const payload = await c.req.json();
+    // The raw body, not the parsed object — re-serializing would break the
+    // signature.
+    const payload = await c.req.text();
     const headers = c.req.valid("header");
 
-    const verifiedPayload = privy.webhooks().verify({
-      payload,
-      headers,
-    });
+    const verifiedPayload = verifyPayload(privy, payload, headers);
+    if (!verifiedPayload)
+      return badRequest(c, { code: "invalid_signature", message: "Invalid webhook signature" });
 
     switch (verifiedPayload.type) {
       case "user.wallet_created": {
@@ -76,3 +78,17 @@ const webhook = new Hono<{ Variables: GlobalVariables }>().post(
 );
 
 export default webhook;
+
+// `verify` throws on a signature mismatch, a stale timestamp or an unparseable
+// body — all of which are the caller's fault, not ours.
+function verifyPayload(
+  privy: PrivyClient,
+  payload: string,
+  headers: z.infer<typeof privyWebhookHeadersSchema>
+) {
+  try {
+    return privy.webhooks().verify({ payload, headers });
+  } catch {
+    return null;
+  }
+}

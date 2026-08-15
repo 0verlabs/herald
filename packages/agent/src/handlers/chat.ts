@@ -44,11 +44,7 @@ const chat = new Hono<{ Variables: GlobalVariables }>().post(
     publishableKey: env.CLERK_PUBLISHABLE_KEY,
     secretKey: env.CLERK_SECRET_KEY,
   }),
-  privy({
-    appId: env.PRIVY_APP_ID,
-    appSecret: env.PRIVY_APP_SECRET,
-    webhookSigningSecret: env.PRIVY_WEBHOOK_SIGNING_SECRET,
-  }),
+  privy({ appId: env.PRIVY_APP_ID, appSecret: env.PRIVY_APP_SECRET }),
   zValidator("json", chatRequestSchema),
   async (c) => {
     const { userId } = getAuth(c);

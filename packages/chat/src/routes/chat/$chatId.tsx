@@ -56,7 +56,7 @@ function ChatScreen({ chatId }: { chatId: string }) {
   const { chats, renameChat, consumePendingMessage } = useChats();
   const summary = chats.find((chat) => chat.id === chatId);
 
-  const [transport] = useState(() => new DefaultChatTransport<ChatUIMessage>({ api: "/api/chat" }));
+  const [transport] = useState(() => new DefaultChatTransport<ChatUIMessage>({ api: "/api" }));
   const { model, setModel } = useModel();
 
   const { openSignIn } = useClerk();
