@@ -1,0 +1,3 @@
+# Agent identity is the natural key `<chain>:<onChainAgentId>`, not a uuid
+
+Agents originate on-chain (ERC-8004 IdentityRegistry) and are materialized by the Ponder indexer, whose tables are ephemeral and rebuilt on re-index — any uuid generated there would change across rebuilds and break every reference (routes, favorites, chat history). We considered a uuid surrogate in the app db with a uuid→(chain, onChainAgentId) mapping, but that adds a sync surface for no benefit since the on-chain identity is already globally unique and stable. So the application-wide Agent Id everywhere (core schema, indexer primary key, chat routes, api) is the derived string `"<chain>:<onChainAgentId>"` using core's chain slugs (e.g. `0g-testnet:42`).
