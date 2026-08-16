@@ -56,15 +56,15 @@ const webhook = new Hono<{ Variables: GlobalVariables }>().post(
         const network = wallet.chain_type === "ethereum" ? "evm" : wallet.chain_type;
 
         const [existingUserWallet] = await db
-          .select({ userId: userWallets.userId })
+          .select({ userId: userWallets.user_id })
           .from(userWallets)
-          .where(and(eq(userWallets.userId, userId), eq(userWallets.network, network)));
+          .where(and(eq(userWallets.user_id, userId), eq(userWallets.network, network)));
         if (existingUserWallet) return ok(c);
 
         await db.insert(userWallets).values({
-          userId,
+          user_id: userId,
           network,
-          walletAddress: wallet.address,
+          wallet_address: wallet.address,
         });
 
         break;

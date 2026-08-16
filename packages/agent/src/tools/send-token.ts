@@ -56,10 +56,10 @@ export function createSendTokenTools({
 
       const [wallet] = await db
         .select({
-          address: userWallets.walletAddress,
+          address: userWallets.wallet_address,
         })
         .from(userWallets)
-        .where(and(eq(userWallets.userId, userId), eq(userWallets.network, chainConfig.network)));
+        .where(and(eq(userWallets.user_id, userId), eq(userWallets.network, chainConfig.network)));
       if (!wallet) throw new Error("Wallet not initialized for this user");
 
       const privyWallet = await privy.wallets().getWalletByAddress({

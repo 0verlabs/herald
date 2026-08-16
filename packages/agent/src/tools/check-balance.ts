@@ -46,10 +46,10 @@ export function createCheckBalanceTools({ db, userId }: CreateCheckBalanceToolAr
     execute: async ({ chain, hideZeroBalance }) => {
       const [wallet] = await db
         .select({
-          address: userWallets.walletAddress,
+          address: userWallets.wallet_address,
         })
         .from(userWallets)
-        .where(and(eq(userWallets.userId, userId), eq(userWallets.network, "evm")));
+        .where(and(eq(userWallets.user_id, userId), eq(userWallets.network, "evm")));
       if (!wallet) throw new Error("Wallet not initialized for this user");
 
       const address = getAddress(wallet.address);

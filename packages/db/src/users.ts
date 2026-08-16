@@ -5,10 +5,10 @@ import { pgTable, primaryKey, varchar } from "drizzle-orm/pg-core";
 export const userWallets = pgTable(
   "user_wallets",
   {
-    userId: varchar("user_id").notNull(),
-    network: varchar("network", { enum: supportedNetworks }).notNull(),
-    walletAddress: varchar("wallet_address").unique().notNull(),
+    user_id: varchar().notNull(),
+    network: varchar({ enum: supportedNetworks }).notNull(),
+    wallet_address: varchar().unique().notNull(),
     ...timestamps,
   },
-  (table) => [primaryKey({ columns: [table.userId, table.network] })]
+  (table) => [primaryKey({ columns: [table.user_id, table.network] })]
 );

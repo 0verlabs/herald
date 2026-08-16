@@ -32,11 +32,11 @@ export function createGetWalletsTools({ db, userId }: CreateGetWalletsToolArgs) 
     execute: async () => {
       const wallets = await db
         .select({
-          address: userWallets.walletAddress,
+          address: userWallets.wallet_address,
           network: userWallets.network,
         })
         .from(userWallets)
-        .where(eq(userWallets.userId, userId));
+        .where(eq(userWallets.user_id, userId));
 
       return wallets.map((wallet) => ({
         network: wallet.network,
