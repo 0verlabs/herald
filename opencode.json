@@ -1,0 +1,9 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "goldsky": {
+      "type": "remote",
+      "url": "https://docs.goldsky.com/mcp"
+    }
+  }
+}
