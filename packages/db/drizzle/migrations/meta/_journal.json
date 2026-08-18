@@ -5,8 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1786225114272,
-      "tag": "0000_initial_user_wallets_schema",
+      "when": 1787081916903,
+      "tag": "0000_initial_db_schema",
       "breakpoints": true
     }
   ]

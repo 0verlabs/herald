@@ -16,23 +16,5 @@ services:
       timeout: 5s
       retries: 5
 
-  herald-agents-db:
-    image: postgres:18-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: herald-agents
-    ports:
-      - "5433:5432"
-    volumes:
-      - herald-agents-db-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
 volumes:
   herald-db-data:
-  herald-agents-db-data:

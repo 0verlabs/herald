@@ -1,11 +1,124 @@
 {
-  "id": "4c3c0651-433f-470a-b453-48aeff6901cd",
+  "id": "fb996f2e-de76-4481-8e23-5624727c38c7",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.user_wallets": {
-      "name": "user_wallets",
+    "public.agents": {
+      "name": "agents",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "chain": {
+          "name": "chain",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "onchain_agent_id": {
+          "name": "onchain_agent_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "image": {
+          "name": "image",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tags": {
+          "name": "tags",
+          "type": "varchar[]",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'{}'"
+        },
+        "score": {
+          "name": "score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "feedback_counts": {
+          "name": "feedback_counts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "wallet": {
+          "name": "wallet",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "owner": {
+          "name": "owner",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "agents_chain_idx": {
+          "name": "agents_chain_idx",
+          "columns": [
+            {
+              "expression": "chain",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "agents_onchain_agent_id_idx": {
+          "name": "agents_onchain_agent_id_idx",
+          "columns": [
+            {
+              "expression": "onchain_agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.wallets": {
+      "name": "wallets",
       "schema": "",
       "columns": {
         "user_id": {
@@ -20,8 +133,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "wallet_address": {
-          "name": "wallet_address",
+        "address": {
+          "name": "address",
           "type": "varchar",
           "primaryKey": false,
           "notNull": true
@@ -42,16 +155,16 @@
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {
-        "user_wallets_user_id_network_pk": {
-          "name": "user_wallets_user_id_network_pk",
+        "wallets_user_id_network_pk": {
+          "name": "wallets_user_id_network_pk",
           "columns": ["user_id", "network"]
         }
       },
       "uniqueConstraints": {
-        "user_wallets_wallet_address_unique": {
-          "name": "user_wallets_wallet_address_unique",
+        "wallets_address_unique": {
+          "name": "wallets_address_unique",
           "nullsNotDistinct": false,
-          "columns": ["wallet_address"]
+          "columns": ["address"]
         }
       },
       "policies": {},

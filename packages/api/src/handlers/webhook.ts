@@ -1,20 +1,13 @@
-import type { PrivyClient } from "@privy-io/node";
 import { zValidator } from "@hono/zod-validator";
-import { userWallets } from "@hrld/db";
+import { wallets } from "@hrld/db";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
-import { z } from "zod";
 
 import type { GlobalVariables } from "../vars";
 import { env } from "../env";
+import { privyWebhookHeadersSchema, verifyWebhook } from "../lib/privy";
 import { privy } from "../middlewares/privy";
 import { badRequest, ok } from "../utils/response";
-
-const privyWebhookHeadersSchema = z.object({
-  "svix-id": z.string(),
-  "svix-signature": z.string(),
-  "svix-timestamp": z.string(),
-});
 
 const webhook = new Hono<{ Variables: GlobalVariables }>().post(
   "/privy",
@@ -35,7 +28,7 @@ const webhook = new Hono<{ Variables: GlobalVariables }>().post(
     const payload = await c.req.text();
     const headers = c.req.valid("header");
 
-    const verifiedPayload = verifyPayload(privy, payload, headers);
+    const verifiedPayload = verifyWebhook({ privy, headers, payload });
     if (!verifiedPayload)
       return badRequest(c, { code: "invalid_signature", message: "Invalid webhook signature" });
 
@@ -55,16 +48,16 @@ const webhook = new Hono<{ Variables: GlobalVariables }>().post(
         const userId = auth.custom_user_id;
         const network = wallet.chain_type === "ethereum" ? "evm" : wallet.chain_type;
 
-        const [existingUserWallet] = await db
-          .select({ userId: userWallets.user_id })
-          .from(userWallets)
-          .where(and(eq(userWallets.user_id, userId), eq(userWallets.network, network)));
-        if (existingUserWallet) return ok(c);
+        const [existingWallet] = await db
+          .select({ userId: wallets.user_id })
+          .from(wallets)
+          .where(and(eq(wallets.user_id, userId), eq(wallets.network, network)));
+        if (existingWallet) return ok(c);
 
-        await db.insert(userWallets).values({
+        await db.insert(wallets).values({
           user_id: userId,
           network,
-          wallet_address: wallet.address,
+          address: wallet.address,
         });
 
         break;
@@ -77,18 +70,4 @@ const webhook = new Hono<{ Variables: GlobalVariables }>().post(
   }
 );
 
-export default webhook;
-
-// `verify` throws on a signature mismatch, a stale timestamp or an unparseable
-// body — all of which are the caller's fault, not ours.
-function verifyPayload(
-  privy: PrivyClient,
-  payload: string,
-  headers: z.infer<typeof privyWebhookHeadersSchema>
-) {
-  try {
-    return privy.webhooks().verify({ payload, headers });
-  } catch {
-    return null;
-  }
-}
+export { webhook };
