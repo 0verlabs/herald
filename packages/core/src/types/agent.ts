@@ -2,15 +2,19 @@ import { z } from "zod";
 
 import { chainSchema } from "./chain";
 
-export const agentIdSchema = z.templateLiteral([chainSchema, ":", z.number()]);
+export const onchainAgentIdSchema = z.string();
+export type OnchainAgentId = z.infer<typeof onchainAgentIdSchema>;
+
+export const agentIdSchema = z.templateLiteral([chainSchema, ":", onchainAgentIdSchema]);
 export type AgentId = z.infer<typeof agentIdSchema>;
 
 export const agentSchema = z.object({
   id: agentIdSchema,
+  chain: chainSchema,
+  onchainAgentId: onchainAgentIdSchema,
   name: z.string(),
   description: z.string(),
   image: z.string(),
-  // Free-text tags self-declared in the agent's registration file.
   tags: z.array(z.string()),
   score: z.number().min(0).max(100),
   feedbackCounts: z.number().nonnegative(),

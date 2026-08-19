@@ -44,10 +44,12 @@
       "version": "0.0.0",
       "dependencies": {
         "@hono/zod-validator": "0.9.0",
+        "@hrld/core": "workspace:",
         "@hrld/db": "workspace:",
         "@privy-io/node": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "catalog:",
+        "viem": "catalog:",
         "zod": "catalog:",
       },
       "devDependencies": {
@@ -122,7 +124,7 @@
         "typescript": "catalog:",
       },
     },
-    "packages/indexer": {
+    "packages/indexer_old": {
       "name": "@hrld/indexer",
       "version": "0.0.1",
       "dependencies": {
@@ -522,7 +524,7 @@
 
     "@hrld/db": ["@hrld/db@workspace:packages/db"],
 
-    "@hrld/indexer": ["@hrld/indexer@workspace:packages/indexer"],
+    "@hrld/indexer": ["@hrld/indexer@workspace:packages/indexer_old"],
 
     "@hrld/ui": ["@hrld/ui@workspace:packages/ui"],
 
