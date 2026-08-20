@@ -37,10 +37,14 @@ ponder.on("IdentityRegistry:Registered", async ({ context, event }) => {
 ponder.on("IdentityRegistry:URIUpdated", async ({ context, event }) => {
   const chain = getChainById(context.chain.id);
   if (!chain) return;
+
   const agentRegistrationFile = await getAgentRegistrationFileFromUri(event.args.newURI);
   if (!agentRegistrationFile) return;
 
   const agentId = formatAgentId(chain, event.args.agentId);
+
+  const existingAgent = await context.db.find(agent, { id: agentId });
+  if (!existingAgent) return;
 
   await context.db.update(agent, { id: agentId }).set({
     name: agentRegistrationFile.name,
@@ -64,6 +68,9 @@ ponder.on("IdentityRegistry:MetadataSet", async ({ context, event }) => {
 
   const agentId = formatAgentId(chain, event.args.agentId);
 
+  const existingAgent = await context.db.find(agent, { id: agentId });
+  if (!existingAgent) return;
+
   await context.db.update(agent, { id: agentId }).set({ wallet: isEmptyAddress ? null : address });
 });
 
@@ -75,6 +82,9 @@ ponder.on("IdentityRegistry:Transfer", async ({ context, event }) => {
   if (!chain) return;
 
   const agentId = formatAgentId(chain, event.args.tokenId);
+
+  const existingAgent = await context.db.find(agent, { id: agentId });
+  if (!existingAgent) return;
 
   await context.db
     .update(agent, { id: agentId })
