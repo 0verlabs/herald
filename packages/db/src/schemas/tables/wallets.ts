@@ -1,8 +1,10 @@
 import { supportedNetworks } from "@hrld/core";
-import { timestamps } from "@hrld/db/utils";
-import { pgTable, primaryKey, varchar } from "drizzle-orm/pg-core";
+import { primaryKey, varchar } from "drizzle-orm/pg-core";
 
-export const wallets = pgTable(
+import { timestamps } from "../../utils/timestamps";
+import { appSchema } from "../schema";
+
+export const wallets = appSchema.table(
   "wallets",
   {
     user_id: varchar().notNull(),

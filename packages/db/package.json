@@ -4,8 +4,7 @@
   "type": "module",
   "private": true,
   "exports": {
-    ".": "./src/index.ts",
-    "./utils": "./src/utils/index.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "check": "bun run check:lint && bun run check:types",
@@ -16,6 +15,8 @@
   },
   "dependencies": {
     "@hrld/core": "workspace:*",
+    "@hrld/indexer": "workspace:*",
+    "@ponder/client": "0.17.8",
     "drizzle-orm": "catalog:"
   },
   "devDependencies": {

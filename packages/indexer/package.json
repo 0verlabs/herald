@@ -3,12 +3,18 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "exports": {
+    "./schema": "./ponder.schema.ts"
+  },
   "scripts": {
     "dev": "bun --bun ponder dev",
     "start": "bun --bun ponder start",
     "db": "bun --bun ponder db",
     "codegen": "bun --bun ponder codegen",
-    "typecheck": "tsc"
+    "check": "bun run check:lint && bun run check:types",
+    "check:lint": "biome check . --write",
+    "check:types": "tsc --noEmit",
+    "check:staged": "biome check . --write --staged --files-ignore-unknown=true --no-errors-on-unmatched"
   },
   "dependencies": {
     "@hrld/core": "workspace:*",

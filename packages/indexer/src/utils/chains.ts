@@ -1,4 +1,4 @@
-import { Chain } from "@hrld/core";
+import type { Chain } from "@hrld/core";
 
 export const CHAIN_BY_ID = {
   16661: "0g",

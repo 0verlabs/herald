@@ -1,4 +1,5 @@
-import { Chain } from "@hrld/core";
+import type { Chain } from "@hrld/core";
+
 import { agentRegistrationFileSchema, agentUriSchema } from "../types/identity-registry";
 
 export const formatAgentId = (chain: Chain, onchainAgentId: bigint | number | string) =>

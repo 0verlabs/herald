@@ -1,5 +1,5 @@
 import { zValidator } from "@hono/zod-validator";
-import { wallets } from "@hrld/db";
+import { schema } from "@hrld/db";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 
@@ -49,12 +49,12 @@ const webhook = new Hono<{ Variables: GlobalVariables }>().post(
         const network = wallet.chain_type === "ethereum" ? "evm" : wallet.chain_type;
 
         const [existingWallet] = await db
-          .select({ userId: wallets.user_id })
-          .from(wallets)
-          .where(and(eq(wallets.user_id, userId), eq(wallets.network, network)));
+          .select({ userId: schema.wallets.user_id })
+          .from(schema.wallets)
+          .where(and(eq(schema.wallets.user_id, userId), eq(schema.wallets.network, network)));
         if (existingWallet) return ok(c);
 
-        await db.insert(wallets).values({
+        await db.insert(schema.wallets).values({
           user_id: userId,
           network,
           address: wallet.address,
