@@ -1,5 +1,5 @@
 import { createConfig } from "ponder";
-import { zeroGTestnet } from "viem/chains";
+import { zeroGMainnet, zeroGTestnet } from "viem/chains";
 
 import { identityRegistryAbi } from "./abis/IdentityRegistry";
 // import { reputationRegistryAbi } from "./abis/ReputationRegistry";
@@ -10,6 +10,10 @@ export default createConfig({
     connectionString: process.env.DATABASE_URL!,
   },
   chains: {
+    zeroGMainnet: {
+      id: zeroGMainnet.id,
+      rpc: process.env.RPC_URL_16661!,
+    },
     zeroGTestnet: {
       id: zeroGTestnet.id,
       rpc: process.env.RPC_URL_16602!,
@@ -17,10 +21,17 @@ export default createConfig({
   },
   contracts: {
     IdentityRegistry: {
-      chain: "zeroGTestnet",
       abi: identityRegistryAbi,
-      address: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
-      startBlock: "latest",
+      chain: {
+        zeroGMainnet: {
+          address: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+          startBlock: "latest",
+        },
+        zeroGTestnet: {
+          address: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+          startBlock: "latest",
+        },
+      },
     },
     // ReputationRegistry: {
     //   chain: "zeroGTestnet",

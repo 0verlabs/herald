@@ -3,20 +3,21 @@ import { index, onchainTable } from "ponder";
 export const agent = onchainTable(
   "agents",
   (t) => ({
-    // Canonical Agent Id: "<chain>:<onChainAgentId>", e.g. "0g-testnet:42".
     id: t.varchar().primaryKey(),
     chain: t.varchar().notNull(),
-    onChainAgentId: t.bigint("on_chain_agent_id").notNull(),
+    onchain_agent_id: t.varchar().notNull(),
     name: t.text().notNull(),
     description: t.text().notNull(),
     image: t.text(),
-    tags: t.text().array().default([]),
+    tags: t.varchar().array().default([]),
     score: t.integer().default(0),
-    feedbackCounts: t.integer("feedback_counts").default(0),
+    feedback_counts: t.integer().default(0),
+    supported_trusts: t.varchar().array().default([]),
     wallet: t.varchar(),
     owner: t.varchar().notNull(),
   }),
   (t) => ({
     chainIdx: index("agents_chain_idx").on(t.chain),
+    onchainAgentIdIdx: index("agents_onchain_agent_id_idx").on(t.onchain_agent_id),
   })
 );

@@ -5,7 +5,7 @@ import { chainSchema } from "./chain";
 export const onchainAgentIdSchema = z.string();
 export type OnchainAgentId = z.infer<typeof onchainAgentIdSchema>;
 
-export const agentIdSchema = z.templateLiteral([chainSchema, ":", onchainAgentIdSchema]);
+export const agentIdSchema = z.templateLiteral([chainSchema, "_", onchainAgentIdSchema]);
 export type AgentId = z.infer<typeof agentIdSchema>;
 
 export const agentSchema = z.object({
