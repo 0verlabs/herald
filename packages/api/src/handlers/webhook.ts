@@ -1,5 +1,5 @@
 import { zValidator } from "@hono/zod-validator";
-import { schema } from "@hrld/db";
+import * as schema from "@hrld/db";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 
