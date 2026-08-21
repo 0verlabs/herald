@@ -17,7 +17,6 @@
     "check:staged": "biome check . --write --staged --files-ignore-unknown=true --no-errors-on-unmatched"
   },
   "dependencies": {
-    "@hrld/core": "workspace:*",
     "ponder": "^0.17.5",
     "hono": "catalog:",
     "uuid": "catalog:",

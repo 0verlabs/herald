@@ -128,7 +128,6 @@
       "name": "@hrld/indexer",
       "version": "0.0.1",
       "dependencies": {
-        "@hrld/core": "workspace:*",
         "hono": "catalog:",
         "ponder": "^0.17.5",
         "uuid": "catalog:",

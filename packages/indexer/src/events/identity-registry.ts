@@ -1,11 +1,11 @@
-import type { AgentApiService, AgentMcpService, AgentService } from "@hrld/core";
 import { ponder } from "ponder:registry";
 import { agent, agentApiService, agentMcpService } from "ponder:schema";
-import { agentApiServiceSchema, agentMcpServiceSchema } from "@hrld/core";
 import { eq } from "ponder";
 import { bytesToHex, hexToBytes, isAddressEqual, slice, zeroAddress } from "viem";
 
-import { formatAgentId, resolveAgentRegistrationFileFromUri } from "../utils/agents";
+import type { AgentApiService, AgentMcpService, AgentService } from "../types/identity-registry";
+import { agentApiServiceSchema, agentMcpServiceSchema } from "../types/identity-registry";
+import { resolveAgentRegistrationFileFromUri } from "../utils/agents";
 import { getChainById } from "../utils/chains";
 
 ponder.on("IdentityRegistry:Registered", async ({ context, event }) => {
@@ -46,7 +46,7 @@ ponder.on("IdentityRegistry:URIUpdated", async ({ context, event }) => {
   const agentRegistrationFile = await resolveAgentRegistrationFileFromUri(event.args.newURI);
   if (!agentRegistrationFile) return;
 
-  const agentId = formatAgentId(chain, event.args.agentId);
+  const agentId = event.args.agentId.toString();
 
   const [existingAgent] = await context.db.sql
     .select({ id: agent.id })
@@ -79,7 +79,7 @@ ponder.on("IdentityRegistry:MetadataSet", async ({ context, event }) => {
 
   const isEmptyAddress = isAddressEqual(address, zeroAddress);
 
-  const agentId = formatAgentId(chain, event.args.agentId);
+  const agentId = event.args.agentId.toString();
 
   const [existingAgent] = await context.db.sql
     .select({ id: agent.id })
@@ -99,7 +99,7 @@ ponder.on("IdentityRegistry:Transfer", async ({ context, event }) => {
   const chain = getChainById(context.chain.id);
   if (!chain) return;
 
-  const agentId = formatAgentId(chain, event.args.tokenId);
+  const agentId = event.args.tokenId.toString();
 
   const [existingAgent] = await context.db.sql
     .select({ id: agent.id })
