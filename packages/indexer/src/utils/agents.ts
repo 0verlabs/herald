@@ -1,9 +1,4 @@
-import type { Chain } from "@hrld/core";
-
 import { agentRegistrationFileSchema, agentUriSchema } from "../types/identity-registry";
-
-export const formatAgentId = (chain: Chain, onchainAgentId: bigint | number | string) =>
-  `${chain}_${onchainAgentId.toString()}` as const;
 
 export const resolveAgentRegistrationFileFromUri = async (uri: string) => {
   const agentUriParsed = agentUriSchema.safeParse(uri);

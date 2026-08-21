@@ -2,14 +2,9 @@ import { z } from "zod";
 
 import { chainSchema } from "./chain";
 
-export const onchainAgentIdSchema = z.string();
-
-export const agentIdSchema = z.templateLiteral([chainSchema, "_", onchainAgentIdSchema]);
-
 export const agentSchema = z.object({
-  id: agentIdSchema,
+  id: z.string(),
   chain: chainSchema,
-  onchainAgentId: onchainAgentIdSchema,
   name: z.string(),
   description: z.string(),
   image: z.string(),
@@ -38,8 +33,6 @@ export const agentMcpServiceSchema = z.object({
 
 export const agentServiceSchema = z.union([agentApiServiceSchema, agentMcpServiceSchema]);
 
-export type OnchainAgentId = z.infer<typeof onchainAgentIdSchema>;
-export type AgentId = z.infer<typeof agentIdSchema>;
 export type Agent = z.infer<typeof agentSchema>;
 export type AgentApiService = z.infer<typeof agentApiServiceSchema>;
 export type AgentMcpService = z.infer<typeof agentMcpServiceSchema>;
