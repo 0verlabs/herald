@@ -1,8 +1,8 @@
 import { supportedNetworks } from "@hrld/core";
 import { primaryKey, varchar } from "drizzle-orm/pg-core";
 
-import { timestamps } from "../../utils/timestamps";
 import { appSchema } from "../schema";
+import { timestamps } from "../utils/timestamps";
 
 export const wallets = appSchema.table(
   "wallets",

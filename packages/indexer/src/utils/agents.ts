@@ -5,7 +5,7 @@ import { agentRegistrationFileSchema, agentUriSchema } from "../types/identity-r
 export const formatAgentId = (chain: Chain, onchainAgentId: bigint | number | string) =>
   `${chain}_${onchainAgentId.toString()}` as const;
 
-export const getAgentRegistrationFileFromUri = async (uri: string) => {
+export const resolveAgentRegistrationFileFromUri = async (uri: string) => {
   const agentUriParsed = agentUriSchema.safeParse(uri);
   if (!agentUriParsed.success) return null;
 

@@ -1,57 +1,70 @@
+import type { AgentApiService, AgentMcpService, AgentService } from "@hrld/core";
 import { ponder } from "ponder:registry";
-import { agent } from "ponder:schema";
+import { agent, agentApiService, agentMcpService } from "ponder:schema";
+import { agentApiServiceSchema, agentMcpServiceSchema } from "@hrld/core";
+import { eq } from "ponder";
 import { bytesToHex, hexToBytes, isAddressEqual, slice, zeroAddress } from "viem";
 
-import { formatAgentId, getAgentRegistrationFileFromUri } from "../utils/agents";
+import { formatAgentId, resolveAgentRegistrationFileFromUri } from "../utils/agents";
 import { getChainById } from "../utils/chains";
 
 ponder.on("IdentityRegistry:Registered", async ({ context, event }) => {
   const chain = getChainById(context.chain.id);
   if (!chain) return;
 
-  const agentRegistrationFile = await getAgentRegistrationFileFromUri(event.args.agentURI);
+  const agentRegistrationFile = await resolveAgentRegistrationFileFromUri(event.args.agentURI);
   if (!agentRegistrationFile) return;
 
   const owner = event.args.owner.toLowerCase();
 
-  const onchainAgentId = event.args.agentId.toString();
-  const agentId = formatAgentId(chain, onchainAgentId);
+  const agentId = event.args.agentId.toString();
 
   await context.db
     .insert(agent)
     .values({
-      id: agentId,
       chain,
-      onchain_agent_id: onchainAgentId,
+      agent_id: agentId,
       name: agentRegistrationFile.name,
       description: agentRegistrationFile.description,
       image: agentRegistrationFile.image,
       tags: agentRegistrationFile.tags,
       supported_trusts: agentRegistrationFile.supportedTrust,
+      x402_support: agentRegistrationFile.x402Support,
+      active: agentRegistrationFile.active,
       wallet: owner,
       owner,
     })
     .onConflictDoNothing();
+
+  await syncAgentServices(context.db, agentId, agentRegistrationFile.services ?? []);
 });
 
 ponder.on("IdentityRegistry:URIUpdated", async ({ context, event }) => {
   const chain = getChainById(context.chain.id);
   if (!chain) return;
 
-  const agentRegistrationFile = await getAgentRegistrationFileFromUri(event.args.newURI);
+  const agentRegistrationFile = await resolveAgentRegistrationFileFromUri(event.args.newURI);
   if (!agentRegistrationFile) return;
 
   const agentId = formatAgentId(chain, event.args.agentId);
 
-  const existingAgent = await context.db.find(agent, { id: agentId });
+  const [existingAgent] = await context.db.sql
+    .select({ id: agent.id })
+    .from(agent)
+    .where(eq(agent.agent_id, agentId));
   if (!existingAgent) return;
 
-  await context.db.update(agent, { id: agentId }).set({
+  await context.db.update(agent, { id: existingAgent.id }).set({
     name: agentRegistrationFile.name,
     description: agentRegistrationFile.description,
     image: agentRegistrationFile.image,
     tags: agentRegistrationFile.tags,
+    supported_trusts: agentRegistrationFile.supportedTrust,
+    x402_support: agentRegistrationFile.x402Support,
+    active: agentRegistrationFile.active,
   });
+
+  await syncAgentServices(context.db, agentId, agentRegistrationFile.services ?? []);
 });
 
 ponder.on("IdentityRegistry:MetadataSet", async ({ context, event }) => {
@@ -68,10 +81,15 @@ ponder.on("IdentityRegistry:MetadataSet", async ({ context, event }) => {
 
   const agentId = formatAgentId(chain, event.args.agentId);
 
-  const existingAgent = await context.db.find(agent, { id: agentId });
+  const [existingAgent] = await context.db.sql
+    .select({ id: agent.id })
+    .from(agent)
+    .where(eq(agent.agent_id, agentId));
   if (!existingAgent) return;
 
-  await context.db.update(agent, { id: agentId }).set({ wallet: isEmptyAddress ? null : address });
+  await context.db
+    .update(agent, { id: existingAgent.id })
+    .set({ wallet: isEmptyAddress ? null : address });
 });
 
 ponder.on("IdentityRegistry:Transfer", async ({ context, event }) => {
@@ -83,10 +101,51 @@ ponder.on("IdentityRegistry:Transfer", async ({ context, event }) => {
 
   const agentId = formatAgentId(chain, event.args.tokenId);
 
-  const existingAgent = await context.db.find(agent, { id: agentId });
+  const [existingAgent] = await context.db.sql
+    .select({ id: agent.id })
+    .from(agent)
+    .where(eq(agent.agent_id, agentId));
   if (!existingAgent) return;
 
   await context.db
-    .update(agent, { id: agentId })
+    .update(agent, { id: existingAgent.id })
     .set({ wallet: null, owner: event.args.to.toLowerCase() });
 });
+
+async function syncAgentServices(
+  db: Parameters<Parameters<typeof ponder.on>[1]>[0]["context"]["db"],
+  agentId: string,
+  services: AgentService[]
+) {
+  const agentApiServices = (services as AgentApiService[]).filter(
+    (service) => agentApiServiceSchema.safeParse(service).success
+  );
+  const agentMcpServices = (services as AgentMcpService[]).filter(
+    (service) => agentMcpServiceSchema.safeParse(service).success
+  );
+
+  await db.sql.delete(agentApiService).where(eq(agentApiService.agent_id, agentId));
+  await db.sql.delete(agentMcpService).where(eq(agentMcpService.agent_id, agentId));
+
+  if (agentApiServices.length)
+    await db
+      .insert(agentApiService)
+      .values(
+        agentApiServices.map((service) => ({
+          ...service,
+          agent_id: agentId,
+        }))
+      )
+      .onConflictDoNothing();
+
+  if (agentMcpServices.length)
+    await db
+      .insert(agentMcpService)
+      .values(
+        agentMcpServices.map((service) => ({
+          ...service,
+          agent_id: agentId,
+        }))
+      )
+      .onConflictDoNothing();
+}

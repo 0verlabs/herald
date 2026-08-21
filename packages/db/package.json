@@ -15,8 +15,6 @@
   },
   "dependencies": {
     "@hrld/core": "workspace:*",
-    "@hrld/indexer": "workspace:*",
-    "@ponder/client": "0.17.8",
     "drizzle-orm": "catalog:"
   },
   "devDependencies": {

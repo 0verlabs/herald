@@ -20,6 +20,7 @@
     "@hrld/core": "workspace:*",
     "ponder": "^0.17.5",
     "hono": "catalog:",
+    "uuid": "catalog:",
     "viem": "catalog:",
     "zod": "catalog:"
   },
