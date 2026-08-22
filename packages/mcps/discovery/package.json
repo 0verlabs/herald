@@ -1,0 +1,28 @@
+{
+  "name": "@hrld/mcp-discovery",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot run src/index.ts",
+    "check": "bun run check:lint && bun run check:types",
+    "check:lint": "biome check . --write",
+    "check:types": "tsc --noEmit",
+    "check:staged": "biome check . --write --staged --files-ignore-unknown=true --no-errors-on-unmatched"
+  },
+  "dependencies": {
+    "@hono/mcp": "catalog:",
+    "@hrld/core": "workspace:",
+    "@hrld/indexer": "workspace:",
+    "@modelcontextprotocol/sdk": "catalog:",
+    "@ponder/client": "0.17.8",
+    "drizzle-orm": "0.41.0",
+    "hono": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

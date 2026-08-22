@@ -6,11 +6,14 @@
   "packageManager": "bun@1.3.14",
   "workspaces": {
     "packages": [
-      "packages/*"
+      "packages/*",
+      "packages/mcps/*"
     ],
     "catalog": {
       "@biomejs/biome": "2.5.2",
       "@clerk/backend": "3.13.2",
+      "@hono/mcp": "0.3.2",
+      "@modelcontextprotocol/sdk": "1.30.0",
       "@clerk/react": "6.12.8",
       "@hookform/resolvers": "5.4.0",
       "@privy-io/node": "0.28.0",
