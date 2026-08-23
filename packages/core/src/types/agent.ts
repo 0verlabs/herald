@@ -8,9 +8,11 @@ export const agentSchema = z.object({
   name: z.string(),
   description: z.string(),
   image: z.string(),
-  tags: z.array(z.string()),
+  category: z.string(),
   score: z.number().min(0).max(100),
   feedbackCounts: z.number().nonnegative(),
+  wallet: z.string(),
+  owner: z.string(),
 });
 
 export const agentApiServiceSchema = z.object({

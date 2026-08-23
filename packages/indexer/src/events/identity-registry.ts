@@ -1,7 +1,7 @@
 import { ponder } from "ponder:registry";
 import { agent, agentApiService, agentMcpService } from "ponder:schema";
 import { eq } from "ponder";
-import { bytesToHex, hexToBytes, isAddressEqual, slice, zeroAddress } from "viem";
+import { bytesToHex, hexToBytes, hexToString, isAddressEqual, slice, zeroAddress } from "viem";
 
 import type { AgentApiService, AgentMcpService, AgentService } from "../types/identity-registry";
 import { agentApiServiceSchema, agentMcpServiceSchema } from "../types/identity-registry";
@@ -27,9 +27,7 @@ ponder.on("IdentityRegistry:Registered", async ({ context, event }) => {
       name: agentRegistrationFile.name,
       description: agentRegistrationFile.description,
       image: agentRegistrationFile.image,
-      tags: agentRegistrationFile.tags,
       supported_trusts: agentRegistrationFile.supportedTrust,
-      x402_support: agentRegistrationFile.x402Support,
       active: agentRegistrationFile.active,
       wallet: owner,
       owner,
@@ -58,9 +56,7 @@ ponder.on("IdentityRegistry:URIUpdated", async ({ context, event }) => {
     name: agentRegistrationFile.name,
     description: agentRegistrationFile.description,
     image: agentRegistrationFile.image,
-    tags: agentRegistrationFile.tags,
     supported_trusts: agentRegistrationFile.supportedTrust,
-    x402_support: agentRegistrationFile.x402Support,
     active: agentRegistrationFile.active,
   });
 
@@ -68,16 +64,8 @@ ponder.on("IdentityRegistry:URIUpdated", async ({ context, event }) => {
 });
 
 ponder.on("IdentityRegistry:MetadataSet", async ({ context, event }) => {
-  if (event.args.metadataKey !== "agentWallet") return;
-
   const chain = getChainById(context.chain.id);
   if (!chain) return;
-
-  const bytes = hexToBytes(event.args.metadataValue);
-  const addressBytes = slice(bytes, bytes.length - 20);
-  const address = bytesToHex(addressBytes, { size: 20 });
-
-  const isEmptyAddress = isAddressEqual(address, zeroAddress);
 
   const agentId = event.args.agentId.toString();
 
@@ -87,9 +75,25 @@ ponder.on("IdentityRegistry:MetadataSet", async ({ context, event }) => {
     .where(eq(agent.agent_id, agentId));
   if (!existingAgent) return;
 
-  await context.db
-    .update(agent, { id: existingAgent.id })
-    .set({ wallet: isEmptyAddress ? null : address });
+  switch (event.args.metadataKey) {
+    case "agentWallet": {
+      const bytes = hexToBytes(event.args.metadataValue);
+      const addressBytes = slice(bytes, bytes.length - 20);
+      const address = bytesToHex(addressBytes, { size: 20 });
+
+      const isEmptyAddress = isAddressEqual(address, zeroAddress);
+
+      await context.db
+        .update(agent, { id: existingAgent.id })
+        .set({ wallet: isEmptyAddress ? null : address });
+      break;
+    }
+    case "category":
+      await context.db
+        .update(agent, { id: existingAgent.id })
+        .set({ category: hexToString(event.args.metadataValue) });
+      break;
+  }
 });
 
 ponder.on("IdentityRegistry:Transfer", async ({ context, event }) => {
