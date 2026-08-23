@@ -12,11 +12,8 @@
   },
   "dependencies": {
     "@hono/mcp": "catalog:",
-    "@hrld/core": "workspace:",
-    "@hrld/indexer": "workspace:",
+    "@hrld/api": "workspace:",
     "@modelcontextprotocol/sdk": "catalog:",
-    "@ponder/client": "0.17.8",
-    "drizzle-orm": "0.41.0",
     "hono": "catalog:",
     "zod": "catalog:"
   },

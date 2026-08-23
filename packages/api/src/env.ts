@@ -3,6 +3,7 @@ import { z } from "zod";
 export const envSchema = z.object({
   // Databases
   DATABASE_URL: z.url(),
+  INDEXER_DATABASE_SCHEMA: z.string(),
   // Privy
   PRIVY_APP_ID: z.string(),
   PRIVY_APP_SECRET: z.string(),

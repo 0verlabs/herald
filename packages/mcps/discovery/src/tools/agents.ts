@@ -1,36 +1,24 @@
+import type { AppType } from "@hrld/api/rpc";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { AnyColumn, SQL } from "drizzle-orm";
-import { chainSchema } from "@hrld/core";
-import { agent, agentApiService, agentMcpService } from "@hrld/indexer/schema";
-import { and, arrayOverlaps, asc, desc, eq, exists, ilike, or, sql } from "drizzle-orm";
+import type { hc } from "hono/client";
 import { z } from "zod";
 
-import { db } from "../lib/db";
 import { json } from "../lib/json";
 
-const TRIGRAM_SIMILARITY_THRESHOLD = 0.15;
-
-export function registerSearchAgents(server: McpServer) {
+export function registerSearchAgents(server: McpServer, api: ReturnType<typeof hc<AppType>>) {
   server.registerTool(
     "search_agents",
     {
       title: "Search agents",
       description:
-        "Search ERC-8004 agents indexed by Herald. Filter by free-text query across agent name, description, and API service names/descriptions (typo-tolerant trigram matching), tags, chain, x402 payment support, or an MCP capability matched against agent service tools and resources.",
+        "Search ERC-8004 agents indexed by Herald. Free-text search across agent name, description, and API service names/descriptions; matches exact substrings plus fuzzy near-matches like typos.",
       inputSchema: {
         query: z
           .string()
           .optional()
           .describe(
-            "Free-text search across agent name, description, and API service names/descriptions; matches exact substrings plus fuzzy near-matches like typos"
+            "Free-text query across agent name, description, and API service names/descriptions"
           ),
-        tags: z.array(z.string()).optional().describe("Match agents having any of these tags"),
-        chain: chainSchema.optional().describe("Restrict results to one chain"),
-        x402Support: z.boolean().optional().describe("Only agents that support x402 payments"),
-        capability: z
-          .string()
-          .optional()
-          .describe("Match an MCP tool or resource exposed by one of the agent's services"),
         limit: z.number().int().min(1).max(50).default(20).describe("Maximum results per page"),
         cursor: z
           .number()
@@ -40,120 +28,43 @@ export function registerSearchAgents(server: McpServer) {
           .describe("Offset pagination cursor; pass nextCursor from the previous call"),
       },
     },
-    async ({ query, tags, chain, x402Support, capability, limit, cursor }) => {
-      const conditions: SQL[] = [eq(agent.active, true)];
-
-      if (query) {
-        const pattern = `%${query}%`;
-        const fuzzy = (column: AnyColumn) =>
-          sql`similarity(${column}, ${query}) > ${TRIGRAM_SIMILARITY_THRESHOLD}`;
-        const apiServiceMatch = exists(
-          db
-            .select({ ok: sql`1` })
-            .from(agentApiService)
-            .where(
-              and(
-                eq(agentApiService.agent_id, agent.agent_id),
-                or(
-                  ilike(agentApiService.name, pattern),
-                  ilike(agentApiService.description, pattern),
-                  fuzzy(agentApiService.name),
-                  fuzzy(agentApiService.description)
-                )
-              )
-            )
-        );
-        // ilike catches exact substrings (incl. short queries); similarity()
-        // adds typo-tolerant trigram matching on top.
-        const match = or(
-          ilike(agent.name, pattern),
-          ilike(agent.description, pattern),
-          fuzzy(agent.name),
-          fuzzy(agent.description),
-          apiServiceMatch
-        );
-        if (match) conditions.push(match);
-      }
-      if (tags?.length) conditions.push(arrayOverlaps(agent.tags, tags));
-      if (chain) conditions.push(eq(agent.chain, chain));
-      if (x402Support) conditions.push(eq(agent.x402_support, true));
-      if (capability) {
-        const capabilityService = exists(
-          db
-            .select({ ok: sql`1` })
-            .from(agentMcpService)
-            .where(
-              and(
-                eq(agentMcpService.agent_id, agent.agent_id),
-                or(
-                  arrayOverlaps(agentMcpService.tools, [capability]),
-                  arrayOverlaps(agentMcpService.resources, [capability])
-                )
-              )
-            )
-        );
-        conditions.push(capabilityService);
-      }
-
-      const relevance = query
-        ? desc(
-            sql`greatest(similarity(${agent.name}, ${query}), similarity(${agent.description}, ${query}))`
-          )
-        : undefined;
-
-      const rows = await db
-        .select()
-        .from(agent)
-        .where(and(...conditions))
-        .orderBy(...(relevance ? [relevance] : []), desc(agent.score), asc(agent.id))
-        .limit(limit + 1)
-        .offset(cursor);
-
-      return json({
-        agents: rows.slice(0, limit),
-        nextCursor: rows.length > limit ? cursor + limit : null,
+    async ({ query, limit, cursor }) => {
+      const res = await api.agents.$get({
+        query: { q: query, limit: String(limit), cursor: String(cursor) },
       });
+
+      if (!res.ok)
+        return {
+          ...json({ error: `Agent search failed with status ${res.status}` }),
+          isError: true,
+        };
+
+      return json(await res.json());
     }
   );
 }
 
-export function registerGetAgent(server: McpServer) {
+export function registerGetAgent(server: McpServer, api: ReturnType<typeof hc<AppType>>) {
   server.registerTool(
     "get_agent",
     {
       title: "Get agent",
-      description:
-        "Get a single ERC-8004 agent by its on-chain tokenId and chain, including all of its registered API and MCP services.",
+      description: "Get a single ERC-8004 agent by its on-chain tokenId.",
       inputSchema: {
         agentId: z.string().describe("ERC-8004 tokenId of the agent"),
-        chain: chainSchema.describe("Chain the agent is registered on"),
       },
     },
-    async ({ agentId, chain }) => {
-      const [record] = await db
-        .select()
-        .from(agent)
-        .where(and(eq(agent.chain, chain), eq(agent.agent_id, agentId)))
-        .limit(1);
+    async ({ agentId }) => {
+      const res = await api.agents[":agentId"].$get({ param: { agentId } });
 
-      if (!record)
-        return { ...json({ error: `Agent ${agentId} not found on ${chain}` }), isError: true };
+      if (!res.ok) return { ...json({ error: `Agent ${agentId} not found` }), isError: true };
 
-      const apiServices = await db
-        .select()
-        .from(agentApiService)
-        .where(eq(agentApiService.agent_id, record.agent_id));
-      const mcpServices = await db
-        .select()
-        .from(agentMcpService)
-        .where(eq(agentMcpService.agent_id, record.agent_id));
-
-      return json({ ...record, apiServices, mcpServices });
+      return json(await res.json());
     }
   );
 }
 
-export function registerListAgentServices(server: McpServer) {
+export function registerListAgentServices(server: McpServer, api: ReturnType<typeof hc<AppType>>) {
   server.registerTool(
     "list_agent_services",
     {
@@ -167,22 +78,29 @@ export function registerListAgentServices(server: McpServer) {
       },
     },
     async ({ agentId }) => {
-      const apiServices = await db
-        .select()
-        .from(agentApiService)
-        .where(eq(agentApiService.agent_id, agentId));
-      const mcpServices = await db
-        .select()
-        .from(agentMcpService)
-        .where(eq(agentMcpService.agent_id, agentId));
+      const [apiRes, mcpRes] = await Promise.all([
+        api.agents[":agentId"].services.api.$get({ param: { agentId }, query: {} }),
+        api.agents[":agentId"].services.mcp.$get({ param: { agentId }, query: {} }),
+      ]);
+
+      if (!apiRes.ok || !mcpRes.ok)
+        return {
+          ...json({ error: `Failed to list services for agent ${agentId}` }),
+          isError: true,
+        };
+
+      const [{ services: apiServices }, { services: mcpServices }] = await Promise.all([
+        apiRes.json(),
+        mcpRes.json(),
+      ]);
 
       return json({ apiServices, mcpServices });
     }
   );
 }
 
-export function registerAgentTools(server: McpServer) {
-  registerSearchAgents(server);
-  registerGetAgent(server);
-  registerListAgentServices(server);
+export function registerAgentTools(server: McpServer, api: ReturnType<typeof hc<AppType>>) {
+  registerSearchAgents(server, api);
+  registerGetAgent(server, api);
+  registerListAgentServices(server, api);
 }

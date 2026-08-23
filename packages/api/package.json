@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "exports": {
+    "./rpc": "./src/rpc.ts"
+  },
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target bun",
     "dev": "bun --hot run src/index.ts",
@@ -22,6 +25,8 @@
     "@hono/zod-validator": "0.9.0",
     "@hrld/core": "workspace:",
     "@hrld/db": "workspace:",
+    "@hrld/indexer": "workspace:",
+    "@ponder/client": "0.17.8",
     "@privy-io/node": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "catalog:",
