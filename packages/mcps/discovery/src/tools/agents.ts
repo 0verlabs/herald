@@ -1,5 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { SQL } from "drizzle-orm";
+import type { AnyColumn, SQL } from "drizzle-orm";
 import { chainSchema } from "@hrld/core";
 import { agent, agentApiService, agentMcpService } from "@hrld/indexer/schema";
 import { and, arrayOverlaps, asc, desc, eq, exists, ilike, or, sql } from "drizzle-orm";
@@ -8,15 +8,22 @@ import { z } from "zod";
 import { db } from "../lib/db";
 import { json } from "../lib/json";
 
+const TRIGRAM_SIMILARITY_THRESHOLD = 0.15;
+
 export function registerSearchAgents(server: McpServer) {
   server.registerTool(
     "search_agents",
     {
       title: "Search agents",
       description:
-        "Search ERC-8004 agents indexed by Herald. Filter by free-text query across name and description, tags, chain, x402 payment support, or an MCP capability matched against agent service tools and resources.",
+        "Search ERC-8004 agents indexed by Herald. Filter by free-text query across agent name, description, and API service names/descriptions (typo-tolerant trigram matching), tags, chain, x402 payment support, or an MCP capability matched against agent service tools and resources.",
       inputSchema: {
-        query: z.string().optional().describe("Free-text search across agent name and description"),
+        query: z
+          .string()
+          .optional()
+          .describe(
+            "Free-text search across agent name, description, and API service names/descriptions; matches exact substrings plus fuzzy near-matches like typos"
+          ),
         tags: z.array(z.string()).optional().describe("Match agents having any of these tags"),
         chain: chainSchema.optional().describe("Restrict results to one chain"),
         x402Support: z.boolean().optional().describe("Only agents that support x402 payments"),
@@ -38,7 +45,33 @@ export function registerSearchAgents(server: McpServer) {
 
       if (query) {
         const pattern = `%${query}%`;
-        const match = or(ilike(agent.name, pattern), ilike(agent.description, pattern));
+        const fuzzy = (column: AnyColumn) =>
+          sql`similarity(${column}, ${query}) > ${TRIGRAM_SIMILARITY_THRESHOLD}`;
+        const apiServiceMatch = exists(
+          db
+            .select({ ok: sql`1` })
+            .from(agentApiService)
+            .where(
+              and(
+                eq(agentApiService.agent_id, agent.agent_id),
+                or(
+                  ilike(agentApiService.name, pattern),
+                  ilike(agentApiService.description, pattern),
+                  fuzzy(agentApiService.name),
+                  fuzzy(agentApiService.description)
+                )
+              )
+            )
+        );
+        // ilike catches exact substrings (incl. short queries); similarity()
+        // adds typo-tolerant trigram matching on top.
+        const match = or(
+          ilike(agent.name, pattern),
+          ilike(agent.description, pattern),
+          fuzzy(agent.name),
+          fuzzy(agent.description),
+          apiServiceMatch
+        );
         if (match) conditions.push(match);
       }
       if (tags?.length) conditions.push(arrayOverlaps(agent.tags, tags));
@@ -62,11 +95,17 @@ export function registerSearchAgents(server: McpServer) {
         conditions.push(capabilityService);
       }
 
+      const relevance = query
+        ? desc(
+            sql`greatest(similarity(${agent.name}, ${query}), similarity(${agent.description}, ${query}))`
+          )
+        : undefined;
+
       const rows = await db
         .select()
         .from(agent)
         .where(and(...conditions))
-        .orderBy(desc(agent.score), asc(agent.id))
+        .orderBy(...(relevance ? [relevance] : []), desc(agent.score), asc(agent.id))
         .limit(limit + 1)
         .offset(cursor);
 

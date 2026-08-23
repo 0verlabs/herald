@@ -1,4 +1,4 @@
-import { index, onchainTable } from "ponder";
+import { index, onchainTable, sql } from "ponder";
 import { v7 } from "uuid";
 
 export const agent = onchainTable(
@@ -26,6 +26,11 @@ export const agent = onchainTable(
     chainIdx: index("agents_chain_idx").on(t.chain),
     agentIdIdx: index("agents_agent_id_idx").on(t.agent_id),
     chainAgentIdIdx: index("agents_chain_agent_id_idx").on(t.chain, t.agent_id),
+    nameTrgmIdx: index("agents_name_trgm_idx").using("gin", sql`${t.name} gin_trgm_ops`),
+    descriptionTrgmIdx: index("agents_description_trgm_idx").using(
+      "gin",
+      sql`${t.description} gin_trgm_ops`
+    ),
   })
 );
 
@@ -45,6 +50,14 @@ export const agentApiService = onchainTable(
   }),
   (t) => ({
     agentIdIdx: index("agent_api_services_agent_id_idx").on(t.agent_id),
+    nameTrgmIdx: index("agent_api_services_name_trgm_idx").using(
+      "gin",
+      sql`${t.name} gin_trgm_ops`
+    ),
+    descriptionTrgmIdx: index("agent_api_services_description_trgm_idx").using(
+      "gin",
+      sql`${t.description} gin_trgm_ops`
+    ),
   })
 );
 

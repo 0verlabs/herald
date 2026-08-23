@@ -11,7 +11,7 @@ registerAgentTools(mcpServer);
 
 const transport = new StreamableHTTPTransport();
 
-const app = new Hono().use(logger()).all("/mcp", async (c) => {
+const app = new Hono().use(logger()).all("/", async (c) => {
   if (!mcpServer.isConnected()) await mcpServer.connect(transport);
 
   return transport.handleRequest(c);
