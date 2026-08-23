@@ -6,12 +6,15 @@ import { Hono } from "hono";
 import { z } from "zod";
 
 import type { GlobalVariables } from "../vars";
+import { chainSchema } from "@hrld/core";
 import { notFound } from "../utils/response";
 
 const TRIGRAM_SIMILARITY_THRESHOLD = 0.15;
 
 const listAgentsQuery = z.object({
   q: z.string().optional(),
+  category: z.string().optional(),
+  chain: chainSchema.default("0g"),
   limit: z.coerce.number().int().min(1).max(50).default(20),
   cursor: z.coerce.number().int().min(0).default(0),
 });
@@ -24,9 +27,11 @@ const listServicesQuery = z.object({
 export const agents = new Hono<{ Variables: GlobalVariables }>()
   .get("/", zValidator("query", listAgentsQuery), async (c) => {
     const db = c.var.db;
-    const { q, limit, cursor } = c.req.valid("query");
+    const { q, category, chain, limit, cursor } = c.req.valid("query");
 
-    const conditions: SQL[] = [eq(agent.active, true)];
+    const conditions: SQL[] = [eq(agent.active, true), eq(agent.chain, chain)];
+
+    if (category) conditions.push(eq(agent.category, category));
 
     if (q) {
       const pattern = `%${q}%`;

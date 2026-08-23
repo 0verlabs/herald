@@ -19,6 +19,11 @@ export function registerSearchAgents(server: McpServer, api: ReturnType<typeof h
           .describe(
             "Free-text query across agent name, description, and API service names/descriptions"
           ),
+        category: z.string().optional().describe("Exact category match"),
+        chain: z
+          .enum(["0g", "0g-testnet"])
+          .optional()
+          .describe("Chain to search on; defaults to 0g"),
         limit: z.number().int().min(1).max(50).default(20).describe("Maximum results per page"),
         cursor: z
           .number()
@@ -28,9 +33,15 @@ export function registerSearchAgents(server: McpServer, api: ReturnType<typeof h
           .describe("Offset pagination cursor; pass nextCursor from the previous call"),
       },
     },
-    async ({ query, limit, cursor }) => {
+    async ({ query, category, chain, limit, cursor }) => {
       const res = await api.agents.$get({
-        query: { q: query, limit: String(limit), cursor: String(cursor) },
+        query: {
+          q: query,
+          ...(category ? { category } : {}),
+          ...(chain ? { chain } : {}),
+          limit: String(limit),
+          cursor: String(cursor),
+        },
       });
 
       if (!res.ok)
