@@ -46,8 +46,6 @@
         "@hono/zod-validator": "0.9.0",
         "@hrld/core": "workspace:",
         "@hrld/db": "workspace:",
-        "@hrld/indexer": "workspace:",
-        "@ponder/client": "0.17.8",
         "@privy-io/node": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "catalog:",
@@ -128,6 +126,14 @@
     },
     "packages/indexer": {
       "name": "@hrld/indexer",
+      "version": "1.0.0",
+      "devDependencies": {
+        "@biomejs/biome": "catalog:",
+        "@goldskycom/cli": "13.10.0",
+      },
+    },
+    "packages/indexer_old": {
+      "name": "@hrld/indexer_old",
       "version": "0.0.1",
       "dependencies": {
         "hono": "catalog:",
@@ -499,6 +505,8 @@
 
     "@gemini-wallet/core": ["@gemini-wallet/core@0.3.2", "", { "dependencies": { "@metamask/rpc-errors": "7.0.2", "eventemitter3": "5.0.1" }, "peerDependencies": { "viem": ">=2.0.0" } }, "sha512-Z4aHi3ECFf5oWYWM3F1rW83GJfB9OvhBYPTmb5q+VyK3uvzvS48lwo+jwh2eOoCRWEuT/crpb9Vwp2QaS5JqgQ=="],
 
+    "@goldskycom/cli": ["@goldskycom/cli@13.10.0", "", { "bin": { "goldsky": "bin/goldsky" } }, "sha512-Mr606ySLGATfmjWF+FeAyfY//RVUf8h24dzdnuKLQ0b666X4XXZzyEmB7gAN33lqAp4kTnkrd6gEa8BsF+/t6A=="],
+
     "@graphql-tools/executor": ["@graphql-tools/executor@1.5.7", "", { "dependencies": { "@graphql-tools/utils": "^11.2.2", "@graphql-typed-document-node/core": "^3.2.0", "@repeaterjs/repeater": "^3.1.0", "@whatwg-node/disposablestack": "^0.0.6", "@whatwg-node/promise-helpers": "^1.0.0", "tslib": "^2.4.0" }, "peerDependencies": { "graphql": "^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0" } }, "sha512-UcXVClkBml+qyGEsQxfEaAkboqySVGFUd9ivn7pDc9jZSckgF6zL21cNxuRH5ZA2exneV3PTtcc0I0rDOdE0Tg=="],
 
     "@graphql-tools/merge": ["@graphql-tools/merge@9.2.2", "", { "dependencies": { "@graphql-tools/utils": "^11.2.2", "tslib": "^2.4.0" }, "peerDependencies": { "graphql": "^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0" } }, "sha512-DSLLAztOIQId7QE3m8Ehk5lV+0pjxNSSRDHPzlYQ9E4KJ9AoUMBprC4C+eX3v4srh05S2ujm5/veqAr5yEWFSQ=="],
@@ -548,6 +556,8 @@
     "@hrld/db": ["@hrld/db@workspace:packages/db"],
 
     "@hrld/indexer": ["@hrld/indexer@workspace:packages/indexer"],
+
+    "@hrld/indexer_old": ["@hrld/indexer_old@workspace:packages/indexer_old"],
 
     "@hrld/mcp-discovery": ["@hrld/mcp-discovery@workspace:packages/mcps/discovery"],
 
@@ -642,8 +652,6 @@
     "@phosphor-icons/webcomponents": ["@phosphor-icons/webcomponents@2.1.5", "", { "dependencies": { "lit": "^3" } }, "sha512-JcvQkZxvcX2jK+QCclm8+e8HXqtdFW9xV4/kk2aL9Y3dJA2oQVt+pzbv1orkumz3rfx4K9mn9fDoMr1He1yr7Q=="],
 
     "@pkgjs/parseargs": ["@pkgjs/parseargs@0.11.0", "", {}, "sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg=="],
-
-    "@ponder/client": ["@ponder/client@0.17.8", "", { "dependencies": { "drizzle-orm": "0.41.0", "eventsource": "^3.0.5", "superjson": "^2.2.2" }, "peerDependencies": { "typescript": ">=5.4.0" }, "optionalPeers": ["typescript"] }, "sha512-BFMXsrDOebE6O6L9ELHJaTHxXL6QdL6HXYobywCv2iWC11lTUzQNJqyha9cMSl5sYRBaHU47bo0dftrlZdPQLA=="],
 
     "@ponder/utils": ["@ponder/utils@0.3.0", "", { "peerDependencies": { "typescript": ">=5.4.0", "viem": ">=2.35" }, "optionalPeers": ["typescript"] }, "sha512-7FmIHAKG1mfHA9ptaqN0h9bfYRnqBGAFDfEgXsXS4rxAg513gVR8hGsp1AZon+OPUtIpNRrmhx7bsEk8auiqow=="],
 

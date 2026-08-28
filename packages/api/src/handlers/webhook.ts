@@ -2,14 +2,20 @@ import { zValidator } from "@hono/zod-validator";
 import * as schema from "@hrld/db";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
+import { bearerAuth } from "hono/bearer-auth";
+import { z } from "zod";
 
-import type { GlobalVariables } from "../vars";
 import { env } from "../env";
+import { registryEventSchema } from "../lib/erc-8004";
 import { privyWebhookHeadersSchema, verifyWebhook } from "../lib/privy";
 import { privy } from "../middlewares/privy";
 import { badRequest, ok } from "../utils/response";
+import type { GlobalVariables } from "../vars";
+import { chainSchema } from "@hrld/core";
 
-const webhook = new Hono<{ Variables: GlobalVariables }>().post(
+const webhook = new Hono<{ Variables: GlobalVariables }>();
+
+webhook.post(
   "/privy",
   privy({
     appId: env.PRIVY_APP_ID,
@@ -64,6 +70,62 @@ const webhook = new Hono<{ Variables: GlobalVariables }>().post(
       }
       default:
         break;
+    }
+
+    return ok(c);
+  }
+);
+
+webhook.post(
+  "/goldsky/:chain",
+  zValidator(
+    "param",
+    z.object({
+      chain: chainSchema,
+    })
+  ),
+  zValidator(
+    "json",
+    z.object({
+      payload: z
+        .string()
+        .transform((str, ctx) => {
+          try {
+            return JSON.parse(str);
+          } catch {
+            ctx.addIssue({
+              code: "invalid_value",
+              values: [str],
+              message: "Invalid JSON string value",
+            });
+
+            return z.NEVER;
+          }
+        })
+        .pipe(registryEventSchema),
+    })
+  ),
+  bearerAuth({ token: env.GOLDSKY_WEBHOOK_SECRET }),
+  async (c) => {
+    const { chain } = c.req.valid("param");
+    const { payload } = c.req.valid("json");
+
+    const db = c.var.db;
+
+    switch (payload.eventName) {
+      case "IdentityRegistry:Registered": {
+        console.log(payload);
+        return ok(c);
+      }
+      case "IdentityRegistry:MetadataSet": {
+        return ok(c);
+      }
+      case "IdentityRegistry:URIUpdated": {
+        return ok(c);
+      }
+      case "IdentityRegistry:Transfer": {
+        return ok(c);
+      }
     }
 
     return ok(c);
