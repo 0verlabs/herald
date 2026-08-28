@@ -15,6 +15,20 @@
       "when": 1787943392912,
       "tag": "0001_add_agents",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787954390201,
+      "tag": "0002_rename_agent_id_to_onchain_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787954813106,
+      "tag": "0003_remove_null_to_nullable_agent_columns",
+      "breakpoints": true
     }
   ]
 }
