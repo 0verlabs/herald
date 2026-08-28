@@ -1,0 +1,137 @@
+name: erc-8004
+version: 5
+resource_size: s
+apiVersion: 3
+sources:
+  zg_registered_events:
+    type: subgraph_entity
+    subgraphs:
+      - name: identity-registry-0g
+        version: 1.0.0
+    name: registered
+  zg_uri_updated_events:
+    type: subgraph_entity
+    subgraphs:
+      - name: identity-registry-0g
+        version: 1.0.0
+    name: uri_updated
+  zg_metadata_set_events:
+    type: subgraph_entity
+    subgraphs:
+      - name: identity-registry-0g
+        version: 1.0.0
+    name: metadata_set
+  zg_transfer_events:
+    type: subgraph_entity
+    subgraphs:
+      - name: identity-registry-0g
+        version: 1.0.0
+    name: transfer
+transforms:
+  zg_registered_event_transform:
+    type: sql
+    primary_key: id
+    sql: |-
+      SELECT
+        json_object(
+          'id' value `zg_registered_events`.`id`,
+          'blockNumber' value `zg_registered_events`.`block_number`,
+          'transactionHash' value `zg_registered_events`.`transaction_hash`,
+          'address' value `zg_registered_events`.`contract_id`,
+          'eventName' value 'IdentityRegistry:Registered',
+          'args' value json_object(
+            'agentId' value `zg_registered_events`.`agent_id`,
+            'agentUri' value `zg_registered_events`.`agent_uri`,
+            'owner' value `zg_registered_events`.`owner`
+          ),
+          'timestamp' value `zg_registered_events`.`timestamp`
+        ) as `payload`
+      from
+        `zg_registered_events`
+  zg_uri_updated_event_transform:
+    type: sql
+    primary_key: id
+    sql: |-
+      SELECT
+        json_object(
+          'id' value `zg_uri_updated_events`.`id`,
+          'blockNumber' value `zg_uri_updated_events`.`block_number`,
+          'transactionHash' value `zg_uri_updated_events`.`transaction_hash`,
+          'address' value `zg_uri_updated_events`.`contract_id`,
+          'eventName' value 'IdentityRegistry:URIUpdated',
+          'args' value json_object(
+            'agentId' value `zg_uri_updated_events`.`agent_id`,
+            'newUri' value `zg_uri_updated_events`.`new_uri`,
+            'updatedBy' value `zg_uri_updated_events`.`updated_by`
+          ),
+          'timestamp' value `zg_uri_updated_events`.`timestamp`
+        ) as `payload`
+      from
+        `zg_uri_updated_events`
+  zg_metadata_set_event_transform:
+    type: sql
+    primary_key: id
+    sql: >-
+      SELECT
+        json_object(
+          'id' value `zg_metadata_set_events`.`id`,
+          'blockNumber' value `zg_metadata_set_events`.`block_number`,
+          'transactionHash' value `zg_metadata_set_events`.`transaction_hash`,
+          'address' value `zg_metadata_set_events`.`contract_id`,
+          'eventName' value 'IdentityRegistry:MetadataSet',
+          'args' value json_object(
+            'agentId' value `zg_metadata_set_events`.`agent_id`,
+            'indexedMetadataKey' value `zg_metadata_set_events`.`indexed_metadata_key`,
+            'metadataKey' value `zg_metadata_set_events`.`metadata_key`,
+            'metadataValue' value `zg_metadata_set_events`.`metadata_value`
+          ),
+          'timestamp' value `zg_metadata_set_events`.`timestamp`
+        ) as `payload`
+      from
+        `zg_metadata_set_events`
+  zg_transfer_event_transform:
+    type: sql
+    primary_key: id
+    sql: |-
+      SELECT
+        json_object(
+          'id' value `zg_transfer_events`.`id`,
+          'blockNumber' value `zg_transfer_events`.`block_number`,
+          'transactionHash' value `zg_transfer_events`.`transaction_hash`,
+          'address' value `zg_transfer_events`.`contract_id`,
+          'eventName' value 'IdentityRegistry:Transfer',
+          'args' value json_object(
+            'from' value `zg_transfer_events`.`from`,
+            'to' value `zg_transfer_events`.`to`,
+            'tokenId' value `zg_transfer_events`.`token_id`
+          ),
+          'timestamp' value `zg_transfer_events`.`timestamp`
+        ) as `payload`
+      from
+        `zg_transfer_events`
+sinks:
+  zg_registered_webhook:
+    url: https://hrld.0verlabs.com/wehbook/goldsky/0g
+    type: webhook
+    secret_name: GOLDSKY_WEBHOOK_SECRET
+    one_row_per_request: true
+    from: zg_registered_event_transform
+  zg_uri_updated_webhook:
+    url: https://hrld.0verlabs.com/wehbook/goldsky/0g
+    type: webhook
+    secret_name: GOLDSKY_WEBHOOK_SECRET
+    one_row_per_request: false
+    from: zg_uri_updated_event_transform
+  zg_metadata_set_webhook:
+    url: https://hrld.0verlabs.com/wehbook/goldsky/0g
+    type: webhook
+    secret_name: GOLDSKY_WEBHOOK_SECRET
+    one_row_per_request: false
+    from: zg_metadata_set_event_transform
+  zg_transfer_webhook:
+    url: https://hrld.0verlabs.com/wehbook/goldsky/0g
+    type: webhook
+    secret_name: GOLDSKY_WEBHOOK_SECRET
+    one_row_per_request: false
+    from: zg_transfer_event_transform
+use_dedicated_ip: false

@@ -1,0 +1,17 @@
+{
+  "name": "identity-registry/1.0.0",
+  "version": "1",
+  "abis": {
+    "identity-registry": {
+      "path": "./abis/identity-registry.json"
+    }
+  },
+  "instances": [
+    {
+      "abi": "identity-registry",
+      "address": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+      "startBlock": 42885482,
+      "chain": "0g"
+    }
+  ]
+}
