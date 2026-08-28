@@ -1,13 +1,13 @@
 import type { AnyColumn, SQL } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
-import { agent, agentApiService, agentMcpService } from "@hrld/indexer/schema";
-import { and, asc, desc, eq, exists, ilike, or, sql } from "drizzle-orm";
+import { agentIdCodec, agentSchema, chainSchema } from "@hrld/core";
+import * as schema from "@hrld/db";
+import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 
 import type { GlobalVariables } from "../vars";
-import { chainSchema } from "@hrld/core";
-import { notFound } from "../utils/response";
+import { notFound, ok } from "../utils/response";
 
 const TRIGRAM_SIMILARITY_THRESHOLD = 0.15;
 
@@ -15,8 +15,12 @@ const listAgentsQuery = z.object({
   q: z.string().optional(),
   category: z.string().optional(),
   chain: chainSchema.default("0g"),
+  page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(20),
-  cursor: z.coerce.number().int().min(0).default(0),
+});
+
+const getAgentByIdParam = z.object({
+  agentId: z.string(),
 });
 
 const listServicesQuery = z.object({
@@ -24,14 +28,16 @@ const listServicesQuery = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
-export const agents = new Hono<{ Variables: GlobalVariables }>()
+export const agents = new Hono<{ Variables: GlobalVariables }>();
+
+agents
   .get("/", zValidator("query", listAgentsQuery), async (c) => {
     const db = c.var.db;
-    const { q, category, chain, limit, cursor } = c.req.valid("query");
+    const { q, category, chain, limit, page } = c.req.valid("query");
 
-    const conditions: SQL[] = [eq(agent.active, true), eq(agent.chain, chain)];
+    const conditions: SQL[] = [eq(schema.agents.active, true), eq(schema.agents.chain, chain)];
 
-    if (category) conditions.push(eq(agent.category, category));
+    if (category) conditions.push(eq(schema.agents.category, category));
 
     if (q) {
       const pattern = `%${q}%`;
@@ -40,95 +46,115 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
       // ilike catches exact substrings (incl. short queries); similarity()
       // adds typo-tolerant trigram matching on top.
       const match = or(
-        ilike(agent.name, pattern),
-        ilike(agent.description, pattern),
-        fuzzy(agent.name),
-        fuzzy(agent.description),
-        exists(
-          db
-            .select({ ok: sql`1` })
-            .from(agentApiService)
-            .where(
-              and(
-                eq(agentApiService.agent_id, agent.agent_id),
-                or(
-                  ilike(agentApiService.name, pattern),
-                  ilike(agentApiService.description, pattern),
-                  fuzzy(agentApiService.name),
-                  fuzzy(agentApiService.description)
-                )
-              )
-            )
-        )
+        ilike(schema.agents.name, pattern),
+        ilike(schema.agents.description, pattern),
+        fuzzy(schema.agents.name),
+        fuzzy(schema.agents.description)
       );
       if (match) conditions.push(match);
     }
 
     const relevance = q
-      ? desc(sql`greatest(similarity(${agent.name}, ${q}), similarity(${agent.description}, ${q}))`)
+      ? desc(
+          sql`greatest(similarity(${schema.agents.name}, ${q}), similarity(${schema.agents.description}, ${q}))`
+        )
       : undefined;
 
     const rows = await db
       .select()
-      .from(agent)
+      .from(schema.agents)
       .where(and(...conditions))
-      .orderBy(...(relevance ? [relevance] : []), desc(agent.score), asc(agent.id))
-      .limit(limit + 1)
-      .offset(cursor);
+      .orderBy(...(relevance ? [relevance] : []), desc(schema.agents.score), asc(schema.agents.id))
+      .limit(limit)
+      .offset((page - 1) * limit);
 
-    return c.json({
-      agents: rows.slice(0, limit),
-      nextCursor: rows.length > limit ? cursor + limit : null,
+    const [{ total }] = await db
+      .select({
+        total: sql<number>`count(${schema.agents.id})`,
+      })
+      .from(schema.agents)
+      .where(and(...conditions))
+      .orderBy(...(relevance ? [relevance] : []), desc(schema.agents.score), asc(schema.agents.id));
+
+    const data = agentSchema.array().encode(
+      rows.map((row) => {
+        const id = agentIdCodec.encode({ chain: row.chain, onchainId: row.onchain_id });
+
+        return {
+          id,
+          chain: row.chain,
+          onchainId: row.onchain_id,
+          name: row.name,
+          description: row.description,
+          image: row.image,
+          category: row.category ?? "others",
+          active: row.active,
+          score: row.score,
+          feedbackCounts: row.feedback_counts,
+          wallet: row.wallet,
+          owner: row.owner,
+        };
+      })
+    );
+
+    return ok(c, {
+      data,
+      total: total ?? 0,
     });
   })
-  .get("/:agentId", async (c) => {
-    const agentId = c.req.param("agentId");
+  .get("/:agentId", zValidator("param", getAgentByIdParam), async (c) => {
+    const { agentId } = c.req.valid("param");
 
     const [record] = await c.var.db
       .select()
-      .from(agent)
-      .where(eq(agent.agent_id, agentId))
+      .from(schema.agents)
+      .where(eq(schema.agents.id, agentId))
       .limit(1);
 
     if (!record) return notFound(c, { message: `Agent ${agentId} not found` });
 
-    return c.json(record);
+    const id = agentIdCodec.encode({ chain: record.chain, onchainId: record.onchain_id });
+
+    const agent = agentSchema.parse({
+      id,
+      chain: record.chain,
+      onchainId: record.onchain_id,
+      name: record.name,
+      description: record.description,
+      image: record.image,
+      category: record.category ?? "others",
+      active: record.active,
+      score: record.score,
+      feedbackCounts: record.feedback_counts,
+      wallet: record.wallet,
+      owner: record.owner,
+    });
+
+    return ok(c, agent);
   })
-  .get("/:agentId/services/api", zValidator("query", listServicesQuery), async (c) => {
-    const agentId = c.req.param("agentId");
-    const { page, limit } = c.req.valid("query");
+  .get(
+    "/:agentId/services/api",
+    zValidator("param", getAgentByIdParam),
+    zValidator("query", listServicesQuery),
+    async (c) => {
+      const { page, limit } = c.req.valid("query");
 
-    const [{ count: total }] = await c.var.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(agentApiService)
-      .where(eq(agentApiService.agent_id, agentId));
+      return ok(c, {
+        data: [],
+        total: 0,
+      });
+    }
+  )
+  .get(
+    "/:agentId/services/mcp",
+    zValidator("param", getAgentByIdParam),
+    zValidator("query", listServicesQuery),
+    async (c) => {
+      const { page, limit } = c.req.valid("query");
 
-    const services = await c.var.db
-      .select()
-      .from(agentApiService)
-      .where(eq(agentApiService.agent_id, agentId))
-      .orderBy(asc(agentApiService.id))
-      .limit(limit)
-      .offset((page - 1) * limit);
-
-    return c.json({ services, pagination: { page, limit, total } });
-  })
-  .get("/:agentId/services/mcp", zValidator("query", listServicesQuery), async (c) => {
-    const agentId = c.req.param("agentId");
-    const { page, limit } = c.req.valid("query");
-
-    const [{ count: total }] = await c.var.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(agentMcpService)
-      .where(eq(agentMcpService.agent_id, agentId));
-
-    const services = await c.var.db
-      .select()
-      .from(agentMcpService)
-      .where(eq(agentMcpService.agent_id, agentId))
-      .orderBy(asc(agentMcpService.id))
-      .limit(limit)
-      .offset((page - 1) * limit);
-
-    return c.json({ services, pagination: { page, limit, total } });
-  });
+      return ok(c, {
+        data: [],
+        total: 0,
+      });
+    }
+  );

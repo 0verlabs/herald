@@ -8,19 +8,19 @@ export const agentIdCodec = z.codec(
   z.templateLiteral([chainSchema, "_", agentOnchainId]),
   z.object({
     chain: chainSchema,
-    agentId: agentOnchainId,
+    onchainId: agentOnchainId,
   }),
   {
-    encode: ({ chain, agentId }) => `${chain}_${agentId}` as const,
+    encode: ({ chain, onchainId }) => `${chain}_${onchainId}` as const,
     decode: (str) => {
-      const [chainStr, agentIdStr] = str.split("_");
+      const [chainStr, onchainIdStr] = str.split("_");
 
       const chain = chainSchema.parse(chainStr);
-      const agentId = agentOnchainId.parse(agentIdStr);
+      const onchainId = agentOnchainId.parse(onchainIdStr);
 
       return {
         chain,
-        agentId,
+        onchainId,
       };
     },
   }
@@ -38,7 +38,7 @@ export const agentSchema = z.object({
   category: z.string(),
   score: z.number().min(0).max(100),
   feedbackCounts: z.number().nonnegative(),
-  wallet: z.string(),
+  wallet: z.string().nullable(),
   owner: z.string(),
   active: z.boolean(),
 });

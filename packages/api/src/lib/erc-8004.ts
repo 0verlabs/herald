@@ -1,4 +1,5 @@
 import { z } from "zod";
+
 import { createEventSchema } from "./contract-event";
 
 export const identityRegistryRegisteredEventSchema = createEventSchema(
@@ -54,17 +55,13 @@ export const registryEventSchema = z.union([
   reputationRegistryEventSchema,
 ]);
 
-export const agentZgStorageUriSchema = z.string().startsWith("0g://");
-export const agentIpfsStorageUriSchema = z.string().startsWith("ipfs://");
-export const agentJsonUriSchema = z.string().startsWith("data:application/json,");
-export const agentBase64JsonUriSchema = z.string().startsWith("data:application/json;base64,");
-
-export const agentUriSchema = z.union([
-  agentZgStorageUriSchema,
-  agentIpfsStorageUriSchema,
-  agentJsonUriSchema,
-  agentBase64JsonUriSchema,
+export const agentJsonUriSchema = z.templateLiteral(["data:application/json,", z.string()]);
+export const agentBase64JsonUriSchema = z.templateLiteral([
+  "data:application/json;base64,",
+  z.string(),
 ]);
+
+export const agentUriSchema = z.union([agentJsonUriSchema, agentBase64JsonUriSchema]);
 
 export const agentJobServiceSchema = z.object({
   name: z.literal("JOB"),
@@ -115,3 +112,18 @@ export const agentRegistrationFileSchema = z.object({
   tags: z.string().array().optional(),
   supportedTrust: z.string().array().optional(),
 });
+
+export const resolveAgentRegistrationFileFromUri = async (uri: string) => {
+  const agentUriParsed = agentUriSchema.safeParse(uri);
+  if (!agentUriParsed.success) return null;
+
+  const response = await fetch(agentUriParsed.data);
+  if (!response.ok) return null;
+
+  const json = await response.json().catch(() => ({}));
+
+  const parsed = agentRegistrationFileSchema.safeParse(json);
+  if (!parsed.success) return null;
+
+  return parsed.data;
+};

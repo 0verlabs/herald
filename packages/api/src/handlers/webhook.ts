@@ -1,17 +1,18 @@
 import { zValidator } from "@hono/zod-validator";
+import { agentIdCodec, chainSchema } from "@hrld/core";
 import * as schema from "@hrld/db";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
+import { bytesToHex, hexToBytes, hexToString, isAddressEqual, slice, zeroAddress } from "viem";
 import { z } from "zod";
 
+import type { GlobalVariables } from "../vars";
 import { env } from "../env";
-import { registryEventSchema } from "../lib/erc-8004";
+import { registryEventSchema, resolveAgentRegistrationFileFromUri } from "../lib/erc-8004";
 import { privyWebhookHeadersSchema, verifyWebhook } from "../lib/privy";
 import { privy } from "../middlewares/privy";
 import { badRequest, ok } from "../utils/response";
-import type { GlobalVariables } from "../vars";
-import { chainSchema } from "@hrld/core";
 
 const webhook = new Hono<{ Variables: GlobalVariables }>();
 
@@ -114,16 +115,107 @@ webhook.post(
 
     switch (payload.eventName) {
       case "IdentityRegistry:Registered": {
-        console.log(payload);
+        const { agentId, agentUri, owner } = payload.args;
+
+        const agentRegistrationFile = await resolveAgentRegistrationFileFromUri(agentUri);
+        if (!agentRegistrationFile) return ok(c);
+
+        const id = agentIdCodec.encode({ chain, onchainId: agentId });
+
+        const ownerAddress = owner.toLowerCase();
+
+        await db
+          .insert(schema.agents)
+          .values({
+            id,
+            chain,
+            onchain_id: agentId,
+            name: agentRegistrationFile.name,
+            description: agentRegistrationFile.description,
+            image: agentRegistrationFile.image,
+            active: agentRegistrationFile.active,
+            wallet: ownerAddress,
+            owner: ownerAddress,
+          })
+          .onConflictDoNothing();
+
         return ok(c);
       }
       case "IdentityRegistry:MetadataSet": {
+        const { agentId, metadataKey, metadataValue } = payload.args;
+
+        const [existingAgent] = await db
+          .select({ id: schema.agents.id })
+          .from(schema.agents)
+          .where(and(eq(schema.agents.chain, chain), eq(schema.agents.onchain_id, agentId)));
+        if (!existingAgent) return ok(c);
+
+        switch (metadataKey) {
+          case "agentWallet": {
+            const bytes = hexToBytes(metadataValue as `0x${string}`);
+            const addressBytes = slice(bytes, bytes.length - 20);
+            const address = bytesToHex(addressBytes, { size: 20 });
+
+            const isEmptyAddress = isAddressEqual(address, zeroAddress);
+
+            await db
+              .update(schema.agents)
+              .set({ wallet: isEmptyAddress ? null : address })
+              .where(eq(schema.agents.id, existingAgent.id));
+            break;
+          }
+          case "category": {
+            await db
+              .update(schema.agents)
+              .set({ category: hexToString(metadataValue as `0x${string}`) })
+              .where(eq(schema.agents.id, existingAgent.id));
+            break;
+          }
+        }
+
         return ok(c);
       }
       case "IdentityRegistry:URIUpdated": {
+        const { agentId, newUri } = payload.args;
+
+        const agentRegistrationFile = await resolveAgentRegistrationFileFromUri(newUri);
+        if (!agentRegistrationFile) return ok(c);
+
+        const [existingAgent] = await db
+          .select({ id: schema.agents.id })
+          .from(schema.agents)
+          .where(and(eq(schema.agents.chain, chain), eq(schema.agents.onchain_id, agentId)));
+        if (!existingAgent) return ok(c);
+
+        await db
+          .update(schema.agents)
+          .set({
+            name: agentRegistrationFile.name,
+            description: agentRegistrationFile.description,
+            image: agentRegistrationFile.image,
+            active: agentRegistrationFile.active,
+          })
+          .where(eq(schema.agents.id, existingAgent.id));
+
         return ok(c);
       }
       case "IdentityRegistry:Transfer": {
+        const { from, to, tokenId } = payload.args;
+
+        const isMint = isAddressEqual(from as `0x${string}`, zeroAddress);
+        if (isMint) return ok(c);
+
+        const [existingAgent] = await db
+          .select({ id: schema.agents.id })
+          .from(schema.agents)
+          .where(and(eq(schema.agents.chain, chain), eq(schema.agents.onchain_id, tokenId)));
+        if (!existingAgent) return ok(c);
+
+        await db
+          .update(schema.agents)
+          .set({ wallet: null, owner: to.toLowerCase() })
+          .where(eq(schema.agents.id, existingAgent.id));
+
         return ok(c);
       }
     }
