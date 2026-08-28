@@ -15,7 +15,7 @@ const listAgentsQuery = z.object({
   q: z.string().optional(),
   category: z.string().optional(),
   chain: chainSchema.default("0g"),
-  page: z.coerce.number().int().min(1).default(1),
+  offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
@@ -33,7 +33,7 @@ export const agents = new Hono<{ Variables: GlobalVariables }>();
 agents
   .get("/", zValidator("query", listAgentsQuery), async (c) => {
     const db = c.var.db;
-    const { q, category, chain, limit, page } = c.req.valid("query");
+    const { q, category, chain, limit, offset } = c.req.valid("query");
 
     const conditions: SQL[] = [eq(schema.agents.active, true), eq(schema.agents.chain, chain)];
 
@@ -60,24 +60,20 @@ agents
         )
       : undefined;
 
+    // Fetch one extra row past the page boundary to know whether another
+    // page exists, without a separate count query.
     const rows = await db
       .select()
       .from(schema.agents)
       .where(and(...conditions))
       .orderBy(...(relevance ? [relevance] : []), desc(schema.agents.score), asc(schema.agents.id))
-      .limit(limit)
-      .offset((page - 1) * limit);
+      .limit(limit + 1)
+      .offset(offset);
 
-    const [{ total }] = await db
-      .select({
-        total: sql<number>`count(${schema.agents.id})`,
-      })
-      .from(schema.agents)
-      .where(and(...conditions))
-      .orderBy(...(relevance ? [relevance] : []), desc(schema.agents.score), asc(schema.agents.id));
+    const hasMore = rows.length > limit;
 
     const data = agentSchema.array().encode(
-      rows.map((row) => {
+      rows.slice(0, limit).map((row) => {
         const id = agentIdCodec.encode({ chain: row.chain, onchainId: row.onchain_id });
 
         return {
@@ -99,7 +95,7 @@ agents
 
     return ok(c, {
       data,
-      total: total ?? 0,
+      next: hasMore ? offset + limit : null,
     });
   })
   .get("/:agentId", zValidator("param", getAgentByIdParam), async (c) => {
