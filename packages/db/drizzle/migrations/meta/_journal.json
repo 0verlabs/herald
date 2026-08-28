@@ -8,6 +8,13 @@
       "when": 1787259668907,
       "tag": "0000_initial_db_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787943392912,
+      "tag": "0001_add_agents",
+      "breakpoints": true
     }
   ]
 }

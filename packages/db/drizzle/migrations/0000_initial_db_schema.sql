@@ -1,3 +1,4 @@
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE SCHEMA "app";
 --> statement-breakpoint
 CREATE TABLE "app"."wallets" (
