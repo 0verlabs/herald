@@ -1,1 +1,0 @@
-import "./events/identity-registry";
