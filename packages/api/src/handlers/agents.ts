@@ -34,6 +34,7 @@ const getAgentByIdParam = z.object({
 const listServicesQuery = z.object({
   q: z.string().optional(),
   agentId: z.string().optional(),
+  chain: chainSchema.default("0g"),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
@@ -99,9 +100,9 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
   })
   .get("/services/job", zValidator("query", listServicesQuery), async (c) => {
     const db = c.var.db;
-    const { agentId, q, page, limit } = c.req.valid("query");
+    const { agentId, q, chain, page, limit } = c.req.valid("query");
 
-    const conditions: SQL[] = [];
+    const conditions: SQL[] = [eq(schema.agents.chain, chain)];
     if (agentId) conditions.push(eq(schema.agentJobServices.agent_id, agentId as AgentId));
 
     const search = q
@@ -109,7 +110,7 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
       : undefined;
     if (search) conditions.push(search.match);
 
-    const where = conditions.length ? and(...conditions) : undefined;
+    const where = and(...conditions);
 
     const [rows, [{ total } = { total: 0 }]] = await Promise.all([
       db
@@ -137,7 +138,11 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
         .orderBy(...(search ? [search.relevance] : []), asc(schema.agentJobServices.id))
         .limit(limit)
         .offset((page - 1) * limit),
-      db.select({ total: count() }).from(schema.agentJobServices).where(where),
+      db
+        .select({ total: count() })
+        .from(schema.agentJobServices)
+        .innerJoin(schema.agents, eq(schema.agents.id, schema.agentJobServices.agent_id))
+        .where(where),
     ]);
 
     const data = agentJobServiceSchema
@@ -148,7 +153,7 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
         agent: agentSummarySchema,
       })
       .array()
-      .encode(
+      .parse(
         rows.map((row) => ({
           id: row.agent_job_services.id,
           name: "JOB" as const,
@@ -175,9 +180,9 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
   })
   .get("/services/api", zValidator("query", listServicesQuery), async (c) => {
     const db = c.var.db;
-    const { agentId, q, page, limit } = c.req.valid("query");
+    const { agentId, q, chain, page, limit } = c.req.valid("query");
 
-    const conditions: SQL[] = [];
+    const conditions: SQL[] = [eq(schema.agents.chain, chain)];
     if (agentId) conditions.push(eq(schema.agentApiServices.agent_id, agentId as AgentId));
 
     const search = q
@@ -185,7 +190,7 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
       : undefined;
     if (search) conditions.push(search.match);
 
-    const where = conditions.length ? and(...conditions) : undefined;
+    const where = and(...conditions);
 
     const [rows, [{ total } = { total: 0 }]] = await Promise.all([
       db
@@ -216,7 +221,11 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
         .orderBy(...(search ? [search.relevance] : []), asc(schema.agentApiServices.id))
         .limit(limit)
         .offset((page - 1) * limit),
-      db.select({ total: count() }).from(schema.agentApiServices).where(where),
+      db
+        .select({ total: count() })
+        .from(schema.agentApiServices)
+        .innerJoin(schema.agents, eq(schema.agents.id, schema.agentApiServices.agent_id))
+        .where(where),
     ]);
 
     const data = agentApiServiceSchema
@@ -256,24 +265,26 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
   })
   .get("/services/mcp", zValidator("query", listServicesQuery), async (c) => {
     const db = c.var.db;
-    const { agentId, q, page, limit } = c.req.valid("query");
+    const { agentId, q, chain, page, limit } = c.req.valid("query");
 
-    const conditions: SQL[] = [];
+    const conditions: SQL[] = [eq(schema.agents.chain, chain)];
     if (agentId) conditions.push(eq(schema.agentMcpServices.agent_id, agentId as AgentId));
 
+    // Must match the expression the GIN trigram indexes are built on, otherwise
+    // the planner falls back to a sequential scan.
     const search = q
       ? buildTextSearch(
           [
-            sql`array_to_string(${schema.agentMcpServices.tools}, ' ')`,
-            sql`array_to_string(${schema.agentMcpServices.resources}, ' ')`,
-            sql`array_to_string(${schema.agentMcpServices.prompts}, ' ')`,
+            sql`immutable_array_to_string(${schema.agentMcpServices.tools}, ' ')`,
+            sql`immutable_array_to_string(${schema.agentMcpServices.resources}, ' ')`,
+            sql`immutable_array_to_string(${schema.agentMcpServices.prompts}, ' ')`,
           ],
           q
         )
       : undefined;
     if (search) conditions.push(search.match);
 
-    const where = conditions.length ? and(...conditions) : undefined;
+    const where = and(...conditions);
 
     const [rows, [{ total } = { total: 0 }]] = await Promise.all([
       db
@@ -304,31 +315,43 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
         .orderBy(...(search ? [search.relevance] : []), asc(schema.agentMcpServices.id))
         .limit(limit)
         .offset((page - 1) * limit),
-      db.select({ total: count() }).from(schema.agentMcpServices).where(where),
+      db
+        .select({ total: count() })
+        .from(schema.agentMcpServices)
+        .innerJoin(schema.agents, eq(schema.agents.id, schema.agentMcpServices.agent_id))
+        .where(where),
     ]);
 
-    const data = agentMcpServiceSchema.array().parse(
-      rows.map((row) => ({
-        id: row.agent_mcp_services.id,
-        name: "MCP" as const,
-        endpoint: row.agent_mcp_services.endpoint,
-        version: row.agent_mcp_services.version,
-        tools: row.agent_mcp_services.tools ?? [],
-        resources: row.agent_mcp_services.resources ?? [],
-        prompts: row.agent_mcp_services.prompts ?? [],
-        agent: {
-          id: row.agent.id,
-          chain: row.agent.chain,
-          onchainId: row.agent.onchain_id,
-          name: row.agent.name,
-          description: row.agent.description,
-          image: row.agent.image,
-          score: row.agent.score,
-          feedbackCounts: row.agent.feedback_counts,
-          owner: row.agent.owner,
-        },
-      }))
-    );
+    const data = agentMcpServiceSchema
+      .omit({
+        agentId: true,
+      })
+      .extend({
+        agent: agentSummarySchema,
+      })
+      .array()
+      .parse(
+        rows.map((row) => ({
+          id: row.agent_mcp_services.id,
+          name: "MCP" as const,
+          endpoint: row.agent_mcp_services.endpoint,
+          version: row.agent_mcp_services.version,
+          tools: row.agent_mcp_services.tools ?? [],
+          resources: row.agent_mcp_services.resources ?? [],
+          prompts: row.agent_mcp_services.prompts ?? [],
+          agent: {
+            id: row.agent.id,
+            chain: row.agent.chain,
+            onchainId: row.agent.onchain_id,
+            name: row.agent.name,
+            description: row.agent.description,
+            image: row.agent.image,
+            score: row.agent.score,
+            feedbackCounts: row.agent.feedback_counts,
+            owner: row.agent.owner,
+          },
+        }))
+      );
 
     return ok(c, {
       data,

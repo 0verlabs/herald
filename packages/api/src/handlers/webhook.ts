@@ -1,3 +1,4 @@
+import type { AgentId } from "@hrld/core";
 import { zValidator } from "@hono/zod-validator";
 import { agentIdCodec, chainSchema } from "@hrld/core";
 import * as schema from "@hrld/db";
@@ -7,10 +8,11 @@ import { bearerAuth } from "hono/bearer-auth";
 import { bytesToHex, hexToBytes, hexToString, isAddressEqual, slice, zeroAddress } from "viem";
 import { z } from "zod";
 
-import { env } from "../env";
 import type { Db } from "../lib/db";
+import type { Erc8004AgentService } from "../lib/erc-8004";
+import type { GlobalVariables } from "../vars";
+import { env } from "../env";
 import {
-  Erc8004AgentService,
   erc8004RegistryEventSchema,
   isErc8004AgentApiService,
   isErc8004AgentJobService,
@@ -20,7 +22,6 @@ import {
 import { privyWebhookHeadersSchema, verifyWebhook } from "../lib/privy";
 import { privy } from "../middlewares/privy";
 import { badRequest, ok } from "../utils/response";
-import type { GlobalVariables } from "../vars";
 
 export const webhook = new Hono<{ Variables: GlobalVariables }>()
   .post(
@@ -236,7 +237,11 @@ export const webhook = new Hono<{ Variables: GlobalVariables }>()
     }
   );
 
-const syncAgentServices = async (db: Db, agentId: string, services: Erc8004AgentService[] = []) => {
+const syncAgentServices = async (
+  db: Db,
+  agentId: AgentId,
+  services: Erc8004AgentService[] = []
+) => {
   await Promise.all([
     db.delete(schema.agentJobServices).where(eq(schema.agentJobServices.agent_id, agentId)),
     db.delete(schema.agentApiServices).where(eq(schema.agentApiServices.agent_id, agentId)),
