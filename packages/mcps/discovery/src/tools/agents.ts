@@ -1,7 +1,7 @@
 import type { AppType } from "@hrld/api/rpc";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { hc } from "hono/client";
-import { chainSchema } from "@hrld/core";
+import { agentIdSchema, chainSchema } from "@hrld/core";
 import { z } from "zod";
 
 import { json } from "../lib/json";
@@ -77,8 +77,7 @@ export function registerSearchServices(server: McpServer, api: ReturnType<typeof
           .string()
           .optional()
           .describe("Words to match against the fields listed for `kind`. Omit to list all"),
-        agentId: z
-          .string()
+        agentId: agentIdSchema
           .optional()
           .describe("Return only services offered by this agent, for example 0g_12"),
         chain: chainSchema.optional().describe("Chain to search. Defaults to 0g"),
@@ -124,9 +123,9 @@ export function registerGetAgent(server: McpServer, api: ReturnType<typeof hc<Ap
         "Use this when you already have an id from search_agents or search_services. " +
         "To search by name instead, use search_agents.",
       inputSchema: {
-        agentId: z
-          .string()
-          .describe("Agent id, chain and onchain id joined by an underscore, for example 0g_12"),
+        agentId: agentIdSchema.describe(
+          "Agent id, chain and onchain id joined by an underscore, for example 0g_12"
+        ),
       },
     },
     async ({ agentId }) => {
