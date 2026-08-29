@@ -111,25 +111,25 @@ transforms:
         `zg_transfer_events`
 sinks:
   zg_registered_webhook:
-    url: https://hrld.0verlabs.com/wehbook/goldsky/0g
+    url: https://hrld.0verlabs.com/webhook/goldsky/0g
     type: webhook
     secret_name: GOLDSKY_WEBHOOK_SECRET
     one_row_per_request: true
     from: zg_registered_event_transform
   zg_uri_updated_webhook:
-    url: https://hrld.0verlabs.com/wehbook/goldsky/0g
+    url: https://hrld.0verlabs.com/webhook/goldsky/0g
     type: webhook
     secret_name: GOLDSKY_WEBHOOK_SECRET
     one_row_per_request: false
     from: zg_uri_updated_event_transform
   zg_metadata_set_webhook:
-    url: https://hrld.0verlabs.com/wehbook/goldsky/0g
+    url: https://hrld.0verlabs.com/webhook/goldsky/0g
     type: webhook
     secret_name: GOLDSKY_WEBHOOK_SECRET
     one_row_per_request: false
     from: zg_metadata_set_event_transform
   zg_transfer_webhook:
-    url: https://hrld.0verlabs.com/wehbook/goldsky/0g
+    url: https://hrld.0verlabs.com/webhook/goldsky/0g
     type: webhook
     secret_name: GOLDSKY_WEBHOOK_SECRET
     one_row_per_request: false
