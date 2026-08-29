@@ -28,9 +28,7 @@ const listServicesQuery = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
-export const agents = new Hono<{ Variables: GlobalVariables }>();
-
-agents
+export const agents = new Hono<{ Variables: GlobalVariables }>()
   .get("/", zValidator("query", listAgentsQuery), async (c) => {
     const db = c.var.db;
     const { q, category, chain, limit, offset } = c.req.valid("query");

@@ -4,6 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
 
 import { env } from "./env";
+import { agents } from "./handlers/agents";
 // import { agents } from "./handlers/agents";
 import { webhook } from "./handlers/webhook";
 import { drizzleDb } from "./middlewares/drizzle";
@@ -18,7 +19,7 @@ const app = new Hono()
     return c.json({ error: "Internal Server Error" }, 500);
   })
   .use(drizzleDb(env.DATABASE_URL, schema))
-  // .route("/agents", agents)
+  .route("/agents", agents)
   .route("/webhook", webhook);
 
 export default app;
