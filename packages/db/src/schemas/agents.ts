@@ -35,47 +35,88 @@ export const agents = appSchema.table(
   ]
 );
 
-export const agentJobServices = appSchema.table("agent_job_services", (t) => ({
-  id: t
-    .varchar()
-    .primaryKey()
-    .$defaultFn(() => v7()),
-  agent_id: t
-    .varchar()
-    .notNull()
-    .references(() => agents.id, { onDelete: "cascade" }),
-  title: t.text().notNull(),
-  description: t.text().notNull(),
-}));
+export const agentJobServices = appSchema.table(
+  "agent_job_services",
+  (t) => ({
+    id: t
+      .varchar()
+      .primaryKey()
+      .$defaultFn(() => v7()),
+    agent_id: t
+      .varchar()
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    title: t.text().notNull(),
+    description: t.text().notNull(),
+  }),
+  (t) => [
+    index("agent_job_services_agent_id_idx").on(t.agent_id),
+    index("agent_job_services_title_trgm_idx").using("gin", sql`${t.title} gin_trgm_ops`),
+    index("agent_job_services_description_trgm_idx").using(
+      "gin",
+      sql`${t.description} gin_trgm_ops`
+    ),
+  ]
+);
 
-export const agentApiServices = appSchema.table("agent_api_services", (t) => ({
-  id: t
-    .varchar()
-    .primaryKey()
-    .$defaultFn(() => v7()),
-  agent_id: t
-    .varchar()
-    .notNull()
-    .references(() => agents.id, { onDelete: "cascade" }),
-  name: t.text().notNull(),
-  method: t.varchar().notNull(),
-  endpoint: t.text().notNull(),
-  version: t.varchar().notNull(),
-  description: t.text().notNull(),
-}));
+export const agentApiServices = appSchema.table(
+  "agent_api_services",
+  (t) => ({
+    id: t
+      .varchar()
+      .primaryKey()
+      .$defaultFn(() => v7()),
+    agent_id: t
+      .varchar()
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    name: t.text().notNull(),
+    method: t.varchar().notNull(),
+    endpoint: t.text().notNull(),
+    version: t.varchar().notNull(),
+    description: t.text().notNull(),
+  }),
+  (t) => [
+    index("agent_api_services_agent_id_idx").on(t.agent_id),
+    index("agent_api_services_name_trgm_idx").using("gin", sql`${t.name} gin_trgm_ops`),
+    index("agent_api_services_method_trgm_idx").using("gin", sql`${t.method} gin_trgm_ops`),
+    index("agent_api_services_description_trgm_idx").using(
+      "gin",
+      sql`${t.description} gin_trgm_ops`
+    ),
+  ]
+);
 
-export const agentMcpServices = appSchema.table("agent_mcp_services", (t) => ({
-  id: t
-    .varchar()
-    .primaryKey()
-    .$defaultFn(() => v7()),
-  agent_id: t
-    .varchar()
-    .notNull()
-    .references(() => agents.id, { onDelete: "cascade" }),
-  endpoint: t.text().notNull(),
-  version: t.varchar().notNull(),
-  tools: t.varchar().array().default([]),
-  resources: t.varchar().array().default([]),
-  prompts: t.varchar().array().default([]),
-}));
+export const agentMcpServices = appSchema.table(
+  "agent_mcp_services",
+  (t) => ({
+    id: t
+      .varchar()
+      .primaryKey()
+      .$defaultFn(() => v7()),
+    agent_id: t
+      .varchar()
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    endpoint: t.text().notNull(),
+    version: t.varchar().notNull(),
+    tools: t.varchar().array().default([]),
+    resources: t.varchar().array().default([]),
+    prompts: t.varchar().array().default([]),
+  }),
+  (t) => [
+    index("agent_mcp_services_agent_id_idx").on(t.agent_id),
+    index("agent_mcp_services_tools_trgm_idx").using(
+      "gin",
+      sql`array_to_string(${t.tools}, ' ') gin_trgm_ops`
+    ),
+    index("agent_mcp_services_resources_trgm_idx").using(
+      "gin",
+      sql`array_to_string(${t.resources}, ' ') gin_trgm_ops`
+    ),
+    index("agent_mcp_services_prompts_trgm_idx").using(
+      "gin",
+      sql`array_to_string(${t.prompts}, ' ') gin_trgm_ops`
+    ),
+  ]
+);
