@@ -2,7 +2,7 @@ import type { AnyColumn, SQL } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { agentIdCodec, agentSchema, chainSchema } from "@hrld/core";
 import * as schema from "@hrld/db";
-import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 
@@ -70,26 +70,29 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
 
     const hasMore = rows.length > limit;
 
-    const data = agentSchema.array().encode(
-      rows.slice(0, limit).map((row) => {
-        const id = agentIdCodec.encode({ chain: row.chain, onchainId: row.onchain_id });
+    const data = agentSchema
+      .omit({ serviceCounts: true })
+      .array()
+      .encode(
+        rows.slice(0, limit).map((row) => {
+          const id = agentIdCodec.encode({ chain: row.chain, onchainId: row.onchain_id });
 
-        return {
-          id,
-          chain: row.chain,
-          onchainId: row.onchain_id,
-          name: row.name,
-          description: row.description,
-          image: row.image,
-          category: row.category ?? "others",
-          active: row.active,
-          score: row.score,
-          feedbackCounts: row.feedback_counts,
-          wallet: row.wallet,
-          owner: row.owner,
-        };
-      })
-    );
+          return {
+            id,
+            chain: row.chain,
+            onchainId: row.onchain_id,
+            name: row.name,
+            description: row.description,
+            image: row.image,
+            category: row.category ?? "others",
+            active: row.active,
+            score: row.score,
+            feedbackCounts: row.feedback_counts,
+            wallet: row.wallet,
+            owner: row.owner,
+          };
+        })
+      );
 
     return ok(c, {
       data,
@@ -107,9 +110,28 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
 
     if (!record) return notFound(c, { message: `Agent ${agentId} not found` });
 
+    const [jobCounts] = await c.var.db
+      .select({
+        total: count(schema.agentJobServices.id),
+      })
+      .from(schema.agentJobServices)
+      .where(eq(schema.agentJobServices.agent_id, agentId));
+    const [apiCounts] = await c.var.db
+      .select({
+        total: count(schema.agentApiServices.id),
+      })
+      .from(schema.agentApiServices)
+      .where(eq(schema.agentApiServices.agent_id, agentId));
+    const [mcpCounts] = await c.var.db
+      .select({
+        total: count(schema.agentMcpServices.id),
+      })
+      .from(schema.agentMcpServices)
+      .where(eq(schema.agentMcpServices.agent_id, agentId));
+
     const id = agentIdCodec.encode({ chain: record.chain, onchainId: record.onchain_id });
 
-    const agent = agentSchema.parse({
+    const agent = agentSchema.encode({
       id,
       chain: record.chain,
       onchainId: record.onchain_id,
@@ -120,6 +142,11 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
       active: record.active,
       score: record.score,
       feedbackCounts: record.feedback_counts,
+      serviceCounts: {
+        job: jobCounts?.total ?? 0,
+        api: apiCounts?.total ?? 0,
+        mcp: mcpCounts?.total ?? 0,
+      },
       wallet: record.wallet,
       owner: record.owner,
     });

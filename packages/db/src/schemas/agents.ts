@@ -1,6 +1,7 @@
 import { supportedChains } from "@hrld/core";
 import { sql } from "drizzle-orm";
 import { bigint, boolean, check, index, integer, text, unique, varchar } from "drizzle-orm/pg-core";
+import { v7 } from "uuid";
 
 import { appSchema } from "../schema";
 import { timestamps } from "../utils/timestamps";
@@ -33,3 +34,48 @@ export const agents = appSchema.table(
     check("agents_feedback_counts_nonnegative", sql`${t.feedback_counts} >= 0`),
   ]
 );
+
+export const agentJobServices = appSchema.table("agent_job_services", (t) => ({
+  id: t
+    .varchar()
+    .primaryKey()
+    .$defaultFn(() => v7()),
+  agent_id: t
+    .varchar()
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  title: t.text().notNull(),
+  description: t.text().notNull(),
+}));
+
+export const agentApiServices = appSchema.table("agent_api_services", (t) => ({
+  id: t
+    .varchar()
+    .primaryKey()
+    .$defaultFn(() => v7()),
+  agent_id: t
+    .varchar()
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  name: t.text().notNull(),
+  method: t.varchar().notNull(),
+  endpoint: t.text().notNull(),
+  version: t.varchar().notNull(),
+  description: t.text().notNull(),
+}));
+
+export const agentMcpServices = appSchema.table("agent_mcp_services", (t) => ({
+  id: t
+    .varchar()
+    .primaryKey()
+    .$defaultFn(() => v7()),
+  agent_id: t
+    .varchar()
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  endpoint: t.text().notNull(),
+  version: t.varchar().notNull(),
+  tools: t.varchar().array().default([]),
+  resources: t.varchar().array().default([]),
+  prompts: t.varchar().array().default([]),
+}));

@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@hrld/core": "workspace:*",
-    "drizzle-orm": "catalog:"
+    "drizzle-orm": "catalog:",
+    "uuid": "catalog:"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
