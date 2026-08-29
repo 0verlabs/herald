@@ -7,7 +7,9 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignoreUnknown": true
+    "ignoreUnknown": true,
+    // Vendored agent skills/config
+    "includes": ["**", "!**/.agents", "!**/.claude", "!skills-lock.json"]
   },
   "formatter": {
     "enabled": true,
