@@ -1,12 +1,21 @@
 import { supportedChains } from "@hrld/core";
 import { sql } from "drizzle-orm";
-import { bigint, boolean, check, index, integer, text, unique, varchar } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  boolean,
+  check,
+  index,
+  integer,
+  pgTable,
+  text,
+  unique,
+  varchar,
+} from "drizzle-orm/pg-core";
 import { v7 } from "uuid";
 
-import { appSchema } from "../schema";
 import { timestamps } from "../utils/timestamps";
 
-export const agents = appSchema.table(
+export const agents = pgTable(
   "agents",
   {
     id: varchar().primaryKey(),
@@ -35,7 +44,7 @@ export const agents = appSchema.table(
   ]
 );
 
-export const agentJobServices = appSchema.table(
+export const agentJobServices = pgTable(
   "agent_job_services",
   (t) => ({
     id: t
@@ -59,7 +68,7 @@ export const agentJobServices = appSchema.table(
   ]
 );
 
-export const agentApiServices = appSchema.table(
+export const agentApiServices = pgTable(
   "agent_api_services",
   (t) => ({
     id: t
@@ -87,7 +96,7 @@ export const agentApiServices = appSchema.table(
   ]
 );
 
-export const agentMcpServices = appSchema.table(
+export const agentMcpServices = pgTable(
   "agent_mcp_services",
   (t) => ({
     id: t
