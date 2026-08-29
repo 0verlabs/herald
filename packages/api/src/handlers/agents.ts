@@ -1,3 +1,4 @@
+import type { AgentId } from "@hrld/core";
 import type { SQL } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import {
@@ -6,6 +7,7 @@ import {
   agentJobServiceSchema,
   agentMcpServiceSchema,
   agentSchema,
+  agentSummarySchema,
   chainSchema,
 } from "@hrld/core";
 import * as schema from "@hrld/db";
@@ -100,7 +102,7 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
     const { agentId, q, page, limit } = c.req.valid("query");
 
     const conditions: SQL[] = [];
-    if (agentId) conditions.push(eq(schema.agentJobServices.agent_id, agentId));
+    if (agentId) conditions.push(eq(schema.agentJobServices.agent_id, agentId as AgentId));
 
     const search = q
       ? buildTextSearch([schema.agentJobServices.title, schema.agentJobServices.description], q)
@@ -111,8 +113,26 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
 
     const [rows, [{ total } = { total: 0 }]] = await Promise.all([
       db
-        .select()
+        .select({
+          agent_job_services: {
+            id: schema.agentJobServices.id,
+            title: schema.agentJobServices.title,
+            description: schema.agentJobServices.description,
+          },
+          agent: {
+            id: schema.agents.id,
+            chain: schema.agents.chain,
+            onchain_id: schema.agents.onchain_id,
+            name: schema.agents.name,
+            description: schema.agents.description,
+            image: schema.agents.image,
+            score: schema.agents.score,
+            feedback_counts: schema.agents.feedback_counts,
+            owner: schema.agents.owner,
+          },
+        })
         .from(schema.agentJobServices)
+        .innerJoin(schema.agents, eq(schema.agents.id, schema.agentJobServices.agent_id))
         .where(where)
         .orderBy(...(search ? [search.relevance] : []), asc(schema.agentJobServices.id))
         .limit(limit)
@@ -120,14 +140,33 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
       db.select({ total: count() }).from(schema.agentJobServices).where(where),
     ]);
 
-    const data = agentJobServiceSchema.array().parse(
-      rows.map((row) => ({
-        id: row.id,
-        name: "JOB" as const,
-        title: row.title,
-        description: row.description,
-      }))
-    );
+    const data = agentJobServiceSchema
+      .omit({
+        agentId: true,
+      })
+      .extend({
+        agent: agentSummarySchema,
+      })
+      .array()
+      .encode(
+        rows.map((row) => ({
+          id: row.agent_job_services.id,
+          name: "JOB" as const,
+          title: row.agent_job_services.title,
+          description: row.agent_job_services.description,
+          agent: {
+            id: row.agent.id,
+            chain: row.agent.chain,
+            onchainId: row.agent.onchain_id,
+            name: row.agent.name,
+            description: row.agent.description,
+            image: row.agent.image,
+            score: row.agent.score,
+            feedbackCounts: row.agent.feedback_counts,
+            owner: row.agent.owner,
+          },
+        }))
+      );
 
     return ok(c, {
       data,
@@ -139,7 +178,7 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
     const { agentId, q, page, limit } = c.req.valid("query");
 
     const conditions: SQL[] = [];
-    if (agentId) conditions.push(eq(schema.agentApiServices.agent_id, agentId));
+    if (agentId) conditions.push(eq(schema.agentApiServices.agent_id, agentId as AgentId));
 
     const search = q
       ? buildTextSearch([schema.agentApiServices.name, schema.agentApiServices.description], q)
@@ -150,8 +189,29 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
 
     const [rows, [{ total } = { total: 0 }]] = await Promise.all([
       db
-        .select()
+        .select({
+          agent_api_services: {
+            id: schema.agentApiServices.id,
+            name: schema.agentApiServices.name,
+            method: schema.agentApiServices.method,
+            endpoint: schema.agentApiServices.endpoint,
+            version: schema.agentApiServices.version,
+            description: schema.agentApiServices.description,
+          },
+          agent: {
+            id: schema.agents.id,
+            chain: schema.agents.chain,
+            onchain_id: schema.agents.onchain_id,
+            name: schema.agents.name,
+            description: schema.agents.description,
+            image: schema.agents.image,
+            score: schema.agents.score,
+            feedback_counts: schema.agents.feedback_counts,
+            owner: schema.agents.owner,
+          },
+        })
         .from(schema.agentApiServices)
+        .innerJoin(schema.agents, eq(schema.agents.id, schema.agentApiServices.agent_id))
         .where(where)
         .orderBy(...(search ? [search.relevance] : []), asc(schema.agentApiServices.id))
         .limit(limit)
@@ -159,16 +219,35 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
       db.select({ total: count() }).from(schema.agentApiServices).where(where),
     ]);
 
-    const data = agentApiServiceSchema.array().parse(
-      rows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        method: row.method,
-        endpoint: row.endpoint,
-        version: row.version,
-        description: row.description,
-      }))
-    );
+    const data = agentApiServiceSchema
+      .omit({
+        agentId: true,
+      })
+      .extend({
+        agent: agentSummarySchema,
+      })
+      .array()
+      .parse(
+        rows.map((row) => ({
+          id: row.agent_api_services.id,
+          name: row.agent_api_services.name,
+          method: row.agent_api_services.method,
+          endpoint: row.agent_api_services.endpoint,
+          version: row.agent_api_services.version,
+          description: row.agent_api_services.description,
+          agent: {
+            id: row.agent.id,
+            chain: row.agent.chain,
+            onchainId: row.agent.onchain_id,
+            name: row.agent.name,
+            description: row.agent.description,
+            image: row.agent.image,
+            score: row.agent.score,
+            feedbackCounts: row.agent.feedback_counts,
+            owner: row.agent.owner,
+          },
+        }))
+      );
 
     return ok(c, {
       data,
@@ -180,7 +259,7 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
     const { agentId, q, page, limit } = c.req.valid("query");
 
     const conditions: SQL[] = [];
-    if (agentId) conditions.push(eq(schema.agentMcpServices.agent_id, agentId));
+    if (agentId) conditions.push(eq(schema.agentMcpServices.agent_id, agentId as AgentId));
 
     const search = q
       ? buildTextSearch(
@@ -198,8 +277,29 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
 
     const [rows, [{ total } = { total: 0 }]] = await Promise.all([
       db
-        .select()
+        .select({
+          agent_mcp_services: {
+            id: schema.agentMcpServices.id,
+            endpoint: schema.agentMcpServices.endpoint,
+            version: schema.agentMcpServices.version,
+            tools: schema.agentMcpServices.tools,
+            resources: schema.agentMcpServices.resources,
+            prompts: schema.agentMcpServices.prompts,
+          },
+          agent: {
+            id: schema.agents.id,
+            chain: schema.agents.chain,
+            onchain_id: schema.agents.onchain_id,
+            name: schema.agents.name,
+            description: schema.agents.description,
+            image: schema.agents.image,
+            score: schema.agents.score,
+            feedback_counts: schema.agents.feedback_counts,
+            owner: schema.agents.owner,
+          },
+        })
         .from(schema.agentMcpServices)
+        .innerJoin(schema.agents, eq(schema.agents.id, schema.agentMcpServices.agent_id))
         .where(where)
         .orderBy(...(search ? [search.relevance] : []), asc(schema.agentMcpServices.id))
         .limit(limit)
@@ -209,13 +309,24 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
 
     const data = agentMcpServiceSchema.array().parse(
       rows.map((row) => ({
-        id: row.id,
+        id: row.agent_mcp_services.id,
         name: "MCP" as const,
-        endpoint: row.endpoint,
-        version: row.version,
-        tools: row.tools ?? [],
-        resources: row.resources ?? [],
-        prompts: row.prompts ?? [],
+        endpoint: row.agent_mcp_services.endpoint,
+        version: row.agent_mcp_services.version,
+        tools: row.agent_mcp_services.tools ?? [],
+        resources: row.agent_mcp_services.resources ?? [],
+        prompts: row.agent_mcp_services.prompts ?? [],
+        agent: {
+          id: row.agent.id,
+          chain: row.agent.chain,
+          onchainId: row.agent.onchain_id,
+          name: row.agent.name,
+          description: row.agent.description,
+          image: row.agent.image,
+          score: row.agent.score,
+          feedbackCounts: row.agent.feedback_counts,
+          owner: row.agent.owner,
+        },
       }))
     );
 
@@ -230,7 +341,7 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
     const [record] = await c.var.db
       .select()
       .from(schema.agents)
-      .where(eq(schema.agents.id, agentId))
+      .where(eq(schema.agents.id, agentId as AgentId))
       .limit(1);
 
     if (!record) return notFound(c, { message: `Agent ${agentId} not found` });
@@ -240,15 +351,15 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
         c.var.db
           .select({ total: count(schema.agentJobServices.id) })
           .from(schema.agentJobServices)
-          .where(eq(schema.agentJobServices.agent_id, agentId)),
+          .where(eq(schema.agentJobServices.agent_id, agentId as AgentId)),
         c.var.db
           .select({ total: count(schema.agentApiServices.id) })
           .from(schema.agentApiServices)
-          .where(eq(schema.agentApiServices.agent_id, agentId)),
+          .where(eq(schema.agentApiServices.agent_id, agentId as AgentId)),
         c.var.db
           .select({ total: count(schema.agentMcpServices.id) })
           .from(schema.agentMcpServices)
-          .where(eq(schema.agentMcpServices.agent_id, agentId)),
+          .where(eq(schema.agentMcpServices.agent_id, agentId as AgentId)),
       ]);
 
     const id = agentIdCodec.encode({ chain: record.chain, onchainId: record.onchain_id });

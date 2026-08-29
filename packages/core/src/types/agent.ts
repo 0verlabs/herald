@@ -2,13 +2,13 @@ import { z } from "zod";
 
 import { chainSchema } from "./chain";
 
-export const agentOnchainId = z.number().int().nonnegative();
+export const agentOnchainIdSchema = z.number().int().nonnegative();
 
 export const agentIdCodec = z.codec(
-  z.templateLiteral([chainSchema, "_", agentOnchainId]),
+  z.templateLiteral([chainSchema, "_", agentOnchainIdSchema]),
   z.object({
     chain: chainSchema,
-    onchainId: agentOnchainId,
+    onchainId: agentOnchainIdSchema,
   }),
   {
     encode: ({ chain, onchainId }) => `${chain}_${onchainId}` as const,
@@ -16,7 +16,7 @@ export const agentIdCodec = z.codec(
       const [chainStr, onchainIdStr] = str.split("_");
 
       const chain = chainSchema.parse(chainStr);
-      const onchainId = agentOnchainId.parse(onchainIdStr);
+      const onchainId = agentOnchainIdSchema.parse(onchainIdStr);
 
       return {
         chain,
@@ -37,7 +37,7 @@ export const agentIdSchema = agentIdCodec.in;
 export const agentSchema = z.object({
   id: agentIdSchema,
   chain: chainSchema,
-  onchainId: agentOnchainId,
+  onchainId: agentOnchainIdSchema,
   name: z.string(),
   description: z.string(),
   image: z.string(),
@@ -50,8 +50,21 @@ export const agentSchema = z.object({
   active: z.boolean(),
 });
 
+export const agentSummarySchema = z.object({
+  id: agentIdSchema,
+  chain: chainSchema,
+  onchainId: agentOnchainIdSchema,
+  name: z.string(),
+  description: z.string(),
+  image: z.string(),
+  score: z.number().min(0).max(100),
+  feedbackCounts: z.number().nonnegative(),
+  owner: z.string(),
+});
+
 export const agentJobServiceSchema = z.object({
   id: z.string(),
+  agentId: agentIdSchema,
   name: z.literal("JOB"),
   title: z.string(),
   description: z.string(),
@@ -59,6 +72,7 @@ export const agentJobServiceSchema = z.object({
 
 export const agentApiServiceSchema = z.object({
   id: z.string(),
+  agentId: agentIdSchema,
   name: z.string(),
   method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
   endpoint: z.string(),
@@ -68,6 +82,7 @@ export const agentApiServiceSchema = z.object({
 
 export const agentMcpServiceSchema = z.object({
   id: z.string(),
+  agentId: agentIdSchema,
   name: z.literal("MCP"),
   endpoint: z.string(),
   version: z.string(),
@@ -82,7 +97,10 @@ export const agentServiceSchema = z.union([
   agentMcpServiceSchema,
 ]);
 
+export type AgentId = z.infer<typeof agentIdSchema>;
+export type AgentServiceCount = z.infer<typeof agentServiceCountSchema>;
 export type Agent = z.infer<typeof agentSchema>;
+export type AgentSummary = z.infer<typeof agentSummarySchema>;
 export type AgentJobService = z.infer<typeof agentJobServiceSchema>;
 export type AgentApiService = z.infer<typeof agentApiServiceSchema>;
 export type AgentMcpService = z.infer<typeof agentMcpServiceSchema>;

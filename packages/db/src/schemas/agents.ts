@@ -1,3 +1,4 @@
+import type { AgentId } from "@hrld/core";
 import { supportedChains } from "@hrld/core";
 import { sql } from "drizzle-orm";
 import {
@@ -18,7 +19,7 @@ import { timestamps } from "../utils/timestamps";
 export const agents = pgTable(
   "agents",
   {
-    id: varchar().primaryKey(),
+    id: varchar().primaryKey().$type<AgentId>(),
     chain: varchar({ enum: supportedChains }).notNull(),
     onchain_id: bigint({ mode: "number" }).notNull(),
     name: text().notNull(),
@@ -54,7 +55,8 @@ export const agentJobServices = pgTable(
     agent_id: t
       .varchar()
       .notNull()
-      .references(() => agents.id, { onDelete: "cascade" }),
+      .references(() => agents.id, { onDelete: "cascade" })
+      .$type<AgentId>(),
     title: t.text().notNull(),
     description: t.text().notNull(),
   }),
@@ -78,7 +80,8 @@ export const agentApiServices = pgTable(
     agent_id: t
       .varchar()
       .notNull()
-      .references(() => agents.id, { onDelete: "cascade" }),
+      .references(() => agents.id, { onDelete: "cascade" })
+      .$type<AgentId>(),
     name: t.text().notNull(),
     method: t.varchar().notNull(),
     endpoint: t.text().notNull(),
@@ -106,7 +109,8 @@ export const agentMcpServices = pgTable(
     agent_id: t
       .varchar()
       .notNull()
-      .references(() => agents.id, { onDelete: "cascade" }),
+      .references(() => agents.id, { onDelete: "cascade" })
+      .$type<AgentId>(),
     endpoint: t.text().notNull(),
     version: t.varchar().notNull(),
     tools: t.varchar().array().default([]),
