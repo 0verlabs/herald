@@ -138,8 +138,47 @@ export function registerGetAgent(server: McpServer, api: ReturnType<typeof hc<Ap
   );
 }
 
+export function registerGetAgentFeedback(server: McpServer, api: ReturnType<typeof hc<AppType>>) {
+  server.registerTool(
+    "get_agent_feedback",
+    {
+      title: "Get agent feedback",
+      description:
+        "Get onchain feedback for one agent, newest first. Each entry carries a numeric value, " +
+        "the client address that gave it, and when available a reasoning and a proof of payment. " +
+        "Revoked feedback is excluded. Values are not guaranteed to be on a 0-100 scale; " +
+        "the agent's 0-100 `score` from get_agent aggregates only the 0-100 entries. " +
+        "Empty `data` means the agent has no feedback yet. " +
+        "Read `next` from the response and pass it back as `offset` to get the following page. On the last page `next` is null.",
+      inputSchema: {
+        agentId: agentIdSchema.describe(
+          "Agent id, chain and onchain id joined by an underscore, for example 0g_12"
+        ),
+        offset: z.coerce
+          .number()
+          .int()
+          .min(0)
+          .default(0)
+          .describe("Results to skip. Pass the `next` value from the previous response"),
+        limit: z.number().int().min(1).max(50).default(20).describe("Results per page, 1 to 50"),
+      },
+    },
+    async ({ agentId, offset, limit }) => {
+      const res = await api.agents[":agentId"].feedbacks.$get({
+        param: { agentId },
+        query: { offset: String(offset), limit: String(limit) },
+      });
+
+      if (!res.ok) return { ...json({ error: `Agent ${agentId} not found` }), isError: true };
+
+      return json(await res.json());
+    }
+  );
+}
+
 export function registerAgentTools(server: McpServer, api: ReturnType<typeof hc<AppType>>) {
   registerSearchAgents(server, api);
   registerSearchServices(server, api);
   registerGetAgent(server, api);
+  registerGetAgentFeedback(server, api);
 }
