@@ -41,7 +41,7 @@ export const agentSchema = z.object({
   name: z.string(),
   description: z.string(),
   image: z.string(),
-  category: z.string(),
+  category: z.string().nullable(),
   score: z.number().min(0).max(100),
   feedbackCounts: z.number().nonnegative(),
   serviceCounts: agentServiceCountSchema.default({ job: 0, api: 0, mcp: 0 }),
