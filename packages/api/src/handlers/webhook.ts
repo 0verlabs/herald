@@ -7,12 +7,20 @@ import { bearerAuth } from "hono/bearer-auth";
 import { bytesToHex, hexToBytes, hexToString, isAddressEqual, slice, zeroAddress } from "viem";
 import { z } from "zod";
 
-import type { GlobalVariables } from "../vars";
 import { env } from "../env";
-import { registryEventSchema, resolveAgentRegistrationFileFromUri } from "../lib/erc-8004";
+import type { Db } from "../lib/db";
+import {
+  Erc8004AgentService,
+  erc8004RegistryEventSchema,
+  isErc8004AgentApiService,
+  isErc8004AgentJobService,
+  isErc8004AgentMcpService,
+  resolveErc8004AgentRegistrationFile,
+} from "../lib/erc-8004";
 import { privyWebhookHeadersSchema, verifyWebhook } from "../lib/privy";
 import { privy } from "../middlewares/privy";
 import { badRequest, ok } from "../utils/response";
+import type { GlobalVariables } from "../vars";
 
 export const webhook = new Hono<{ Variables: GlobalVariables }>()
   .post(
@@ -101,7 +109,7 @@ export const webhook = new Hono<{ Variables: GlobalVariables }>()
               return z.NEVER;
             }
           })
-          .pipe(registryEventSchema),
+          .pipe(erc8004RegistryEventSchema),
       })
     ),
     bearerAuth({ token: env.GOLDSKY_WEBHOOK_SECRET }),
@@ -115,7 +123,7 @@ export const webhook = new Hono<{ Variables: GlobalVariables }>()
         case "IdentityRegistry:Registered": {
           const { agentId, agentUri, owner } = payload.args;
 
-          const agentRegistrationFile = await resolveAgentRegistrationFileFromUri(agentUri);
+          const agentRegistrationFile = await resolveErc8004AgentRegistrationFile(agentUri);
           if (!agentRegistrationFile) return ok(c);
 
           const id = agentIdCodec.encode({ chain, onchainId: agentId });
@@ -136,6 +144,8 @@ export const webhook = new Hono<{ Variables: GlobalVariables }>()
               owner: ownerAddress,
             })
             .onConflictDoNothing();
+
+          await syncAgentServices(db, id, agentRegistrationFile.services);
 
           return ok(c);
         }
@@ -176,7 +186,7 @@ export const webhook = new Hono<{ Variables: GlobalVariables }>()
         case "IdentityRegistry:URIUpdated": {
           const { agentId, newUri } = payload.args;
 
-          const agentRegistrationFile = await resolveAgentRegistrationFileFromUri(newUri);
+          const agentRegistrationFile = await resolveErc8004AgentRegistrationFile(newUri);
           if (!agentRegistrationFile) return ok(c);
 
           const [existingAgent] = await db
@@ -194,6 +204,8 @@ export const webhook = new Hono<{ Variables: GlobalVariables }>()
               active: agentRegistrationFile.active,
             })
             .where(eq(schema.agents.id, existingAgent.id));
+
+          await syncAgentServices(db, existingAgent.id, agentRegistrationFile.services);
 
           return ok(c);
         }
@@ -216,8 +228,58 @@ export const webhook = new Hono<{ Variables: GlobalVariables }>()
 
           return ok(c);
         }
+        case "ReputationRegistry:NewFeedback": {
+        }
       }
 
       return ok(c);
     }
   );
+
+const syncAgentServices = async (db: Db, agentId: string, services: Erc8004AgentService[] = []) => {
+  await Promise.all([
+    db.delete(schema.agentJobServices).where(eq(schema.agentJobServices.agent_id, agentId)),
+    db.delete(schema.agentApiServices).where(eq(schema.agentApiServices.agent_id, agentId)),
+    db.delete(schema.agentMcpServices).where(eq(schema.agentMcpServices.agent_id, agentId)),
+  ]);
+
+  const erc8004JobServices = services.filter(isErc8004AgentJobService);
+  const erc8004ApiServices = services.filter(isErc8004AgentApiService);
+  const erc8004McpServices = services.filter(isErc8004AgentMcpService);
+
+  await Promise.all([
+    erc8004JobServices.length
+      ? db.insert(schema.agentJobServices).values(
+          erc8004JobServices.map((service) => ({
+            agent_id: agentId,
+            title: service.title,
+            description: service.description,
+          }))
+        )
+      : undefined,
+    erc8004ApiServices.length
+      ? db.insert(schema.agentApiServices).values(
+          erc8004ApiServices.map((service) => ({
+            agent_id: agentId,
+            name: service.name,
+            method: service.method,
+            endpoint: service.endpoint,
+            version: service.version,
+            description: service.description,
+          }))
+        )
+      : undefined,
+    erc8004McpServices.length
+      ? db.insert(schema.agentMcpServices).values(
+          erc8004McpServices.map((service) => ({
+            agent_id: agentId,
+            endpoint: service.endpoint,
+            version: service.version,
+            tools: service.mcpTools ?? [],
+            resources: service.mcpResources ?? [],
+            prompts: service.mcpPrompts ?? [],
+          }))
+        )
+      : undefined,
+  ]);
+};
