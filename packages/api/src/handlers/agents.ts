@@ -3,6 +3,7 @@ import type { SQL } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import {
   agentApiServiceSchema,
+  agentFeedbackSchema,
   agentIdCodec,
   agentJobServiceSchema,
   agentMcpServiceSchema,
@@ -11,7 +12,7 @@ import {
   chainSchema,
 } from "@hrld/core";
 import * as schema from "@hrld/db";
-import { and, asc, count, desc, eq, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 
@@ -29,6 +30,11 @@ const listAgentsQuery = z.object({
 
 const getAgentByIdParam = z.object({
   agentId: z.string(),
+});
+
+const listAgentFeedbackQuery = z.object({
+  offset: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
 const listServicesQuery = z.object({
@@ -408,4 +414,55 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
     });
 
     return ok(c, agent);
-  });
+  })
+  .get(
+    "/:agentId/feedbacks",
+    zValidator("param", getAgentByIdParam),
+    zValidator("query", listAgentFeedbackQuery),
+    async (c) => {
+      const db = c.var.db;
+      const { agentId } = c.req.valid("param");
+      const { offset, limit } = c.req.valid("query");
+
+      const [existingAgent] = await db
+        .select({ id: schema.agents.id })
+        .from(schema.agents)
+        .where(eq(schema.agents.id, agentId as AgentId));
+      if (!existingAgent) return notFound(c, { message: `Agent ${agentId} not found` });
+
+      // Fetch one extra row past the page boundary to know whether another
+      // page exists, without a separate count query.
+      const rows = await db
+        .select()
+        .from(schema.agentFeedback)
+        .where(
+          and(
+            eq(schema.agentFeedback.agent_id, existingAgent.id),
+            isNull(schema.agentFeedback.revoked_at)
+          )
+        )
+        .orderBy(desc(schema.agentFeedback.created_at), desc(schema.agentFeedback.id))
+        .limit(limit + 1)
+        .offset(offset);
+
+      const hasMore = rows.length > limit;
+
+      const data = agentFeedbackSchema.array().parse(
+        rows.slice(0, limit).map((row) => ({
+          id: row.id,
+          agentId: row.agent_id,
+          clientAddress: row.client_address,
+          feedbackIndex: row.feedback_index,
+          value: row.value,
+          reasoning: row.reasoning,
+          proofOfPayment: row.proof_of_payment,
+          revoked: row.revoked_at !== null,
+        }))
+      );
+
+      return ok(c, {
+        data,
+        next: hasMore ? offset + limit : null,
+      });
+    }
+  );

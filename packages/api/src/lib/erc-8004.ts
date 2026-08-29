@@ -45,11 +45,46 @@ export const erc8004IdentityRegistryEventSchema = z.union([
 
 export const erc8004ReputationRegistryNewFeedbackEventSchema = createEventSchema(
   "ReputationRegistry:NewFeedback",
-  z.object({})
+  z.object({
+    agentId: z.number(),
+    clientAddress: z.string(),
+    feedbackIndex: z.number(),
+    value: z.number(),
+    valueDecimals: z.number().int().min(0).max(18),
+    indexedTag1: z.string(),
+    tag1: z.string(),
+    tag2: z.string(),
+    endpoint: z.string(),
+    feedbackURI: z.string(),
+    feedbackHash: z.string(),
+  })
+);
+
+export const erc8004ReputationRegistryFeedbackRevokedEventSchema = createEventSchema(
+  "ReputationRegistry:FeedbackRevoked",
+  z.object({
+    agentId: z.number(),
+    clientAddress: z.string(),
+    feedbackIndex: z.number(),
+  })
+);
+
+export const erc8004ReputationRegistryResponseAppendedEventSchema = createEventSchema(
+  "ReputationRegistry:ResponseAppended",
+  z.object({
+    agentId: z.number(),
+    clientAddress: z.string(),
+    feedbackIndex: z.number(),
+    responder: z.string(),
+    responseURI: z.string(),
+    responseHash: z.string(),
+  })
 );
 
 export const erc8004ReputationRegistryEventSchema = z.union([
   erc8004ReputationRegistryNewFeedbackEventSchema,
+  erc8004ReputationRegistryFeedbackRevokedEventSchema,
+  erc8004ReputationRegistryResponseAppendedEventSchema,
 ]);
 
 export const erc8004RegistryEventSchema = z.union([
@@ -118,6 +153,20 @@ export const erc8004AgentRegistrationFileSchema = z.object({
   supportedTrust: z.string().array().optional(),
 });
 
+export const erc8004FeedbackFileProofOfPaymentSchema = z.object({
+  fromAddress: z.string(),
+  toAddress: z.string(),
+  chainId: z.union([z.string(), z.number()]).transform(String),
+  txHash: z.string(),
+  amount: z.string().optional(),
+  currency: z.string().optional(),
+});
+
+export const erc8004FeedbackFileSchema = z.object({
+  reasoning: z.string().optional(),
+  proofOfPayment: erc8004FeedbackFileProofOfPaymentSchema.optional(),
+});
+
 export type Erc8004IdentityRegistryRegisteredEvent = z.infer<
   typeof erc8004IdentityRegistryRegisteredEventSchema
 >;
@@ -135,6 +184,12 @@ export type Erc8004IdentityRegistryEvent = z.infer<typeof erc8004IdentityRegistr
 
 export type Erc8004ReputationRegistryNewFeedbackEvent = z.infer<
   typeof erc8004ReputationRegistryNewFeedbackEventSchema
+>;
+export type Erc8004ReputationRegistryFeedbackRevokedEvent = z.infer<
+  typeof erc8004ReputationRegistryFeedbackRevokedEventSchema
+>;
+export type Erc8004ReputationRegistryResponseAppendedEvent = z.infer<
+  typeof erc8004ReputationRegistryResponseAppendedEventSchema
 >;
 
 export type Erc8004ReputationRegistryEvent = z.infer<typeof erc8004ReputationRegistryEventSchema>;
@@ -156,6 +211,12 @@ export type Erc8004AgentRegistration = z.infer<typeof erc8004AgentRegistrationSc
 
 export type Erc8004AgentRegistrationFile = z.infer<typeof erc8004AgentRegistrationFileSchema>;
 
+export type Erc8004FeedbackFileProofOfPayment = z.infer<
+  typeof erc8004FeedbackFileProofOfPaymentSchema
+>;
+
+export type Erc8004FeedbackFile = z.infer<typeof erc8004FeedbackFileSchema>;
+
 export const resolveErc8004AgentRegistrationFile = async (
   uri: string
 ): Promise<Erc8004AgentRegistrationFile | null> => {
@@ -172,6 +233,23 @@ export const resolveErc8004AgentRegistrationFile = async (
 
   return parsed.data;
 };
+
+export const resolveErc8004FeedbackFile = async (
+  uri: string
+): Promise<Erc8004FeedbackFile | null> => {
+  const response = await fetch(uri).catch(() => null);
+  if (!response?.ok) return null;
+
+  const json = await response.json().catch(() => null);
+
+  const parsed = erc8004FeedbackFileSchema.safeParse(json);
+  if (!parsed.success) return null;
+
+  return parsed.data;
+};
+
+export const normalizeErc8004FeedbackValue = (value: number | string, valueDecimals: number) =>
+  Number(value) / 10 ** valueDecimals;
 
 export const isErc8004AgentJobService = (service: unknown): service is Erc8004AgentJobService =>
   erc8004AgentJobServiceSchema.safeParse(service).success;

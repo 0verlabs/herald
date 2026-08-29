@@ -2,7 +2,7 @@ import type { AgentId } from "@hrld/core";
 import { zValidator } from "@hono/zod-validator";
 import { agentIdCodec, chainSchema } from "@hrld/core";
 import * as schema from "@hrld/db";
-import { and, eq } from "drizzle-orm";
+import { and, avg, between, count, eq, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
 import { bytesToHex, hexToBytes, hexToString, isAddressEqual, slice, zeroAddress } from "viem";
@@ -17,7 +17,9 @@ import {
   isErc8004AgentApiService,
   isErc8004AgentJobService,
   isErc8004AgentMcpService,
+  normalizeErc8004FeedbackValue,
   resolveErc8004AgentRegistrationFile,
+  resolveErc8004FeedbackFile,
 } from "../lib/erc-8004";
 import { privyWebhookHeadersSchema, verifyWebhook } from "../lib/privy";
 import { privy } from "../middlewares/privy";
@@ -230,12 +232,82 @@ export const webhook = new Hono<{ Variables: GlobalVariables }>()
           return ok(c);
         }
         case "ReputationRegistry:NewFeedback": {
+          const { agentId, clientAddress, feedbackIndex, value, valueDecimals, feedbackURI } =
+            payload.args;
+
+          const [existingAgent] = await db
+            .select({ id: schema.agents.id })
+            .from(schema.agents)
+            .where(and(eq(schema.agents.chain, chain), eq(schema.agents.onchain_id, agentId)));
+          if (!existingAgent) return ok(c);
+
+          // The onchain fields are authoritative; the file only adds context. A
+          // missing or broken file must not block the score from being stored.
+          const feedbackFile = feedbackURI ? await resolveErc8004FeedbackFile(feedbackURI) : null;
+
+          await db
+            .insert(schema.agentFeedback)
+            .values({
+              agent_id: existingAgent.id,
+              client_address: clientAddress.toLowerCase(),
+              feedback_index: feedbackIndex,
+              value: normalizeErc8004FeedbackValue(value, valueDecimals),
+              reasoning: feedbackFile?.reasoning ?? null,
+              proof_of_payment: feedbackFile?.proofOfPayment ?? null,
+            })
+            .onConflictDoNothing();
+
+          await syncAgentScore(db, existingAgent.id);
+
+          return ok(c);
+        }
+        case "ReputationRegistry:FeedbackRevoked": {
+          const { agentId, clientAddress, feedbackIndex } = payload.args;
+
+          const [existingAgent] = await db
+            .select({ id: schema.agents.id })
+            .from(schema.agents)
+            .where(and(eq(schema.agents.chain, chain), eq(schema.agents.onchain_id, agentId)));
+          if (!existingAgent) return ok(c);
+
+          await db
+            .update(schema.agentFeedback)
+            .set({ revoked_at: new Date() })
+            .where(
+              and(
+                eq(schema.agentFeedback.agent_id, existingAgent.id),
+                eq(schema.agentFeedback.client_address, clientAddress.toLowerCase()),
+                eq(schema.agentFeedback.feedback_index, feedbackIndex)
+              )
+            );
+
+          await syncAgentScore(db, existingAgent.id);
+
+          return ok(c);
         }
       }
 
       return ok(c);
     }
   );
+
+const syncAgentScore = async (db: Db, agentId: AgentId) => {
+  const [summary] = await db
+    .select({ average: avg(schema.agentFeedback.value), total: count() })
+    .from(schema.agentFeedback)
+    .where(
+      and(
+        eq(schema.agentFeedback.agent_id, agentId),
+        isNull(schema.agentFeedback.revoked_at),
+        between(schema.agentFeedback.value, 0, 100)
+      )
+    );
+
+  await db
+    .update(schema.agents)
+    .set({ score: Math.round(Number(summary?.average ?? 0)), feedback_counts: summary?.total ?? 0 })
+    .where(eq(schema.agents.id, agentId));
+};
 
 const syncAgentServices = async (
   db: Db,
