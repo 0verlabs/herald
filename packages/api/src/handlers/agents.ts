@@ -1,4 +1,4 @@
-import type { AnyColumn, SQL } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import {
   agentApiServiceSchema,
@@ -9,14 +9,13 @@ import {
   chainSchema,
 } from "@hrld/core";
 import * as schema from "@hrld/db";
-import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 
 import type { GlobalVariables } from "../vars";
+import { buildTextSearch } from "../lib/db";
 import { notFound, ok } from "../utils/response";
-
-const TRIGRAM_SIMILARITY_THRESHOLD = 0.15;
 
 const listAgentsQuery = z.object({
   q: z.string().optional(),
@@ -37,28 +36,6 @@ const listServicesQuery = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
-// Builds an OR of ilike + trigram-similarity conditions across the given
-// columns/expressions, plus a relevance ordering by the best match. Columns
-// can be plain table columns or SQL expressions (e.g. array_to_string for
-// array fields like MCP tools/resources/prompts).
-const buildTextSearch = (columns: (AnyColumn | SQL)[], q: string) => {
-  const pattern = `%${q}%`;
-  const match = or(
-    ...columns.flatMap((column) => [
-      sql`${column} ilike ${pattern}`,
-      sql`similarity(${column}, ${q}) > ${TRIGRAM_SIMILARITY_THRESHOLD}`,
-    ])
-  ) as SQL;
-  const relevance = desc(
-    sql`greatest(${sql.join(
-      columns.map((column) => sql`similarity(${column}, ${q})`),
-      sql`, `
-    )})`
-  );
-
-  return { match, relevance };
-};
-
 export const agents = new Hono<{ Variables: GlobalVariables }>()
   .get("/", zValidator("query", listAgentsQuery), async (c) => {
     const db = c.var.db;
@@ -68,26 +45,10 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
 
     if (category) conditions.push(eq(schema.agents.category, category));
 
-    if (q) {
-      const pattern = `%${q}%`;
-      const fuzzy = (column: AnyColumn) =>
-        sql`similarity(${column}, ${q}) > ${TRIGRAM_SIMILARITY_THRESHOLD}`;
-      // ilike catches exact substrings (incl. short queries); similarity()
-      // adds typo-tolerant trigram matching on top.
-      const match = or(
-        ilike(schema.agents.name, pattern),
-        ilike(schema.agents.description, pattern),
-        fuzzy(schema.agents.name),
-        fuzzy(schema.agents.description)
-      );
-      if (match) conditions.push(match);
-    }
-
-    const relevance = q
-      ? desc(
-          sql`greatest(similarity(${schema.agents.name}, ${q}), similarity(${schema.agents.description}, ${q}))`
-        )
+    const search = q
+      ? buildTextSearch([schema.agents.name, schema.agents.description], q)
       : undefined;
+    if (search) conditions.push(search.match);
 
     // Fetch one extra row past the page boundary to know whether another
     // page exists, without a separate count query.
@@ -95,7 +56,11 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
       .select()
       .from(schema.agents)
       .where(and(...conditions))
-      .orderBy(...(relevance ? [relevance] : []), desc(schema.agents.score), asc(schema.agents.id))
+      .orderBy(
+        ...(search ? [search.relevance] : []),
+        desc(schema.agents.score),
+        asc(schema.agents.id)
+      )
       .limit(limit + 1)
       .offset(offset);
 
@@ -270,24 +235,21 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
 
     if (!record) return notFound(c, { message: `Agent ${agentId} not found` });
 
-    const [jobCounts] = await c.var.db
-      .select({
-        total: count(schema.agentJobServices.id),
-      })
-      .from(schema.agentJobServices)
-      .where(eq(schema.agentJobServices.agent_id, agentId));
-    const [apiCounts] = await c.var.db
-      .select({
-        total: count(schema.agentApiServices.id),
-      })
-      .from(schema.agentApiServices)
-      .where(eq(schema.agentApiServices.agent_id, agentId));
-    const [mcpCounts] = await c.var.db
-      .select({
-        total: count(schema.agentMcpServices.id),
-      })
-      .from(schema.agentMcpServices)
-      .where(eq(schema.agentMcpServices.agent_id, agentId));
+    const [[jobCounts = { total: 0 }], [apiCounts = { total: 0 }], [mcpCounts = { total: 0 }]] =
+      await Promise.all([
+        c.var.db
+          .select({ total: count(schema.agentJobServices.id) })
+          .from(schema.agentJobServices)
+          .where(eq(schema.agentJobServices.agent_id, agentId)),
+        c.var.db
+          .select({ total: count(schema.agentApiServices.id) })
+          .from(schema.agentApiServices)
+          .where(eq(schema.agentApiServices.agent_id, agentId)),
+        c.var.db
+          .select({ total: count(schema.agentMcpServices.id) })
+          .from(schema.agentMcpServices)
+          .where(eq(schema.agentMcpServices.agent_id, agentId)),
+      ]);
 
     const id = agentIdCodec.encode({ chain: record.chain, onchainId: record.onchain_id });
 
@@ -303,9 +265,9 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
       score: record.score,
       feedbackCounts: record.feedback_counts,
       serviceCounts: {
-        job: jobCounts?.total ?? 0,
-        api: apiCounts?.total ?? 0,
-        mcp: mcpCounts?.total ?? 0,
+        job: jobCounts.total,
+        api: apiCounts.total,
+        mcp: mcpCounts.total,
       },
       wallet: record.wallet,
       owner: record.owner,
