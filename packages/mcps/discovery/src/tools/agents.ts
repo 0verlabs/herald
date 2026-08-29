@@ -1,6 +1,7 @@
 import type { AppType } from "@hrld/api/rpc";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { hc } from "hono/client";
+import { chainSchema } from "@hrld/core";
 import { z } from "zod";
 
 import { json } from "../lib/json";
@@ -11,36 +12,37 @@ export function registerSearchAgents(server: McpServer, api: ReturnType<typeof h
     {
       title: "Search agents",
       description:
-        "Search ERC-8004 agents indexed by Herald. Free-text search across agent name, description, and API service names/descriptions; matches exact substrings plus fuzzy near-matches like typos.",
+        "Find ERC-8004 agents in Herald's index. The query matches substrings and typos in an agent's name and description. " +
+        "Use this to find who can do something. Use search_services to find the specific job, API endpoint, or MCP tool an agent exposes. " +
+        "Inactive agents are never returned. Results are ranked by how well they match, then by reputation score. " +
+        "Read `next` from the response and pass it back as `offset` to get the following page. On the last page `next` is null.",
       inputSchema: {
         query: z
           .string()
           .optional()
-          .describe(
-            "Free-text query across agent name, description, and API service names/descriptions"
-          ),
-        category: z.string().optional().describe("Exact category match"),
-        chain: z
-          .enum(["0g", "0g-testnet"])
+          .describe("Words to match against agent names and descriptions. Omit to list all agents"),
+        category: z
+          .string()
           .optional()
-          .describe("Chain to search on; defaults to 0g"),
-        limit: z.number().int().min(1).max(50).default(20).describe("Maximum results per page"),
-        cursor: z
+          .describe("Return only agents in this category. Matched exactly, no typo tolerance"),
+        chain: chainSchema.optional().describe("Chain to search. Defaults to 0g"),
+        offset: z.coerce
           .number()
           .int()
           .min(0)
           .default(0)
-          .describe("Offset pagination cursor; pass nextCursor from the previous call"),
+          .describe("Results to skip. Pass the `next` value from the previous response"),
+        limit: z.number().int().min(1).max(50).default(20).describe("Results per page, 1 to 50"),
       },
     },
-    async ({ query, category, chain, limit, cursor }) => {
+    async ({ query, category, chain, limit, offset }) => {
       const res = await api.agents.$get({
         query: {
-          q: query,
+          ...(query ? { q: query } : {}),
           ...(category ? { category } : {}),
           ...(chain ? { chain } : {}),
+          offset: String(offset),
           limit: String(limit),
-          cursor: String(cursor),
         },
       });
 
@@ -55,14 +57,76 @@ export function registerSearchAgents(server: McpServer, api: ReturnType<typeof h
   );
 }
 
+export function registerSearchServices(server: McpServer, api: ReturnType<typeof hc<AppType>>) {
+  server.registerTool(
+    "search_services",
+    {
+      title: "Search agent services",
+      description:
+        "Find a specific service an agent offers, rather than the agent itself. `kind` decides which fields the query searches.\n" +
+        "- job: titles and descriptions of work an agent performs on request.\n" +
+        "- api: names and descriptions of REST endpoints an agent exposes.\n" +
+        "- mcp: the tool, resource, and prompt names an agent's MCP server exposes.\n" +
+        "The query matches substrings and typos. Every result carries a summary of the agent that offers it, " +
+        "so you do not need to call get_agent afterwards. `total` is the full number of matches across all pages.",
+      inputSchema: {
+        kind: z
+          .enum(["job", "api", "mcp"])
+          .describe("Which kind of service to search. Each kind searches different fields"),
+        query: z
+          .string()
+          .optional()
+          .describe("Words to match against the fields listed for `kind`. Omit to list all"),
+        agentId: z
+          .string()
+          .optional()
+          .describe("Return only services offered by this agent, for example 0g_12"),
+        chain: chainSchema.optional().describe("Chain to search. Defaults to 0g"),
+        page: z.coerce.number().int().min(1).default(1).describe("Page number, starting at 1"),
+        limit: z.number().int().min(1).max(50).default(20).describe("Results per page, 1 to 50"),
+      },
+    },
+    async ({ kind, query, agentId, chain, page, limit }) => {
+      const endpoint = {
+        job: api.agents.services.job,
+        api: api.agents.services.api,
+        mcp: api.agents.services.mcp,
+      }[kind];
+
+      const res = await endpoint.$get({
+        query: {
+          ...(query ? { q: query } : {}),
+          ...(agentId ? { agentId } : {}),
+          ...(chain ? { chain } : {}),
+          page: String(page),
+          limit: String(limit),
+        },
+      });
+
+      if (!res.ok)
+        return {
+          ...json({ error: `Service search failed with status ${res.status}` }),
+          isError: true,
+        };
+
+      return json(await res.json());
+    }
+  );
+}
+
 export function registerGetAgent(server: McpServer, api: ReturnType<typeof hc<AppType>>) {
   server.registerTool(
     "get_agent",
     {
-      title: "Get agent",
-      description: "Get a single ERC-8004 agent by its on-chain tokenId.",
+      title: "Get agent by ID",
+      description:
+        "Get one agent by id, including how many job, API, and MCP services it offers. " +
+        "Use this when you already have an id from search_agents or search_services. " +
+        "To search by name instead, use search_agents.",
       inputSchema: {
-        agentId: z.string().describe("ERC-8004 tokenId of the agent"),
+        agentId: z
+          .string()
+          .describe("Agent id, chain and onchain id joined by an underscore, for example 0g_12"),
       },
     },
     async ({ agentId }) => {
@@ -75,43 +139,8 @@ export function registerGetAgent(server: McpServer, api: ReturnType<typeof hc<Ap
   );
 }
 
-export function registerListAgentServices(server: McpServer, api: ReturnType<typeof hc<AppType>>) {
-  server.registerTool(
-    "list_agent_services",
-    {
-      title: "List agent services",
-      description:
-        "List the API and MCP services an agent exposes. Services are keyed by the ERC-8004 tokenId; pass the same agentId you got from search_agents.",
-      inputSchema: {
-        agentId: z
-          .string()
-          .describe("ERC-8004 tokenId of the agent (agents.agent_id in the index)"),
-      },
-    },
-    async ({ agentId }) => {
-      const [apiRes, mcpRes] = await Promise.all([
-        api.agents[":agentId"].services.api.$get({ param: { agentId }, query: {} }),
-        api.agents[":agentId"].services.mcp.$get({ param: { agentId }, query: {} }),
-      ]);
-
-      if (!apiRes.ok || !mcpRes.ok)
-        return {
-          ...json({ error: `Failed to list services for agent ${agentId}` }),
-          isError: true,
-        };
-
-      const [{ services: apiServices }, { services: mcpServices }] = await Promise.all([
-        apiRes.json(),
-        mcpRes.json(),
-      ]);
-
-      return json({ apiServices, mcpServices });
-    }
-  );
-}
-
 export function registerAgentTools(server: McpServer, api: ReturnType<typeof hc<AppType>>) {
   registerSearchAgents(server, api);
+  registerSearchServices(server, api);
   registerGetAgent(server, api);
-  registerListAgentServices(server, api);
 }

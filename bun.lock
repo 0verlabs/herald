@@ -155,6 +155,7 @@
       "dependencies": {
         "@hono/mcp": "catalog:",
         "@hrld/api": "workspace:",
+        "@hrld/core": "workspace:",
         "@modelcontextprotocol/sdk": "catalog:",
         "hono": "catalog:",
         "zod": "catalog:",
