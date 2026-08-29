@@ -117,15 +117,15 @@ export const agentMcpServices = pgTable(
     index("agent_mcp_services_agent_id_idx").on(t.agent_id),
     index("agent_mcp_services_tools_trgm_idx").using(
       "gin",
-      sql`array_to_string(${t.tools}, ' ') gin_trgm_ops`
+      sql`immutable_array_to_string(${t.tools}, ' ') gin_trgm_ops`
     ),
     index("agent_mcp_services_resources_trgm_idx").using(
       "gin",
-      sql`array_to_string(${t.resources}, ' ') gin_trgm_ops`
+      sql`immutable_array_to_string(${t.resources}, ' ') gin_trgm_ops`
     ),
     index("agent_mcp_services_prompts_trgm_idx").using(
       "gin",
-      sql`array_to_string(${t.prompts}, ' ') gin_trgm_ops`
+      sql`immutable_array_to_string(${t.prompts}, ' ') gin_trgm_ops`
     ),
   ]
 );

@@ -1,4 +1,10 @@
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+CREATE OR REPLACE FUNCTION immutable_array_to_string(text[], text)
+RETURNS text AS $$
+    SELECT array_to_string($1, $2);
+$$ LANGUAGE sql IMMUTABLE STRICT;
+
 CREATE TABLE "agent_api_services" (
 	"id" varchar PRIMARY KEY NOT NULL,
 	"agent_id" varchar NOT NULL,
@@ -67,9 +73,9 @@ CREATE INDEX "agent_job_services_agent_id_idx" ON "agent_job_services" USING btr
 CREATE INDEX "agent_job_services_title_trgm_idx" ON "agent_job_services" USING gin ("title" gin_trgm_ops);--> statement-breakpoint
 CREATE INDEX "agent_job_services_description_trgm_idx" ON "agent_job_services" USING gin ("description" gin_trgm_ops);--> statement-breakpoint
 CREATE INDEX "agent_mcp_services_agent_id_idx" ON "agent_mcp_services" USING btree ("agent_id");--> statement-breakpoint
-CREATE INDEX "agent_mcp_services_tools_trgm_idx" ON "agent_mcp_services" USING gin (array_to_string("tools", ' ') gin_trgm_ops);--> statement-breakpoint
-CREATE INDEX "agent_mcp_services_resources_trgm_idx" ON "agent_mcp_services" USING gin (array_to_string("resources", ' ') gin_trgm_ops);--> statement-breakpoint
-CREATE INDEX "agent_mcp_services_prompts_trgm_idx" ON "agent_mcp_services" USING gin (array_to_string("prompts", ' ') gin_trgm_ops);--> statement-breakpoint
+CREATE INDEX "agent_mcp_services_tools_trgm_idx" ON "agent_mcp_services" USING gin (immutable_array_to_string("tools", ' ') gin_trgm_ops);--> statement-breakpoint
+CREATE INDEX "agent_mcp_services_resources_trgm_idx" ON "agent_mcp_services" USING gin (immutable_array_to_string("resources", ' ') gin_trgm_ops);--> statement-breakpoint
+CREATE INDEX "agent_mcp_services_prompts_trgm_idx" ON "agent_mcp_services" USING gin (immutable_array_to_string("prompts", ' ') gin_trgm_ops);--> statement-breakpoint
 CREATE INDEX "agents_chain_idx" ON "agents" USING btree ("chain");--> statement-breakpoint
 CREATE INDEX "agents_category_idx" ON "agents" USING btree ("chain","category");--> statement-breakpoint
 CREATE INDEX "agents_chain_score_idx" ON "agents" USING btree ("chain","score" DESC NULLS LAST);--> statement-breakpoint

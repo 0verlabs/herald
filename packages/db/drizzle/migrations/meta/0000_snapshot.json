@@ -1,5 +1,5 @@
 {
-  "id": "a2b7c2d9-0515-4a56-994b-2a305e083ead",
+  "id": "843b7552-85a1-44c4-8e56-fb97d85b196c",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -293,7 +293,7 @@
           "name": "agent_mcp_services_tools_trgm_idx",
           "columns": [
             {
-              "expression": "array_to_string(\"tools\", ' ') gin_trgm_ops",
+              "expression": "immutable_array_to_string(\"tools\", ' ') gin_trgm_ops",
               "asc": true,
               "isExpression": true,
               "nulls": "last"
@@ -308,7 +308,7 @@
           "name": "agent_mcp_services_resources_trgm_idx",
           "columns": [
             {
-              "expression": "array_to_string(\"resources\", ' ') gin_trgm_ops",
+              "expression": "immutable_array_to_string(\"resources\", ' ') gin_trgm_ops",
               "asc": true,
               "isExpression": true,
               "nulls": "last"
@@ -323,7 +323,7 @@
           "name": "agent_mcp_services_prompts_trgm_idx",
           "columns": [
             {
-              "expression": "array_to_string(\"prompts\", ' ') gin_trgm_ops",
+              "expression": "immutable_array_to_string(\"prompts\", ' ') gin_trgm_ops",
               "asc": true,
               "isExpression": true,
               "nulls": "last"
