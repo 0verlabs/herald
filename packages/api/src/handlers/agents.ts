@@ -1,6 +1,13 @@
 import type { AnyColumn, SQL } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
-import { agentIdCodec, agentSchema, chainSchema } from "@hrld/core";
+import {
+  agentApiServiceSchema,
+  agentIdCodec,
+  agentJobServiceSchema,
+  agentMcpServiceSchema,
+  agentSchema,
+  chainSchema,
+} from "@hrld/core";
 import * as schema from "@hrld/db";
 import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
@@ -24,9 +31,33 @@ const getAgentByIdParam = z.object({
 });
 
 const listServicesQuery = z.object({
+  q: z.string().optional(),
+  agentId: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
+
+// Builds an OR of ilike + trigram-similarity conditions across the given
+// columns/expressions, plus a relevance ordering by the best match. Columns
+// can be plain table columns or SQL expressions (e.g. array_to_string for
+// array fields like MCP tools/resources/prompts).
+const buildTextSearch = (columns: (AnyColumn | SQL)[], q: string) => {
+  const pattern = `%${q}%`;
+  const match = or(
+    ...columns.flatMap((column) => [
+      sql`${column} ilike ${pattern}`,
+      sql`similarity(${column}, ${q}) > ${TRIGRAM_SIMILARITY_THRESHOLD}`,
+    ])
+  ) as SQL;
+  const relevance = desc(
+    sql`greatest(${sql.join(
+      columns.map((column) => sql`similarity(${column}, ${q})`),
+      sql`, `
+    )})`
+  );
+
+  return { match, relevance };
+};
 
 export const agents = new Hono<{ Variables: GlobalVariables }>()
   .get("/", zValidator("query", listAgentsQuery), async (c) => {
@@ -73,7 +104,7 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
     const data = agentSchema
       .omit({ serviceCounts: true })
       .array()
-      .encode(
+      .parse(
         rows.slice(0, limit).map((row) => {
           const id = agentIdCodec.encode({ chain: row.chain, onchainId: row.onchain_id });
 
@@ -97,6 +128,135 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
     return ok(c, {
       data,
       next: hasMore ? offset + limit : null,
+    });
+  })
+  .get("/services/job", zValidator("query", listServicesQuery), async (c) => {
+    const db = c.var.db;
+    const { agentId, q, page, limit } = c.req.valid("query");
+
+    const conditions: SQL[] = [];
+    if (agentId) conditions.push(eq(schema.agentJobServices.agent_id, agentId));
+
+    const search = q
+      ? buildTextSearch([schema.agentJobServices.title, schema.agentJobServices.description], q)
+      : undefined;
+    if (search) conditions.push(search.match);
+
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    const [rows, [{ total } = { total: 0 }]] = await Promise.all([
+      db
+        .select()
+        .from(schema.agentJobServices)
+        .where(where)
+        .orderBy(...(search ? [search.relevance] : []), asc(schema.agentJobServices.id))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      db.select({ total: count() }).from(schema.agentJobServices).where(where),
+    ]);
+
+    const data = agentJobServiceSchema.array().parse(
+      rows.map((row) => ({
+        id: row.id,
+        name: "JOB" as const,
+        title: row.title,
+        description: row.description,
+      }))
+    );
+
+    return ok(c, {
+      data,
+      total,
+    });
+  })
+  .get("/services/api", zValidator("query", listServicesQuery), async (c) => {
+    const db = c.var.db;
+    const { agentId, q, page, limit } = c.req.valid("query");
+
+    const conditions: SQL[] = [];
+    if (agentId) conditions.push(eq(schema.agentApiServices.agent_id, agentId));
+
+    const search = q
+      ? buildTextSearch([schema.agentApiServices.name, schema.agentApiServices.description], q)
+      : undefined;
+    if (search) conditions.push(search.match);
+
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    const [rows, [{ total } = { total: 0 }]] = await Promise.all([
+      db
+        .select()
+        .from(schema.agentApiServices)
+        .where(where)
+        .orderBy(...(search ? [search.relevance] : []), asc(schema.agentApiServices.id))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      db.select({ total: count() }).from(schema.agentApiServices).where(where),
+    ]);
+
+    const data = agentApiServiceSchema.array().parse(
+      rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        method: row.method,
+        endpoint: row.endpoint,
+        version: row.version,
+        description: row.description,
+      }))
+    );
+
+    return ok(c, {
+      data,
+      total,
+    });
+  })
+  .get("/services/mcp", zValidator("query", listServicesQuery), async (c) => {
+    const db = c.var.db;
+    const { agentId, q, page, limit } = c.req.valid("query");
+
+    const conditions: SQL[] = [];
+    if (agentId) conditions.push(eq(schema.agentMcpServices.agent_id, agentId));
+
+    const search = q
+      ? buildTextSearch(
+          [
+            sql`array_to_string(${schema.agentMcpServices.tools}, ' ')`,
+            sql`array_to_string(${schema.agentMcpServices.resources}, ' ')`,
+            sql`array_to_string(${schema.agentMcpServices.prompts}, ' ')`,
+          ],
+          q
+        )
+      : undefined;
+    if (search) conditions.push(search.match);
+
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    const [rows, [{ total } = { total: 0 }]] = await Promise.all([
+      db
+        .select()
+        .from(schema.agentMcpServices)
+        .where(where)
+        .orderBy(...(search ? [search.relevance] : []), asc(schema.agentMcpServices.id))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      db.select({ total: count() }).from(schema.agentMcpServices).where(where),
+    ]);
+
+    const data = agentMcpServiceSchema.array().parse(
+      rows.map((row) => ({
+        id: row.id,
+        name: "MCP" as const,
+        endpoint: row.endpoint,
+        version: row.version,
+        tools: row.tools ?? [],
+        resources: row.resources ?? [],
+        prompts: row.prompts ?? [],
+      }))
+    );
+
+    return ok(c, {
+      data,
+      total,
     });
   })
   .get("/:agentId", zValidator("param", getAgentByIdParam), async (c) => {
@@ -131,7 +291,7 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
 
     const id = agentIdCodec.encode({ chain: record.chain, onchainId: record.onchain_id });
 
-    const agent = agentSchema.encode({
+    const agent = agentSchema.parse({
       id,
       chain: record.chain,
       onchainId: record.onchain_id,
@@ -152,30 +312,4 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
     });
 
     return ok(c, agent);
-  })
-  .get(
-    "/:agentId/services/api",
-    zValidator("param", getAgentByIdParam),
-    zValidator("query", listServicesQuery),
-    async (c) => {
-      const { page, limit } = c.req.valid("query");
-
-      return ok(c, {
-        data: [],
-        total: 0,
-      });
-    }
-  )
-  .get(
-    "/:agentId/services/mcp",
-    zValidator("param", getAgentByIdParam),
-    zValidator("query", listServicesQuery),
-    async (c) => {
-      const { page, limit } = c.req.valid("query");
-
-      return ok(c, {
-        data: [],
-        total: 0,
-      });
-    }
-  );
+  });
