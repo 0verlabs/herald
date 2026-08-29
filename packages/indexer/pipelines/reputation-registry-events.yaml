@@ -1,0 +1,114 @@
+name: reputation-registry-events
+apiVersion: 3
+resource_size: s
+sources:
+  zg_new_feedback_events:
+    type: subgraph_entity
+    subgraphs:
+      - name: reputation-registry
+        version: 1.0.0
+    name: new_feedback
+  zg_feedback_revoked_events:
+    type: subgraph_entity
+    subgraphs:
+      - name: reputation-registry
+        version: 1.0.0
+    name: feedback_revoked
+  zg_response_appended_events:
+    type: subgraph_entity
+    subgraphs:
+      - name: reputation-registry
+        version: 1.0.0
+    name: response_appended
+transforms:
+  zg_new_feedback_event_transform:
+    type: sql
+    primary_key: id
+    sql: |-
+      SELECT
+        json_object(
+          'id' value `zg_new_feedback_events`.`id`,
+          'blockNumber' value `zg_new_feedback_events`.`block_number`,
+          'transactionHash' value `zg_new_feedback_events`.`transaction_hash`,
+          'address' value `zg_new_feedback_events`.`contract_id`,
+          'eventName' value 'ReputationRegistry:NewFeedback',
+          'args' value json_object(
+            'agentId' value `zg_new_feedback_events`.`agent_id`,
+            'clientAddress' value `zg_new_feedback_events`.`client_address`,
+            'feedbackIndex' value `zg_new_feedback_events`.`feedback_index`,
+            'value' value `zg_new_feedback_events`.`value`,
+            'valueDecimals' value `zg_new_feedback_events`.`value_decimals`,
+            'indexedTag1' value `zg_new_feedback_events`.`indexed_tag_1`,
+            'tag1' value `zg_new_feedback_events`.`tag_1`,
+            'tag2' value `zg_new_feedback_events`.`tag_2`,
+            'endpoint' value `zg_new_feedback_events`.`endpoint`,
+            'feedbackURI' value `zg_new_feedback_events`.`feedback_uri`,
+            'feedbackHash' value `zg_new_feedback_events`.`feedback_hash`
+          ),
+          'timestamp' value `zg_new_feedback_events`.`timestamp`
+        ) as `payload`
+      from
+        `zg_new_feedback_events`
+  zg_feedback_revoked_event_transform:
+    type: sql
+    primary_key: id
+    sql: |-
+      SELECT
+        json_object(
+          'id' value `zg_feedback_revoked_events`.`id`,
+          'blockNumber' value `zg_feedback_revoked_events`.`block_number`,
+          'transactionHash' value `zg_feedback_revoked_events`.`transaction_hash`,
+          'address' value `zg_feedback_revoked_events`.`contract_id`,
+          'eventName' value 'ReputationRegistry:FeedbackRevoked',
+          'args' value json_object(
+            'agentId' value `zg_feedback_revoked_events`.`agent_id`,
+            'clientAddress' value `zg_feedback_revoked_events`.`client_address`,
+            'feedbackIndex' value `zg_feedback_revoked_events`.`feedback_index`
+          ),
+          'timestamp' value `zg_feedback_revoked_events`.`timestamp`
+        ) as `payload`
+      from
+        `zg_feedback_revoked_events`
+  zg_response_appended_event_transform:
+    type: sql
+    primary_key: id
+    sql: |-
+      SELECT
+        json_object(
+          'id' value `zg_response_appended_events`.`id`,
+          'blockNumber' value `zg_response_appended_events`.`block_number`,
+          'transactionHash' value `zg_response_appended_events`.`transaction_hash`,
+          'address' value `zg_response_appended_events`.`contract_id`,
+          'eventName' value 'ReputationRegistry:ResponseAppended',
+          'args' value json_object(
+            'agentId' value `zg_response_appended_events`.`agent_id`,
+            'clientAddress' value `zg_response_appended_events`.`client_address`,
+            'feedbackIndex' value `zg_response_appended_events`.`feedback_index`,
+            'responder' value `zg_response_appended_events`.`responder`,
+            'responseURI' value `zg_response_appended_events`.`response_uri`,
+            'responseHash' value `zg_response_appended_events`.`response_hash`
+          ),
+          'timestamp' value `zg_response_appended_events`.`timestamp`
+        ) as `payload`
+      from
+        `zg_response_appended_events`
+sinks:
+  zg_new_feedback_webhook:
+    url: https://hrld.0verlabs.com/webhook/goldsky/0g
+    type: webhook
+    secret_name: GOLDSKY_WEBHOOK_SECRET
+    one_row_per_request: true
+    from: zg_new_feedback_event_transform
+  zg_feedback_revoked_webhook:
+    url: https://hrld.0verlabs.com/webhook/goldsky/0g
+    type: webhook
+    secret_name: GOLDSKY_WEBHOOK_SECRET
+    one_row_per_request: true
+    from: zg_feedback_revoked_event_transform
+  zg_response_appended_webhook:
+    url: https://hrld.0verlabs.com/webhook/goldsky/0g
+    type: webhook
+    secret_name: GOLDSKY_WEBHOOK_SECRET
+    one_row_per_request: true
+    from: zg_response_appended_event_transform
+use_dedicated_ip: false
