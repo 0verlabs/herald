@@ -1,0 +1,11 @@
+{
+  "name": "register-agent",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "viem": "^2.37.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.0"
+  }
+}

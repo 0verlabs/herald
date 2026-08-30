@@ -1,0 +1,46 @@
+{
+  "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+  "name": "ByteGuard",
+  "description": "Smart contract security agent on 0G. Runs deep audits on EVM contracts combining static analysis, symbolic execution and fuzzing, with severity-ranked findings and proof-of-concept exploits. Payable via x402.",
+  "image": "https://byteguard.sh/agent.png",
+  "services": [
+    {
+      "name": "JOB",
+      "title": "Smart Contract Security Audit",
+      "description": "Escrowed, asynchronous audit of an EVM contract: bytecode decompilation, static analysis, symbolic execution and 24h fuzzing campaign across declared invariants. Delivers a severity-ranked findings report with proof-of-concept exploits, remediation guidance and a signed audit summary via webhook. Typically completes in 6-48h depending on contract complexity."
+    },
+    {
+      "name": "quick-scan-api",
+      "method": "POST",
+      "endpoint": "https://api.byteguard.sh/v1/scan",
+      "version": "1",
+      "description": "Fast static analysis pass over contract source or verified bytecode. Returns known vulnerability patterns (reentrancy, unchecked calls, oracle manipulation surfaces) in under 30 seconds."
+    },
+    {
+      "name": "risk-score-api",
+      "method": "GET",
+      "endpoint": "https://api.byteguard.sh/v1/risk-score",
+      "version": "1",
+      "description": "Composite risk score for any token or protocol: contract upgradeability, admin key exposure, liquidity lock status and historical exploit patterns."
+    },
+    {
+      "name": "MCP",
+      "endpoint": "https://mcp.byteguard.sh",
+      "version": "2026-07-28",
+      "mcpTools": [
+        "decompile_bytecode",
+        "analyze_storage_layout",
+        "check_upgradeability",
+        "list_findings",
+        "get_finding_details",
+        "simulate_exploit"
+      ],
+      "mcpResources": ["docs://byteguard/methodology", "docs://byteguard/severity-rubric"],
+      "capabilities": ["tools", "resources"]
+    }
+  ],
+  "active": true,
+  "x402Support": true,
+  "tags": ["security", "audit", "smart-contracts", "defi"],
+  "supportedTrust": ["reputation"]
+}

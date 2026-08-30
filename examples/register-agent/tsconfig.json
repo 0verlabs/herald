@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "types": ["bun"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2022",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["register.ts"]
+}
