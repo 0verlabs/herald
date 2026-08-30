@@ -5,7 +5,6 @@ export const createEventSchema = <TEventName extends string, TArgs extends z.Zod
   args: TArgs
 ) =>
   z.object({
-    id: z.string(),
     blockNumber: z.number(),
     transactionHash: z.string(),
     address: z.string(),

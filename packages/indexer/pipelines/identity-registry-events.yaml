@@ -1,7 +1,7 @@
-name: erc-8004
-version: 5
-resource_size: s
+name: identity-registry-events
+version: 1
 apiVersion: 3
+resource_size: s
 sources:
   zg_registered_events:
     type: subgraph_entity
@@ -33,8 +33,8 @@ transforms:
     primary_key: id
     sql: |-
       SELECT
+        `zg_registered_events`.`id` as `id`,
         json_object(
-          'id' value `zg_registered_events`.`id`,
           'blockNumber' value `zg_registered_events`.`block_number`,
           'transactionHash' value `zg_registered_events`.`transaction_hash`,
           'address' value `zg_registered_events`.`contract_id`,
@@ -53,8 +53,8 @@ transforms:
     primary_key: id
     sql: |-
       SELECT
+        `zg_uri_updated_events`.`id` as `id`,
         json_object(
-          'id' value `zg_uri_updated_events`.`id`,
           'blockNumber' value `zg_uri_updated_events`.`block_number`,
           'transactionHash' value `zg_uri_updated_events`.`transaction_hash`,
           'address' value `zg_uri_updated_events`.`contract_id`,
@@ -73,8 +73,8 @@ transforms:
     primary_key: id
     sql: >-
       SELECT
+        `zg_metadata_set_events`.`id` as `id`,
         json_object(
-          'id' value `zg_metadata_set_events`.`id`,
           'blockNumber' value `zg_metadata_set_events`.`block_number`,
           'transactionHash' value `zg_metadata_set_events`.`transaction_hash`,
           'address' value `zg_metadata_set_events`.`contract_id`,
@@ -94,8 +94,8 @@ transforms:
     primary_key: id
     sql: |-
       SELECT
+        `zg_transfer_events`.`id` as `id`,
         json_object(
-          'id' value `zg_transfer_events`.`id`,
           'blockNumber' value `zg_transfer_events`.`block_number`,
           'transactionHash' value `zg_transfer_events`.`transaction_hash`,
           'address' value `zg_transfer_events`.`contract_id`,
@@ -111,27 +111,27 @@ transforms:
         `zg_transfer_events`
 sinks:
   zg_registered_webhook:
-    url: https://hrld.0verlabs.com/webhook/goldsky/0g
+    url: https://smee.io/VpP4g4a2fPz3tG
     type: webhook
     secret_name: GOLDSKY_WEBHOOK_SECRET
     one_row_per_request: true
     from: zg_registered_event_transform
   zg_uri_updated_webhook:
-    url: https://hrld.0verlabs.com/webhook/goldsky/0g
+    url: https://smee.io/VpP4g4a2fPz3tG
     type: webhook
     secret_name: GOLDSKY_WEBHOOK_SECRET
-    one_row_per_request: false
+    one_row_per_request: true
     from: zg_uri_updated_event_transform
   zg_metadata_set_webhook:
-    url: https://hrld.0verlabs.com/webhook/goldsky/0g
+    url: https://smee.io/VpP4g4a2fPz3tG
     type: webhook
     secret_name: GOLDSKY_WEBHOOK_SECRET
-    one_row_per_request: false
+    one_row_per_request: true
     from: zg_metadata_set_event_transform
   zg_transfer_webhook:
-    url: https://hrld.0verlabs.com/webhook/goldsky/0g
+    url: https://smee.io/VpP4g4a2fPz3tG
     type: webhook
     secret_name: GOLDSKY_WEBHOOK_SECRET
-    one_row_per_request: false
+    one_row_per_request: true
     from: zg_transfer_event_transform
 use_dedicated_ip: false

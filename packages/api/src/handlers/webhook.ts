@@ -97,6 +97,7 @@ export const webhook = new Hono<{ Variables: GlobalVariables }>()
     zValidator(
       "json",
       z.object({
+        id: z.string(),
         payload: z
           .string()
           .transform((str, ctx) => {

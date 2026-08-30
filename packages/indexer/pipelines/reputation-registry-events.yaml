@@ -1,4 +1,5 @@
 name: reputation-registry-events
+version: 1
 apiVersion: 3
 resource_size: s
 sources:
@@ -26,8 +27,8 @@ transforms:
     primary_key: id
     sql: |-
       SELECT
+        `zg_new_feedback_events`.`id` as `id`,
         json_object(
-          'id' value `zg_new_feedback_events`.`id`,
           'blockNumber' value `zg_new_feedback_events`.`block_number`,
           'transactionHash' value `zg_new_feedback_events`.`transaction_hash`,
           'address' value `zg_new_feedback_events`.`contract_id`,
@@ -54,8 +55,8 @@ transforms:
     primary_key: id
     sql: |-
       SELECT
+        `zg_feedback_revoked_events`.`id` as `id`,
         json_object(
-          'id' value `zg_feedback_revoked_events`.`id`,
           'blockNumber' value `zg_feedback_revoked_events`.`block_number`,
           'transactionHash' value `zg_feedback_revoked_events`.`transaction_hash`,
           'address' value `zg_feedback_revoked_events`.`contract_id`,
@@ -74,8 +75,8 @@ transforms:
     primary_key: id
     sql: |-
       SELECT
+        `zg_response_appended_events`.`id` as `id`,
         json_object(
-          'id' value `zg_response_appended_events`.`id`,
           'blockNumber' value `zg_response_appended_events`.`block_number`,
           'transactionHash' value `zg_response_appended_events`.`transaction_hash`,
           'address' value `zg_response_appended_events`.`contract_id`,
