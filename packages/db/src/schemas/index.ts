@@ -1,3 +1,3 @@
 export * from "./agents";
-export * from "./feedback";
+export * from "./feedbacks";
 export * from "./wallets";

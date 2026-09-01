@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { agentIdSchema } from "./agent";
 
-export const proofOfPaymentSchema = z.object({
+export const feedbackProofOfPaymentSchema = z.object({
   fromAddress: z.string(),
   toAddress: z.string(),
   chainId: z.string(),
@@ -11,16 +11,16 @@ export const proofOfPaymentSchema = z.object({
   currency: z.string().optional(),
 });
 
-export const agentFeedbackSchema = z.object({
+export const feedbackSchema = z.object({
   id: z.string(),
   agentId: agentIdSchema,
   clientAddress: z.string(),
   feedbackIndex: z.number().int().nonnegative(),
   value: z.number(),
   reasoning: z.string().nullable(),
-  proofOfPayment: proofOfPaymentSchema.nullable(),
+  proofOfPayment: feedbackProofOfPaymentSchema.nullable(),
   revoked: z.boolean(),
 });
 
-export type ProofOfPayment = z.infer<typeof proofOfPaymentSchema>;
-export type AgentFeedback = z.infer<typeof agentFeedbackSchema>;
+export type FeedbackProofOfPayment = z.infer<typeof feedbackProofOfPaymentSchema>;
+export type Feedback = z.infer<typeof feedbackSchema>;

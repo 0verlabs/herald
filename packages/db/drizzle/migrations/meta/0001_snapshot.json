@@ -555,8 +555,8 @@
       },
       "isRLSEnabled": false
     },
-    "public.agent_feedback": {
-      "name": "agent_feedback",
+    "public.feedbacks": {
+      "name": "feedbacks",
       "schema": "",
       "columns": {
         "id": {
@@ -622,9 +622,9 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "agent_feedback_agent_id_agents_id_fk": {
-          "name": "agent_feedback_agent_id_agents_id_fk",
-          "tableFrom": "agent_feedback",
+        "feedbacks_agent_id_agents_id_fk": {
+          "name": "feedbacks_agent_id_agents_id_fk",
+          "tableFrom": "feedbacks",
           "tableTo": "agents",
           "columnsFrom": ["agent_id"],
           "columnsTo": ["id"],
@@ -634,8 +634,8 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "agent_feedback_agent_client_index_unique": {
-          "name": "agent_feedback_agent_client_index_unique",
+        "feedbacks_agent_client_index_unique": {
+          "name": "feedbacks_agent_client_index_unique",
           "nullsNotDistinct": false,
           "columns": ["agent_id", "client_address", "feedback_index"]
         }

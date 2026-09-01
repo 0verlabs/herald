@@ -1,4 +1,4 @@
-import type { AgentId, ProofOfPayment } from "@hrld/core";
+import type { AgentId, FeedbackProofOfPayment } from "@hrld/core";
 import {
   bigint,
   doublePrecision,
@@ -14,8 +14,8 @@ import { v7 } from "uuid";
 import { timestamps } from "../utils/timestamps";
 import { agents } from "./agents";
 
-export const agentFeedback = pgTable(
-  "agent_feedback",
+export const feedbacks = pgTable(
+  "feedbacks",
   {
     id: varchar()
       .primaryKey()
@@ -28,12 +28,12 @@ export const agentFeedback = pgTable(
     feedback_index: bigint({ mode: "number" }).notNull(),
     value: doublePrecision().notNull(),
     reasoning: text(),
-    proof_of_payment: jsonb().$type<ProofOfPayment>(),
+    proof_of_payment: jsonb().$type<FeedbackProofOfPayment>(),
     revoked_at: timestamp({ withTimezone: true }),
     ...timestamps,
   },
   (t) => [
-    unique("agent_feedback_agent_client_index_unique").on(
+    unique("feedbacks_agent_client_index_unique").on(
       t.agent_id,
       t.client_address,
       t.feedback_index

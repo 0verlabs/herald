@@ -3,13 +3,13 @@ import type { SQL } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import {
   agentApiServiceSchema,
-  agentFeedbackSchema,
   agentIdCodec,
   agentJobServiceSchema,
   agentMcpServiceSchema,
   agentSchema,
   agentSummarySchema,
   chainSchema,
+  feedbackSchema,
 } from "@hrld/core";
 import * as schema from "@hrld/db";
 import { and, asc, count, desc, eq, isNull, sql } from "drizzle-orm";
@@ -434,20 +434,17 @@ export const agents = new Hono<{ Variables: GlobalVariables }>()
       // page exists, without a separate count query.
       const rows = await db
         .select()
-        .from(schema.agentFeedback)
+        .from(schema.feedbacks)
         .where(
-          and(
-            eq(schema.agentFeedback.agent_id, existingAgent.id),
-            isNull(schema.agentFeedback.revoked_at)
-          )
+          and(eq(schema.feedbacks.agent_id, existingAgent.id), isNull(schema.feedbacks.revoked_at))
         )
-        .orderBy(desc(schema.agentFeedback.created_at), desc(schema.agentFeedback.id))
+        .orderBy(desc(schema.feedbacks.created_at), desc(schema.feedbacks.id))
         .limit(limit + 1)
         .offset(offset);
 
       const hasMore = rows.length > limit;
 
-      const data = agentFeedbackSchema.array().parse(
+      const data = feedbackSchema.array().parse(
         rows.slice(0, limit).map((row) => ({
           id: row.id,
           agentId: row.agent_id,

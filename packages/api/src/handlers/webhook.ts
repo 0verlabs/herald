@@ -247,7 +247,7 @@ export const webhook = new Hono<{ Variables: GlobalVariables }>()
           const feedbackFile = feedbackURI ? await resolveErc8004FeedbackFile(feedbackURI) : null;
 
           await db
-            .insert(schema.agentFeedback)
+            .insert(schema.feedbacks)
             .values({
               agent_id: existingAgent.id,
               client_address: clientAddress.toLowerCase(),
@@ -272,13 +272,13 @@ export const webhook = new Hono<{ Variables: GlobalVariables }>()
           if (!existingAgent) return ok(c);
 
           await db
-            .update(schema.agentFeedback)
+            .update(schema.feedbacks)
             .set({ revoked_at: new Date() })
             .where(
               and(
-                eq(schema.agentFeedback.agent_id, existingAgent.id),
-                eq(schema.agentFeedback.client_address, clientAddress.toLowerCase()),
-                eq(schema.agentFeedback.feedback_index, feedbackIndex)
+                eq(schema.feedbacks.agent_id, existingAgent.id),
+                eq(schema.feedbacks.client_address, clientAddress.toLowerCase()),
+                eq(schema.feedbacks.feedback_index, feedbackIndex)
               )
             );
 
@@ -294,13 +294,13 @@ export const webhook = new Hono<{ Variables: GlobalVariables }>()
 
 const syncAgentScore = async (db: Db, agentId: AgentId) => {
   const [summary] = await db
-    .select({ average: avg(schema.agentFeedback.value), total: count() })
-    .from(schema.agentFeedback)
+    .select({ average: avg(schema.feedbacks.value), total: count() })
+    .from(schema.feedbacks)
     .where(
       and(
-        eq(schema.agentFeedback.agent_id, agentId),
-        isNull(schema.agentFeedback.revoked_at),
-        between(schema.agentFeedback.value, 0, 100)
+        eq(schema.feedbacks.agent_id, agentId),
+        isNull(schema.feedbacks.revoked_at),
+        between(schema.feedbacks.value, 0, 100)
       )
     );
 

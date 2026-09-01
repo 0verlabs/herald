@@ -47,19 +47,17 @@ export const agents = pgTable(
 
 export const agentJobServices = pgTable(
   "agent_job_services",
-  (t) => ({
-    id: t
-      .varchar()
+  {
+    id: varchar()
       .primaryKey()
       .$defaultFn(() => v7()),
-    agent_id: t
-      .varchar()
+    agent_id: varchar()
       .notNull()
       .references(() => agents.id, { onDelete: "cascade" })
       .$type<AgentId>(),
-    title: t.text().notNull(),
-    description: t.text().notNull(),
-  }),
+    title: text().notNull(),
+    description: text().notNull(),
+  },
   (t) => [
     index("agent_job_services_agent_id_idx").on(t.agent_id),
     index("agent_job_services_title_trgm_idx").using("gin", sql`${t.title} gin_trgm_ops`),
@@ -72,22 +70,20 @@ export const agentJobServices = pgTable(
 
 export const agentApiServices = pgTable(
   "agent_api_services",
-  (t) => ({
-    id: t
-      .varchar()
+  {
+    id: varchar()
       .primaryKey()
       .$defaultFn(() => v7()),
-    agent_id: t
-      .varchar()
+    agent_id: varchar()
       .notNull()
       .references(() => agents.id, { onDelete: "cascade" })
       .$type<AgentId>(),
-    name: t.text().notNull(),
-    method: t.varchar().notNull(),
-    endpoint: t.text().notNull(),
-    version: t.varchar().notNull(),
-    description: t.text().notNull(),
-  }),
+    name: text().notNull(),
+    method: varchar().notNull(),
+    endpoint: text().notNull(),
+    version: varchar().notNull(),
+    description: text().notNull(),
+  },
   (t) => [
     index("agent_api_services_agent_id_idx").on(t.agent_id),
     index("agent_api_services_name_trgm_idx").using("gin", sql`${t.name} gin_trgm_ops`),
@@ -101,22 +97,20 @@ export const agentApiServices = pgTable(
 
 export const agentMcpServices = pgTable(
   "agent_mcp_services",
-  (t) => ({
-    id: t
-      .varchar()
+  {
+    id: varchar()
       .primaryKey()
       .$defaultFn(() => v7()),
-    agent_id: t
-      .varchar()
+    agent_id: varchar()
       .notNull()
       .references(() => agents.id, { onDelete: "cascade" })
       .$type<AgentId>(),
-    endpoint: t.text().notNull(),
-    version: t.varchar().notNull(),
-    tools: t.varchar().array().default([]),
-    resources: t.varchar().array().default([]),
-    prompts: t.varchar().array().default([]),
-  }),
+    endpoint: text().notNull(),
+    version: varchar().notNull(),
+    tools: varchar().array().default([]),
+    resources: varchar().array().default([]),
+    prompts: varchar().array().default([]),
+  },
   (t) => [
     index("agent_mcp_services_agent_id_idx").on(t.agent_id),
     index("agent_mcp_services_tools_trgm_idx").using(
