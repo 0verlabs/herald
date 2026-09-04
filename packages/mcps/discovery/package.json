@@ -1,5 +1,5 @@
 {
-  "name": "@hrld/mcp-discovery",
+  "name": "@hrld/agent-discovery-mcp",
   "private": true,
   "version": "0.0.0",
   "type": "module",
