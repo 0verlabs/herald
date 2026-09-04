@@ -12,6 +12,7 @@
     "catalog": {
       "@biomejs/biome": "2.5.2",
       "@clerk/backend": "3.13.2",
+      "@clerk/hono": "0.1.58",
       "@hono/mcp": "0.3.2",
       "@modelcontextprotocol/sdk": "1.30.0",
       "@clerk/react": "6.12.8",

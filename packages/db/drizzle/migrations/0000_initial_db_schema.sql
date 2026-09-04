@@ -52,19 +52,34 @@ CREATE TABLE "agents" (
 	CONSTRAINT "agents_feedback_counts_nonnegative" CHECK ("agents"."feedback_counts" >= 0)
 );
 --> statement-breakpoint
+CREATE TABLE "feedbacks" (
+	"id" varchar PRIMARY KEY NOT NULL,
+	"agent_id" varchar NOT NULL,
+	"client_address" varchar NOT NULL,
+	"feedback_index" bigint NOT NULL,
+	"value" double precision NOT NULL,
+	"reasoning" text,
+	"proof_of_payment" jsonb,
+	"revoked_at" timestamp with time zone,
+	"created_at" timestamp with time zone NOT NULL,
+	"updated_at" timestamp with time zone NOT NULL,
+	CONSTRAINT "feedbacks_agent_client_index_unique" UNIQUE("agent_id","client_address","feedback_index")
+);
+--> statement-breakpoint
 CREATE TABLE "wallets" (
+	"id" varchar PRIMARY KEY NOT NULL,
 	"user_id" varchar NOT NULL,
 	"network" varchar NOT NULL,
 	"address" varchar NOT NULL,
 	"created_at" timestamp with time zone NOT NULL,
 	"updated_at" timestamp with time zone NOT NULL,
-	CONSTRAINT "wallets_user_id_network_pk" PRIMARY KEY("user_id","network"),
 	CONSTRAINT "wallets_address_unique" UNIQUE("address")
 );
 --> statement-breakpoint
 ALTER TABLE "agent_api_services" ADD CONSTRAINT "agent_api_services_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "agent_job_services" ADD CONSTRAINT "agent_job_services_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "agent_mcp_services" ADD CONSTRAINT "agent_mcp_services_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "feedbacks" ADD CONSTRAINT "feedbacks_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "agent_api_services_agent_id_idx" ON "agent_api_services" USING btree ("agent_id");--> statement-breakpoint
 CREATE INDEX "agent_api_services_name_trgm_idx" ON "agent_api_services" USING gin ("name" gin_trgm_ops);--> statement-breakpoint
 CREATE INDEX "agent_api_services_method_trgm_idx" ON "agent_api_services" USING gin ("method" gin_trgm_ops);--> statement-breakpoint
@@ -80,4 +95,6 @@ CREATE INDEX "agents_chain_idx" ON "agents" USING btree ("chain");--> statement-
 CREATE INDEX "agents_category_idx" ON "agents" USING btree ("chain","category");--> statement-breakpoint
 CREATE INDEX "agents_chain_score_idx" ON "agents" USING btree ("chain","score" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "agents_name_trgm_idx" ON "agents" USING gin ("name" gin_trgm_ops);--> statement-breakpoint
-CREATE INDEX "agents_description_trgm_idx" ON "agents" USING gin ("description" gin_trgm_ops);
+CREATE INDEX "agents_description_trgm_idx" ON "agents" USING gin ("description" gin_trgm_ops);--> statement-breakpoint
+CREATE INDEX "wallets_user_id_idx" ON "wallets" USING btree ("user_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "wallets_user_id_network_unique_idx" ON "wallets" USING btree ("user_id","network");

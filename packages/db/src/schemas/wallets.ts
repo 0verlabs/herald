@@ -1,5 +1,5 @@
 import { supportedNetworks } from "@hrld/core";
-import { pgTable, uniqueIndex, varchar } from "drizzle-orm/pg-core";
+import { index, pgTable, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 import { v7 } from "uuid";
 
 import { timestamps } from "../utils/timestamps";
@@ -15,5 +15,8 @@ export const wallets = pgTable(
     address: varchar().unique().notNull(),
     ...timestamps,
   },
-  (t) => [uniqueIndex("wallets_user_id_network_unique_idx").on(t.user_id, t.network)]
+  (t) => [
+    index("wallets_user_id_idx").on(t.user_id),
+    uniqueIndex("wallets_user_id_network_unique_idx").on(t.user_id, t.network),
+  ]
 );
