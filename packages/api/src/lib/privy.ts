@@ -1,4 +1,8 @@
-import type { PrivyClient } from "@privy-io/node";
+import type { LinkedAccount, PrivyClient } from "@privy-io/node";
+import type {
+  LinkedAccountCustomJwt,
+  LinkedAccountEthereumEmbeddedWallet,
+} from "@privy-io/node/resources";
 import { z } from "zod";
 
 export const privyWebhookHeadersSchema = z.object({
@@ -21,3 +25,17 @@ export const verifyWebhook = ({ privy, headers, payload }: PrivyWebhookParams) =
     return null;
   }
 };
+
+export const isCustomAuthLinkedAccount = (
+  linkedAccount: LinkedAccount
+): linkedAccount is LinkedAccountCustomJwt =>
+  linkedAccount.type === "custom_auth" && !!linkedAccount.custom_user_id;
+
+export const isEthereumEmbeddedLinkedAccount = (
+  linkedAccount: LinkedAccount
+): linkedAccount is LinkedAccountEthereumEmbeddedWallet =>
+  linkedAccount.type === "wallet" &&
+  linkedAccount.connector_type === "embedded" &&
+  linkedAccount.chain_type === "ethereum" &&
+  linkedAccount.wallet_client === "privy" &&
+  linkedAccount.wallet_client_type === "privy";

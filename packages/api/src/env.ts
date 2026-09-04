@@ -3,10 +3,15 @@ import { z } from "zod";
 export const envSchema = z.object({
   // Databases
   DATABASE_URL: z.url(),
+  // Clerk
+  CLERK_PUBLISHABLE_KEY: z.string(),
+  CLERK_SECRET_KEY: z.string(),
   // Privy
   PRIVY_APP_ID: z.string(),
   PRIVY_APP_SECRET: z.string(),
   PRIVY_WEBHOOK_SIGNING_SECRET: z.string(),
+  PRIVY_AUTHORIZATION_ID: z.string(),
+  PRIVY_AUTHORIZATION_PRIVATE_KEY: z.string(),
   // Goldsky
   GOLDSKY_WEBHOOK_SECRET: z.string(),
 });

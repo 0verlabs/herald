@@ -22,6 +22,7 @@
     "typescript": "catalog:"
   },
   "dependencies": {
+    "@clerk/hono": "catalog:",
     "@hono/zod-validator": "0.9.0",
     "@hrld/core": "workspace:",
     "@hrld/db": "workspace:",

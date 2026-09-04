@@ -13,6 +13,8 @@ export const NOT_FOUND_ERROR = "not_found" as const;
 export type NotFoundError = typeof NOT_FOUND_ERROR;
 export const METHOD_NOT_ALLOWED_ERROR = "method_not_allowed" as const;
 export type MethodNotAllowedError = typeof METHOD_NOT_ALLOWED_ERROR;
+export const CONFLICT_ERROR = "conflict" as const;
+export type ConflictError = typeof CONFLICT_ERROR;
 export const INTERNAL_SERVER_ERROR = "internal_server_error" as const;
 export type InternalServerError = typeof INTERNAL_SERVER_ERROR;
 
@@ -84,6 +86,15 @@ export const methodNotAllowed = <TContext extends Context, TError extends string
   const { code = METHOD_NOT_ALLOWED_ERROR as TError, message, metadata } = err ?? {};
 
   return c.json<HttpErrorResponse<TError>>({ code, message, metadata }, 405);
+};
+
+export const conflict = <TContext extends Context, TError extends string>(
+  c: TContext,
+  err?: Partial<HttpErrorResponse<TError>>
+) => {
+  const { code = CONFLICT_ERROR as TError, message, metadata } = err ?? {};
+
+  return c.json<HttpErrorResponse<TError>>({ code, message, metadata }, 409);
 };
 
 export const unexpectedError = <TContext extends Context>(c: TContext) =>

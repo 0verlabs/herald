@@ -5,7 +5,7 @@ import { logger } from "hono/logger";
 
 import { env } from "./env";
 import { agents } from "./handlers/agents";
-// import { agents } from "./handlers/agents";
+import { wallets } from "./handlers/wallets";
 import { webhook } from "./handlers/webhook";
 import { drizzleDb } from "./middlewares/drizzle";
 
@@ -20,6 +20,7 @@ const app = new Hono()
   })
   .use(drizzleDb(env.DATABASE_URL, schema))
   .route("/agents", agents)
+  .route("/wallets", wallets)
   .route("/webhook", webhook);
 
 export default app;

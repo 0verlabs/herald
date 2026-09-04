@@ -21,7 +21,7 @@ import {
   resolveErc8004AgentRegistrationFile,
   resolveErc8004FeedbackFile,
 } from "../lib/erc-8004";
-import { privyWebhookHeadersSchema, verifyWebhook } from "../lib/privy";
+import { isCustomAuthLinkedAccount, privyWebhookHeadersSchema, verifyWebhook } from "../lib/privy";
 import { privy } from "../middlewares/privy";
 import { badRequest, ok } from "../utils/response";
 
@@ -55,7 +55,7 @@ export const webhook = new Hono<{ Variables: GlobalVariables }>()
 
           const { user, wallet } = verifiedPayload;
 
-          const auth = user.linked_accounts.find((account) => account.type === "custom_auth");
+          const auth = user.linked_accounts.find(isCustomAuthLinkedAccount);
           if (!auth)
             return badRequest(c, {
               code: "invalid_user_auth",
