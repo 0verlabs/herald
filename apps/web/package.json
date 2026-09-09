@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vp dev",
-    "build": "vp build",
+    "dev": "wrangler dev",
+    "build": "wrangler build",
+    "deploy": "vpr build && wrangler deploy",
     "preview": "vp preview"
   },
   "dependencies": {
