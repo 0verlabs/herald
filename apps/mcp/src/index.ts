@@ -18,7 +18,11 @@ const app = new Hono<Env>();
 app
   .use(logger())
   .use((c, next) => {
-    const apiClient = hc<ApiClientType>(c.env.BASE_API_URL);
+    // The binding keeps the call on Cloudflare's internal network; a plain
+    // fetch to the API's workers.dev URL fails with error 1042.
+    const apiClient = hc<ApiClientType>(c.env.BASE_API_URL, {
+      fetch: c.env.API.fetch.bind(c.env.API),
+    });
     c.set("apiClient", apiClient);
 
     return next();

@@ -11,4 +11,12 @@
   "vars": {
     "BASE_API_URL": "https://spaceobject-api.luckzivanius.workers.dev",
   },
+  // Worker-to-Worker fetch on the same zone fails with error 1042, so the API
+  // is reached through a service binding instead of its public URL.
+  "services": [
+    {
+      "binding": "API",
+      "service": "spaceobject-api",
+    },
+  ],
 }
