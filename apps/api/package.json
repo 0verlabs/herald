@@ -1,0 +1,40 @@
+{
+  "name": "@spaceobject/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./rpc": "./src/rpc.ts"
+  },
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vp build",
+    "typegen": "wrangler types --env-interface CloudflareBindings",
+    "deploy": "vpr codegen && vpr build && wrangler deploy",
+    "preview": "vp preview",
+    "prepare": "vpr codegen"
+  },
+  "dependencies": {
+    "@hono/zod-openapi": "catalog:",
+    "graphql": "catalog:",
+    "graphql-request": "catalog:",
+    "graphql-tag": "catalog:",
+    "hono": "catalog:",
+    "hono-problem-details": "catalog:",
+    "viem": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "catalog:",
+    "@graphql-codegen/cli": "catalog:",
+    "@graphql-codegen/typescript": "catalog:",
+    "@graphql-codegen/typescript-graphql-request": "catalog:",
+    "@graphql-codegen/typescript-operations": "catalog:",
+    "@types/node": "catalog:",
+    "jsonc-parser": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "wrangler": "catalog:"
+  }
+}

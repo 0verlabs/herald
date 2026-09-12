@@ -1,0 +1,91 @@
+# Agent.registration resolves through the AgentRegistrationData interface, and
+# the deployed subgraph errors at the store level when the field is null. All
+# queries filter on registration_not: null, and single-agent queries use the
+# list field with an id filter so agents without a registration return [].
+fragment AgentSummary on Agent {
+  id: agentId
+  owner {
+    address: id
+  }
+  profile: registration {
+    name
+    description
+    image
+  }
+  metadata {
+    key
+    value
+  }
+  feedbackCount: activeFeedbackCount
+  createdAt
+  createdAtTransaction
+}
+
+query GetAgent($id: Bytes!) {
+  agents(first: 1, where: { id: $id, registration_not: null }) {
+    ...AgentSummary
+  }
+}
+
+query ListAgents($first: Int, $where: Agent_filter) {
+  agents(first: $first, orderBy: agentId, orderDirection: asc, where: $where) {
+    ...AgentSummary
+  }
+}
+
+query SearchAgentProfiles($text: String!, $first: Int, $where: AgentRegistration_filter) {
+  agentProfileSearch(text: $text, first: $first, where: $where) {
+    agent {
+      ...AgentSummary
+    }
+  }
+}
+
+query GetAgentServices($id: Bytes!) {
+  agents(first: 1, where: { id: $id, registration_not: null }) {
+    registration {
+      ... on AgentRegistration {
+        services(orderBy: position, orderDirection: asc) {
+          id
+          name
+          kind
+          endpoint
+          version
+          features(orderBy: position, orderDirection: asc) {
+            kind
+            value
+          }
+          attributes(orderBy: position, orderDirection: asc) {
+            key
+            value
+            valueType
+          }
+        }
+      }
+    }
+  }
+}
+
+query GetAgentFeedbacks($id: Bytes!, $first: Int, $skip: Int) {
+  agents(first: 1, where: { id: $id, registration_not: null }) {
+    feedback(
+      first: $first
+      skip: $skip
+      orderBy: createdAt
+      orderDirection: desc
+      where: { isRevoked: false }
+    ) {
+      id
+      client {
+        address: id
+      }
+      value
+      valueDecimals
+      tag1
+      tag2
+      feedbackURI
+      createdAt
+      createdAtTransaction
+    }
+  }
+}

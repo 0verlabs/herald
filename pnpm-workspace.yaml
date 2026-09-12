@@ -6,10 +6,24 @@ packages:
 catalogMode: prefer
 
 catalog:
+  "@cloudflare/vite-plugin": ^1.54.4
+  "@graphql-codegen/cli": ^7.4.1
+  "@graphql-codegen/typescript": ^6.1.0
+  "@graphql-codegen/typescript-graphql-request": ^7.1.0
+  "@graphql-codegen/typescript-operations": ^6.1.6
+  "@hono/zod-openapi": ^1.6.3
   "@types/node": ^24
+  graphql: ^17.0.2
+  graphql-request: ^7.4.0
+  graphql-tag: ^2.12.7
+  hono: ^4.13.7
+  hono-problem-details: ^0.11.0
+  jsonc-parser: ^3.3.1
   typescript: ^7.0.2
+  viem: ^2.56.3
   vite: npm:@voidzero-dev/vite-plus-core@0.3.0
   vite-plus: 0.3.0
+  wrangler: ^4.129.0
   zod: ^4
 overrides:
   vite@*: "catalog:"

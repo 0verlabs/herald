@@ -5,7 +5,13 @@ export default defineConfig({
     "*": "vp check --fix",
   },
   fmt: {
-    ignorePatterns: [".agents/skills/**", "AGENTS.md", "apps/web/src/routeTree.gen.ts"],
+    ignorePatterns: [
+      ".agents/skills/**",
+      "AGENTS.md",
+      "routeTree.gen.ts",
+      "worker-configuration.d.ts",
+      ".generated/**",
+    ],
   },
   lint: {
     jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],

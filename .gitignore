@@ -19,6 +19,7 @@ dist-ssr
 .env
 .env.*
 !.env.example
+.dev.vars
 
 # Editor directories and files
 .vscode/*
@@ -37,3 +38,6 @@ dist-ssr
 !.vscode/
 !.vscode/settings.json
 !.vscode/extensions.json
+
+# generated files
+.generated/

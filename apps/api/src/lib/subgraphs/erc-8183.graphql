@@ -1,0 +1,39 @@
+fragment JobActivity on JobEvent {
+  kind
+  actor {
+    address: id
+  }
+  amount
+  timestamp
+  txHash: transactionHash
+}
+
+fragment JobSummary on Job {
+  jobId
+  status
+  client {
+    address: id
+  }
+  provider {
+    address: id
+  }
+  evaluator {
+    address: id
+  }
+  providerAgentId
+  description
+  budget
+  paymentToken
+  expiresAt
+  createdAt
+  updatedAt
+  activities: events(first: 1000, orderBy: timestamp, orderDirection: asc) {
+    ...JobActivity
+  }
+}
+
+query ListJobs($first: Int, $where: Job_filter) {
+  jobs(first: $first, orderBy: jobId, orderDirection: asc, where: $where) {
+    ...JobSummary
+  }
+}
