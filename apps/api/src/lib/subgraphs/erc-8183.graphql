@@ -32,8 +32,8 @@ fragment JobSummary on Job {
   }
 }
 
-query ListJobs($first: Int, $where: Job_filter) {
-  jobs(first: $first, orderBy: jobId, orderDirection: asc, where: $where) {
+query ListJobs($first: Int, $skip: Int, $where: Job_filter) {
+  jobs(first: $first, skip: $skip, orderBy: jobId, orderDirection: asc, where: $where) {
     ...JobSummary
   }
 }

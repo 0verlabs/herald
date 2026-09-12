@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@hono/zod-openapi": "catalog:",
+    "@spaceobject/utils": "workspace:*",
     "graphql": "catalog:",
     "graphql-request": "catalog:",
     "graphql-tag": "catalog:",

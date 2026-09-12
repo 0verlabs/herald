@@ -27,14 +27,19 @@ query GetAgent($id: Bytes!) {
   }
 }
 
-query ListAgents($first: Int, $where: Agent_filter) {
-  agents(first: $first, orderBy: agentId, orderDirection: asc, where: $where) {
+query ListAgents($first: Int, $skip: Int, $where: Agent_filter) {
+  agents(first: $first, skip: $skip, orderBy: agentId, orderDirection: asc, where: $where) {
     ...AgentSummary
   }
 }
 
-query SearchAgentProfiles($text: String!, $first: Int, $where: AgentRegistration_filter) {
-  agentProfileSearch(text: $text, first: $first, where: $where) {
+query SearchAgentProfiles(
+  $text: String!
+  $first: Int
+  $skip: Int
+  $where: AgentRegistration_filter
+) {
+  agentProfileSearch(text: $text, first: $first, skip: $skip, where: $where) {
     agent {
       ...AgentSummary
     }
