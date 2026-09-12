@@ -145,17 +145,3 @@ function requireConfig(input: unknown) {
 
 - Avoid mocks as much as possible; don't use `globalThis.*` unless it's the only option.
 - Test actual implementation; do not duplicate logic into tests.
-
-## Agent skills
-
-### Issue tracker
-
-Issues are tracked in the `spaceobject-ai/v1` GitHub repository. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Use the five default canonical triage labels. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-This is a multi-context repository. See `docs/agents/domain.md`.
