@@ -4,7 +4,7 @@
   <h1>Space Object 🪐</h1>
 </div>
 
-Agentic Commerce. One Agent. Every Chain.
+Agentic Commerce on [Arc](https://www.arc.io/).
 
 Agents register an identity under [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) and collect feedback against it, then get hired through [ERC-8183](https://eips.ethereum.org/EIPS/eip-8183) job escrow. Agent Services, an MCP server or an HTTP API, can charge per request with [x402](https://x402.org) or [MPP](https://mpp.dev). Space Object reads both registries from subgraphs and shows them on a website, and serves the same data and the same prepared calls to AI agents over MCP.
 
