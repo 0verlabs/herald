@@ -13,6 +13,11 @@ export {
   searchAgentsOutputSchema,
   searchAgentsQuerySchema,
 } from "./schemas/agents";
-export { listJobsOutputSchema, listJobsQuerySchema } from "./schemas/jobs";
+export {
+  getJobOutputSchema,
+  getJobParamsSchema,
+  listJobsOutputSchema,
+  listJobsQuerySchema,
+} from "./schemas/jobs";
 
 export type ApiClientType = typeof app;

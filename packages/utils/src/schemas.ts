@@ -7,4 +7,7 @@ import { z } from "zod";
 // listing require.
 export const agentIdSchema = z.string().pipe(z.coerce.bigint<string>().nonnegative());
 
+// Job ids are uint256 values assigned by the escrow contract.
+export const jobIdSchema = z.string().pipe(z.coerce.bigint<string>().nonnegative());
+
 export const addressSchema = z.string().refine((value) => isAddress(value), "Invalid EVM address");

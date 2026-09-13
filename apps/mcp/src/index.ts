@@ -6,6 +6,7 @@ import { hc } from "hono/client";
 import { logger } from "hono/logger";
 
 import { registerGetAgentTool } from "./tools/get-agent";
+import { registerGetJobTool } from "./tools/get-job";
 import { registerListAgentFeedbacksTool } from "./tools/list-agent-feedbacks";
 import { registerListAgentServicesTool } from "./tools/list-agent-services";
 import { registerListJobsTool } from "./tools/list-jobs";
@@ -40,6 +41,7 @@ app
       registerListAgentFeedbacksTool(apiClient),
       // Jobs
       registerListJobsTool(apiClient),
+      registerGetJobTool(apiClient),
     ];
 
     tools.forEach((register) => register(server));

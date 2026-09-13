@@ -1,4 +1,4 @@
-import { addressSchema, agentIdSchema } from "@spaceobject/utils";
+import { addressSchema, agentIdSchema, jobIdSchema } from "@spaceobject/utils";
 import { z } from "zod";
 
 // Schema-only module: keep this free of handler imports so @spaceobject/api/rpc
@@ -21,6 +21,9 @@ export const jobSummarySchema = z.object({
   evaluator: z.string(),
   agentId: z.string().nullable(),
   description: z.string(),
+  deliverable: z.string().nullable(),
+  completionReason: z.string().nullable(),
+  rejectionReason: z.string().nullable(),
   budget: z
     .object({
       amount: z.string(),
@@ -64,3 +67,8 @@ export const listJobsQuerySchema = z.object({
     .describe("Number of results to skip"),
 });
 export const listJobsOutputSchema = z.array(jobSummarySchema);
+
+export const getJobParamsSchema = z.object({
+  jobId: jobIdSchema.describe("Job ID"),
+});
+export const getJobOutputSchema = jobSummarySchema;

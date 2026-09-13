@@ -22,6 +22,9 @@ fragment JobSummary on Job {
   }
   providerAgentId
   description
+  deliverable
+  completionReason
+  rejectionReason
   budget
   paymentToken
   expiresAt
@@ -34,6 +37,12 @@ fragment JobSummary on Job {
 
 query ListJobs($first: Int, $skip: Int, $where: Job_filter) {
   jobs(first: $first, skip: $skip, orderBy: jobId, orderDirection: asc, where: $where) {
+    ...JobSummary
+  }
+}
+
+query GetJob($jobId: BigInt!) {
+  jobs(first: 1, where: { jobId: $jobId }) {
     ...JobSummary
   }
 }
