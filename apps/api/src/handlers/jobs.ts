@@ -120,6 +120,7 @@ export const jobHandlers = new OpenAPIHono<Env>()
               : query.provider.toLowerCase(),
           }
         : {}),
+      ...(query.evaluator ? { evaluator: query.evaluator.toLowerCase() } : {}),
       ...(query.agentId !== undefined ? { providerAgentId: query.agentId.toString() } : {}),
     };
 

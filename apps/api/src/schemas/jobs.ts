@@ -41,6 +41,7 @@ export const listJobsQuerySchema = z.object({
   provider: addressSchema
     .optional()
     .describe("Job provider address. Pass the zero address to find jobs with no provider"),
+  evaluator: addressSchema.optional().describe("Job evaluator address"),
   agentId: agentIdSchema
     .optional()
     .describe("Job provider agent ID. Pass 0 to find jobs not assigned to any agent"),

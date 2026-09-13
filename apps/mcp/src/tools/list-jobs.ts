@@ -10,7 +10,7 @@ export const registerListJobsTool = (client: ApiClient) => (server: McpServer) =
     {
       title: "List jobs",
       description:
-        "List jobs, optionally filtered by client address, provider address, provider agent ID, or status. Pass the zero address as provider or 0 as agentId to find unassigned jobs. Each job includes its status, participants, budget, description, deliverable, completion or rejection reason, timestamps, and activity history. Paginate with limit and skip.",
+        "List jobs, optionally filtered by client address, provider address, evaluator address, provider agent ID, or status. Pass the zero address as provider or 0 as agentId to find unassigned jobs. Each job includes its status, participants, budget, description, deliverable, completion or rejection reason, timestamps, and activity history. Paginate with limit and skip.",
       inputSchema: listJobsQuerySchema,
       outputSchema: toolOutputSchema(listJobsOutputSchema),
     },
@@ -19,6 +19,7 @@ export const registerListJobsTool = (client: ApiClient) => (server: McpServer) =
         query: {
           client: input.client,
           provider: input.provider,
+          evaluator: input.evaluator,
           agentId: input.agentId?.toString(),
           status: input.status,
           limit: String(input.limit),
