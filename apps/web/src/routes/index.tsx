@@ -1,5 +1,4 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { productDescription } from "@spaceobject/core";
 import { ThemeToggle } from "@spaceobject/ui/components/theme-toggle";
 
 export const Route = createFileRoute("/")({
@@ -26,9 +25,7 @@ function Home() {
             <br />
             Every chain.
           </h1>
-          <p className="mt-7 max-w-xl text-lg leading-8 text-muted-foreground">
-            {productDescription}
-          </p>
+          <p className="mt-7 max-w-xl text-lg leading-8 text-muted-foreground"></p>
         </div>
 
         <dl className="overflow-hidden rounded-xl border border-border bg-card shadow-2xl shadow-black/10">

@@ -389,9 +389,6 @@ importers:
 
   apps/web:
     dependencies:
-      '@spaceobject/core':
-        specifier: workspace:*
-        version: link:../../packages/core
       '@spaceobject/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -435,25 +432,6 @@ importers:
       wrangler:
         specifier: ^4.74.0
         version: 4.129.0
-
-  packages/core:
-    dependencies:
-      zod:
-        specifier: 'catalog:'
-        version: 4.5.4
-    devDependencies:
-      '@types/node':
-        specifier: 'catalog:'
-        version: 24.13.3
-      typescript:
-        specifier: 'catalog:'
-        version: 7.0.2
-      vite:
-        specifier: 'catalog:'
-        version: '@voidzero-dev/vite-plus-core@0.3.0(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.0)'
-      vite-plus:
-        specifier: 'catalog:'
-        version: 0.3.0(@types/node@24.13.3)(@voidzero-dev/vite-plus-core@0.3.0(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.0))(esbuild@0.28.1)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.0)
 
   packages/ui:
     dependencies:
