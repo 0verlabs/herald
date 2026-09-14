@@ -7,16 +7,23 @@ export default defineConfig({
   fmt: {
     ignorePatterns: [
       ".agents/skills/**",
-      "AGENTS.md",
+      ".claude/skills/**",
       "routeTree.gen.ts",
       "worker-configuration.d.ts",
-      ".generated/**",
+      "__generated",
     ],
   },
   lint: {
     jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
     rules: { "vite-plus/prefer-vite-plus-imports": "error" },
     options: { typeAware: true, typeCheck: true },
+    ignorePatterns: [
+      ".agents/skills/**",
+      ".claude/skills/**",
+      "routeTree.gen.ts",
+      "worker-configuration.d.ts",
+      "__generated",
+    ],
   },
   run: {
     cache: true,

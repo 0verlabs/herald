@@ -1,5 +1,5 @@
 {
-  "name": "@spaceobject/api",
+  "name": "@hrld/api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,14 +9,17 @@
   "scripts": {
     "dev": "vp dev",
     "build": "vp build",
+    "codegen:erc8004": "graphql-codegen --config scripts/erc-8004.ts",
+    "codegen:erc8183": "graphql-codegen --config scripts/erc-8183.ts",
+    "codegen:subgraphs": "vpr codegen:erc8004 && vpr codegen:erc8183",
+    "codegen": "vpr codegen:subgraphs",
     "typegen": "wrangler types --env-interface CloudflareBindings",
-    "deploy": "vpr codegen && vpr build && wrangler deploy",
-    "preview": "vp preview",
-    "prepare": "vpr codegen"
+    "deploy": "vpr build && wrangler deploy",
+    "preview": "vp preview"
   },
   "dependencies": {
     "@hono/zod-openapi": "catalog:",
-    "@spaceobject/utils": "workspace:*",
+    "@hrld/utils": "workspace:*",
     "graphql": "catalog:",
     "graphql-request": "catalog:",
     "graphql-tag": "catalog:",

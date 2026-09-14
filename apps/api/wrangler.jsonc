@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "spaceobject-api",
+  "name": "herald-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-10",
   "compatibility_flags": ["nodejs_compat"],
@@ -9,7 +9,7 @@
     "head_sampling_rate": 0.1,
   },
   "vars": {
-    "ERC_8004_SUBGRAPH_URL": "https://gateway.thegraph.com/api/deployments/id/QmZaHTCRTtC9XkobXZCvnHEAxZbtU3rTiFg5oS1ebosHzN",
-    "ERC_8183_SUBGRAPH_URL": "https://gateway.thegraph.com/api/deployments/id/QmNzCzcMXZL7BDPTGFCpzJPomsq1gMTw3D8GU1heduCKxU",
+    "ERC_8004_SUBGRAPH_URL": "",
+    "ERC_8183_SUBGRAPH_URL": "",
   },
 }

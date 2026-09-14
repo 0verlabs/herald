@@ -8,7 +8,7 @@ const devVars = fileURLToPath(new URL("../.dev.vars", import.meta.url));
 if (existsSync(devVars)) process.loadEnvFile(devVars);
 
 // The subgraph URLs are not secrets; fall back to the values committed in
-// wrangler.jsonc so only THE_GRAPH_SUBGRAPH_API_KEY must come from the
+// wrangler.jsonc so secrets must come from the
 // environment.
 const wranglerVars: Record<string, string> = parse(
   readFileSync(fileURLToPath(new URL("../wrangler.jsonc", import.meta.url)), "utf8"),

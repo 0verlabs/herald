@@ -1,5 +1,6 @@
-import { arcTestnet } from "viem/chains";
+import { zeroG, zeroGTestnet } from "viem/chains";
 
 export const CHAIN_IDS = {
-  arcTestnet: arcTestnet.id,
+  zeroG: zeroG.id,
+  zeroGTestnet: zeroGTestnet.id,
 };

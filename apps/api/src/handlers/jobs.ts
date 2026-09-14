@@ -3,7 +3,7 @@ import { zeroAddress, isAddressEqual } from "viem";
 import { problemDetailsResponse } from "hono-problem-details/openapi";
 import { problemDetails } from "hono-problem-details";
 
-import { Job_Filter, JobStatus, JobSummaryFragment } from "../../.generated/erc-8183";
+import { Job_Filter, JobStatus, JobSummaryFragment } from "../lib/subgraphs/__generated/erc-8183";
 import { Env } from "../env";
 import { parseTimestamp } from "../utils/timestamp";
 import {

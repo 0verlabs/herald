@@ -3,7 +3,7 @@ import {
   listAgentFeedbacksOutputSchema,
   listAgentFeedbacksParamsSchema,
   listAgentFeedbacksQuerySchema,
-} from "@spaceobject/api/rpc";
+} from "@hrld/api/rpc";
 import { z } from "zod";
 
 import { ApiClient } from "../lib/api";

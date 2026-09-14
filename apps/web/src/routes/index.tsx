@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ThemeToggle } from "@spaceobject/ui/components/theme-toggle";
+import { ThemeToggle } from "@hrld/ui/components/theme-toggle";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -46,7 +46,7 @@ function Home() {
 
       <footer className="flex items-center justify-between border-t border-border pt-6 text-sm text-muted-foreground">
         <span>ERC-8004 identity</span>
-        <span className="font-mono">spaceobject.ai</span>
+        <span className="font-mono">herald.ai</span>
       </footer>
     </main>
   );

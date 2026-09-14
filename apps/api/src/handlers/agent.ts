@@ -2,7 +2,7 @@ import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { problemDetailsResponse } from "hono-problem-details/openapi";
 import { problemDetails } from "hono-problem-details";
 
-import { AgentSummaryFragment } from "../../.generated/erc-8004";
+import { AgentSummaryFragment } from "../lib/subgraphs/__generated/erc-8004";
 import { Env } from "../env";
 import { agentEntityId } from "../utils/agent";
 import { parseTimestamp } from "../utils/timestamp";
@@ -117,7 +117,7 @@ const notFound = (agentId: string) =>
   });
 
 const entityId = (agentId: string) =>
-  agentEntityId(CHAIN_IDS.arcTestnet, REGISTRIES[CHAIN_IDS.arcTestnet].identityRegistry, agentId);
+  agentEntityId(CHAIN_IDS.zeroG, REGISTRIES[CHAIN_IDS.zeroG].identityRegistry, agentId);
 
 const attributeValue = (attribute: { value: string; valueType: string }): unknown => {
   if (attribute.valueType === "NUMBER") return Number(attribute.value);

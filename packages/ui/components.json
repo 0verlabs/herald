@@ -11,10 +11,10 @@
   },
   "iconLibrary": "lucide",
   "aliases": {
-    "components": "@spaceobject/ui/components",
+    "components": "@hrld/ui/components",
     "utils": "cn",
-    "hooks": "@spaceobject/ui/hooks",
-    "ui": "@spaceobject/ui/components"
+    "hooks": "@hrld/ui/hooks",
+    "ui": "@hrld/ui/components"
   },
   "rtl": false,
   "menuColor": "default",

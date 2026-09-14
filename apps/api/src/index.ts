@@ -3,8 +3,8 @@ import { OpenAPIHono as Hono } from "@hono/zod-openapi";
 import { problemDetailsHandler } from "hono-problem-details";
 import { logger } from "hono/logger";
 
-import { getSdk as getErc8004Sdk } from "../.generated/erc-8004";
-import { getSdk as getErc8183Sdk } from "../.generated/erc-8183";
+import { getSdk as getErc8004Sdk } from "./lib/subgraphs/__generated/erc-8004";
+import { getSdk as getErc8183Sdk } from "./lib/subgraphs/__generated/erc-8183";
 
 import { agentHandlers } from "./handlers/agent";
 import { jobHandlers } from "./handlers/jobs";
@@ -19,21 +19,17 @@ const app = new Hono<Env>()
   )
   .basePath("/v1")
   .use(async (c, next) => {
-    const theGraphAuthHeaders = {
-      Authorization: `Bearer ${c.env.THE_GRAPH_SUBGRAPH_API_KEY}`,
-    };
-
     const erc8004Client = new GraphQLClient(c.env.ERC_8004_SUBGRAPH_URL, {
       fetch,
       headers: {
-        ...theGraphAuthHeaders,
+        Authorization: `Bearer ${c.env.ERC_8004_SUBGRAPH_API_KEY}`,
       },
       signal: c.req.raw.signal,
     });
     const erc8183Client = new GraphQLClient(c.env.ERC_8183_SUBGRAPH_URL, {
       fetch,
       headers: {
-        ...theGraphAuthHeaders,
+        Authorization: `Bearer ${c.env.ERC_8183_SUBGRAPH_API_KEY}`,
       },
       signal: c.req.raw.signal,
     });
