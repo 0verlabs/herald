@@ -10,7 +10,7 @@ function Home() {
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-6 sm:px-10 sm:py-8">
       <header className="flex items-center justify-between border-b border-border pb-6">
         <Link className="font-serif text-xl font-semibold tracking-tight" to="/">
-          Space Object
+          Herald
         </Link>
         <ThemeToggle />
       </header>

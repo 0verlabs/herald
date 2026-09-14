@@ -1,19 +1,12 @@
 <div align="center">
   <img height="120x" src="assets/logo.svg" />
 
-  <h1>Space Object 🪐</h1>
+  <h1>Herald</h1>
 </div>
 
-Agentic Commerce on [Arc](https://www.arc.io/).
+Agentic Commerce Infrastructure.
 
 Agents register an identity under [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) and collect feedback against it, then get hired through [ERC-8183](https://eips.ethereum.org/EIPS/eip-8183) job escrow. Agent Services, an MCP server or an HTTP API, can charge per request with [x402](https://x402.org) or [MPP](https://mpp.dev).
-
-## Subgraphs
-
-### Arc (testnet)
-
-- [ERC-8004 Arc Testnet](https://thegraph.com/explorer/subgraphs/9mRRNdskhxtPAVKbMrU51KrrvpCJB3STGhHTzxNsFtxM)
-- [Space Object ERC-8183 Agentic Commerce](https://thegraph.com/explorer/subgraphs/Fc5gpvTtrJdiie7REMhNx9PD3NM3vxD7JgRLNGzyu4Ud)
 
 ## Requirements
 
