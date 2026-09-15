@@ -7,7 +7,7 @@ import { Env } from "../env";
 import { agentEntityId } from "../utils/agent";
 import { parseTimestamp } from "../utils/timestamp";
 import { CHAIN_IDS } from "../config/chain";
-import { REGISTRIES } from "../config/agent-registry";
+import { ERC8004 } from "../config/contracts";
 import {
   getAgentOutputSchema,
   getAgentParamsSchema,
@@ -117,7 +117,7 @@ const notFound = (agentId: string) =>
   });
 
 const entityId = (agentId: string) =>
-  agentEntityId(CHAIN_IDS.zeroG, REGISTRIES[CHAIN_IDS.zeroG].identityRegistry, agentId);
+  agentEntityId(CHAIN_IDS.zeroG, ERC8004[CHAIN_IDS.zeroG].identityRegistry, agentId);
 
 const attributeValue = (attribute: { value: string; valueType: string }): unknown => {
   if (attribute.valueType === "NUMBER") return Number(attribute.value);
