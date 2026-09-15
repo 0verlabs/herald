@@ -6,7 +6,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true,
-    "head_sampling_rate": 0.1,
+    "head_sampling_rate": 1,
   },
   "vars": {
     "ERC_8004_SUBGRAPH_URL": "https://api.goldsky.com/api/private/project_cmszppc46ojv3010sebuo5trd/subgraphs/erc-8004-subgraph/1.0.0/gn",
