@@ -12,7 +12,7 @@ const config: CodegenConfig = {
   documents: ["src/lib/subgraphs/erc-8183.graphql"],
   ignoreNoDocuments: true,
   generates: {
-    "src/lib/subgraphs/erc-8183/index.ts": {
+    "src/lib/subgraphs/__generated/erc-8183/index.ts": {
       plugins: ["typescript-operations", "typescript-graphql-request"],
       config: {
         scalars: {
