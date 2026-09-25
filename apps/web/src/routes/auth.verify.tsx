@@ -3,6 +3,7 @@ import { ClientOnly, createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { PRIVY_APP_ID, PRIVY_AUTH_ORIGIN } from "@hrld/core";
 import { Button } from "@hrld/ui/components/button";
+import { accountLabel } from "../lib/privy";
 
 export const Route = createFileRoute("/auth/verify")({
   validateSearch: (search) => ({
@@ -137,7 +138,12 @@ function AuthorizeContent(props: {
             </Button>
           </div>
           <p className="mt-4 text-center text-xs text-muted-foreground">
-            Approving as <span className="font-mono">{accountLabel(props.privy)}</span> ·{" "}
+            {props.privy.user && (
+              <>
+                Approving as <span className="font-mono">{accountLabel(props.privy.user)}</span>{" "}
+                ·{" "}
+              </>
+            )}
             <button
               className="cursor-pointer underline underline-offset-2 hover:text-foreground"
               disabled={props.submitting}
@@ -151,10 +157,4 @@ function AuthorizeContent(props: {
       )}
     </>
   );
-}
-
-function accountLabel(privy: ReturnType<typeof usePrivy>): string {
-  const address = privy.user?.wallet?.address;
-  if (address) return `${address.slice(0, 6)}…${address.slice(-4)}`;
-  return privy.user?.email?.address ?? privy.user?.phone?.number ?? "unknown account";
 }
