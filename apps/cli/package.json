@@ -1,0 +1,38 @@
+{
+  "name": "@hrld/cli",
+  "version": "0.1.0",
+  "description": "Herald CLI — Agent Commerce Protocol tools to discover, negotiate, hire, transact and pay with another agents",
+  "license": "MIT",
+  "bin": {
+    "hrld": "./dist/cli.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vp pack",
+    "dev": "vp pack --watch",
+    "test": "vp test",
+    "check": "vp check",
+    "prepublishOnly": "vp run build"
+  },
+  "dependencies": {
+    "commander": "catalog:",
+    "picocolors": "catalog:",
+    "zod": "catalog:",
+    "zod-commander": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}
