@@ -1,8 +1,8 @@
-import { spawn } from "node:child_process";
 import pc from "picocolors";
 import { renderUnicodeCompact } from "uqr";
 import { z } from "zod";
 import { zodCommand } from "zod-commander";
+import { openBrowser } from "../lib/browser.ts";
 import {
   clearCredentials,
   getValidAccessToken,
@@ -126,13 +126,3 @@ export const auth = zodCommand({
   .addCommand(login)
   .addCommand(logout)
   .addCommand(status);
-
-function openBrowser(url: string): void {
-  const command =
-    process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
-  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
-
-  const child = spawn(command, args, { stdio: "ignore", detached: true });
-  child.on("error", () => {});
-  child.unref();
-}
