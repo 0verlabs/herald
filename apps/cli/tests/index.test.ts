@@ -22,5 +22,5 @@ test("prints the package version", async () => {
 test("prints usage in help", async () => {
   const result = await runProgram(["--help"]);
   expect(result.output).toContain("Usage: hrld");
-  expect(result.output).toContain("Herald command-line interface");
+  expect(result.output).toContain(pkg.description.slice(0, 20));
 });

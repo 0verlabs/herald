@@ -1,5 +1,5 @@
 {
-  "include": ["src/**/*.ts", "tests/**/*.ts", "vite.config.ts"],
+  "include": ["src/**/*.ts", "vite.config.ts"],
   "compilerOptions": {
     "strict": true,
     "module": "ESNext",
@@ -8,9 +8,6 @@
     "isolatedModules": true,
     "skipLibCheck": true,
     "target": "ES2022",
-    "types": ["node"],
-    "resolveJsonModule": true,
-    "allowImportingTsExtensions": true,
     "declaration": true,
     "noEmit": true
   }

@@ -16,6 +16,7 @@ catalog:
   "@modelcontextprotocol/sdk": ^1.30.0
   "@types/node": ^24
   commander: ^15.0.0
+  cross-keychain: ^1.1.0
   graphql: ^17.0.2
   graphql-request: ^7.4.0
   graphql-tag: ^2.12.7
@@ -38,7 +39,11 @@ peerDependencyRules:
   allowedVersions:
     vite: "*"
 allowBuilds:
+  "@reown/appkit": false
+  bufferutil: false
   esbuild: true
+  keccak: false
+  utf-8-validate: false
   workerd: true
 minimumReleaseAgeExclude:
   - cn@0.2.5

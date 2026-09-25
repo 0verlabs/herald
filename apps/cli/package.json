@@ -22,11 +22,13 @@
   },
   "dependencies": {
     "commander": "catalog:",
+    "cross-keychain": "catalog:",
     "picocolors": "catalog:",
     "zod": "catalog:",
     "zod-commander": "catalog:"
   },
   "devDependencies": {
+    "@hrld/core": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
