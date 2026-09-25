@@ -9,6 +9,7 @@ import {
   saveCredentials,
   toCredentials,
 } from "../lib/credentials.ts";
+import { decodeAccessTokenClaims } from "../lib/jwt.ts";
 import {
   completeDeviceAuthorization,
   pollForTokens,
@@ -105,17 +106,23 @@ const logout = zodCommand({
   },
 });
 
-const status = zodCommand({
-  name: "status",
-  description: "Show authentication status",
+const info = zodCommand({
+  name: "info",
+  description: "Show the authenticated account",
   action: async () => {
-    const json = isJson(status);
+    const json = isJson(info);
 
     const accessToken = await getValidAccessToken();
     if (!accessToken)
       return err(new CliError("NOT_LOGGED_IN", "Not logged in.", "Run `hrld auth login`."), json);
 
-    ok({ status: "authenticated" }, json);
+    const claims = decodeAccessTokenClaims(accessToken);
+    ok(
+      {
+        user_id: claims.sub,
+      },
+      json,
+    );
   },
 });
 
@@ -125,4 +132,4 @@ export const auth = zodCommand({
 })
   .addCommand(login)
   .addCommand(logout)
-  .addCommand(status);
+  .addCommand(info);

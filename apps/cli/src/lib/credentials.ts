@@ -1,11 +1,13 @@
 import { deletePassword, getPassword, setPassword } from "cross-keychain";
 import { z } from "zod";
+import { readConfig, writeConfig } from "./config.ts";
+import { decodeAccessTokenClaims } from "./jwt.ts";
 import { refreshTokens, type Tokens } from "./privy.ts";
 
 // cross-keychain picks the best backend automatically: native OS keychain
-// first, encrypted file as a fallback.
+// first, encrypted file as a fallback. Entries are keyed per authenticated
+// Privy user as `account-{userId}`; the active one lives in ~/.hrld/config.json.
 const SERVICE = "hrld-cli";
-const ACCOUNT = "default";
 
 const credentialsSchema = z.object({
   accessToken: z.string(),
@@ -24,11 +26,16 @@ export function toCredentials(tokens: Tokens): Credentials {
 }
 
 export async function saveCredentials(credentials: Credentials): Promise<void> {
-  await setPassword(SERVICE, ACCOUNT, JSON.stringify(credentials));
+  const account = `account-${decodeAccessTokenClaims(credentials.accessToken).sub}`;
+  await setPassword(SERVICE, account, JSON.stringify(credentials));
+  await writeConfig({ ...(await readConfig()), activeAccount: account });
 }
 
 export async function loadCredentials(): Promise<Credentials | null> {
-  const raw = await getPassword(SERVICE, ACCOUNT).catch(() => null);
+  const config = await readConfig();
+  if (!config.activeAccount) return null;
+
+  const raw = await getPassword(SERVICE, config.activeAccount).catch(() => null);
   if (!raw) return null;
 
   return Promise.resolve(raw)
@@ -37,7 +44,11 @@ export async function loadCredentials(): Promise<Credentials | null> {
 }
 
 export async function clearCredentials(): Promise<void> {
-  await deletePassword(SERVICE, ACCOUNT).catch(() => {});
+  const config = await readConfig();
+  if (!config.activeAccount) return;
+
+  await deletePassword(SERVICE, config.activeAccount).catch(() => {});
+  await writeConfig({ ...config, activeAccount: undefined });
 }
 
 // Refresh tokens rotate on every use, so the refreshed pair must be saved
