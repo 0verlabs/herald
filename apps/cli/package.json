@@ -24,6 +24,7 @@
     "commander": "catalog:",
     "cross-keychain": "catalog:",
     "picocolors": "catalog:",
+    "uqr": "catalog:",
     "zod": "catalog:",
     "zod-commander": "catalog:"
   },

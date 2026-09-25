@@ -46,33 +46,64 @@ export async function pollForTokens(deviceCode: string, intervalSeconds: number)
   while (true) {
     await new Promise((resolve) => setTimeout(resolve, delay));
 
-    const res = await fetch(`${PRIVY_AUTH_ORIGIN}/api/oauth/v2/token`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-        device_code: deviceCode,
-      }),
-    });
+    const result = await exchangeDeviceCode(deviceCode);
+    if (result.tokens) return result.tokens;
 
-    if (res.ok) return tokensSchema.parse(await res.json());
-
-    const error = await res
-      .json()
-      .then((body) => z.object({ error: z.string() }).parse(body).error)
-      .catch(() => undefined);
-
-    if (error === "authorization_pending") continue;
-    if (error === "slow_down") {
+    if (result.error === "authorization_pending") continue;
+    if (result.error === "slow_down") {
       delay += 5000;
       continue;
     }
-    if (error === "expired_token")
-      throw new Error("The device code expired. Run `hrld auth login` again.");
-    if (error === "access_denied") throw new Error("Authorization was denied in the browser.");
 
-    throw new Error(`Token polling failed: HTTP ${res.status}`);
+    throw toTokenError(result);
   }
+}
+
+// One-shot exchange for `auth login --complete`; unlike pollForTokens, a
+// pending authorization is an error the user can retry after approving.
+export async function completeDeviceAuthorization(deviceCode: string): Promise<Tokens> {
+  const result = await exchangeDeviceCode(deviceCode);
+  if (result.tokens) return result.tokens;
+
+  if (result.error === "authorization_pending" || result.error === "slow_down")
+    throw new Error(
+      "Authorization is still pending. Approve the login in the browser, then retry.",
+    );
+
+  throw toTokenError(result);
+}
+
+type ExchangeResult =
+  | { tokens: Tokens; error?: never; status?: never }
+  | { tokens?: never; error: string | undefined; status: number };
+
+async function exchangeDeviceCode(deviceCode: string): Promise<ExchangeResult> {
+  const res = await fetch(`${PRIVY_AUTH_ORIGIN}/api/oauth/v2/token`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+      device_code: deviceCode,
+    }),
+  });
+
+  if (res.ok) return { tokens: tokensSchema.parse(await res.json()) };
+
+  const error = await res
+    .json()
+    .then((body) => z.object({ error: z.string() }).parse(body).error)
+    .catch(() => undefined);
+
+  return { error, status: res.status };
+}
+
+function toTokenError(result: { error?: string; status: number }): Error {
+  if (result.error === "expired_token")
+    return new Error("The device code expired. Run `hrld auth login` again.");
+  if (result.error === "access_denied")
+    return new Error("Authorization was denied in the browser.");
+
+  return new Error(`Token request failed: HTTP ${result.status}`);
 }
 
 export async function refreshTokens(refreshToken: string): Promise<Tokens> {

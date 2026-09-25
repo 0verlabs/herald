@@ -221,6 +221,9 @@ catalogs:
     typescript:
       specifier: ^7.0.2
       version: 7.0.2
+    uqr:
+      specifier: ^0.1.3
+      version: 0.1.3
     viem:
       specifier: ^2.56.3
       version: 2.56.8
@@ -329,6 +332,9 @@ importers:
       picocolors:
         specifier: 'catalog:'
         version: 1.1.1
+      uqr:
+        specifier: 'catalog:'
+        version: 0.1.3
       zod:
         specifier: 'catalog:'
         version: 4.6.5
@@ -6830,6 +6836,9 @@ packages:
 
   upper-case@2.0.2:
     resolution: {integrity: sha512-KgdgDGJt2TpuwBUIjgG6lzw2GWFRCW9Qkfkiv0DxqHHLYJHmtmdUIKcZd8rHgFSjopVTlw6ggzCm1b8MFQwikg==}
+
+  uqr@0.1.3:
+    resolution: {integrity: sha512-0rjE8iEJe4YmT9TOhwsZtqCMRLc5DXZUI2UEYUUg63ikBkqqE5EYWaI0etFe/5KUcmcYwLih2RND1kq+hrUJXA==}
 
   urlpattern-polyfill@10.1.0:
     resolution: {integrity: sha512-IGjKp/o0NL3Bso1PymYURCJxMPNAf/ILOpendP9f5B6e1rTJgdgiOvgfoT8VxCAdY+Wisb9uhGaJJf3yZ2V9nw==}
@@ -15054,6 +15063,8 @@ snapshots:
   upper-case@2.0.2:
     dependencies:
       tslib: 2.8.1
+
+  uqr@0.1.3: {}
 
   urlpattern-polyfill@10.1.0: {}
 
