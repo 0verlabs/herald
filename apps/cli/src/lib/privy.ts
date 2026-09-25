@@ -1,5 +1,6 @@
 import { PRIVY_APP_ID, PRIVY_AUTH_ORIGIN } from "@hrld/core";
 import { z } from "zod";
+import { CliError } from "../utils/errors.ts";
 
 const deviceAuthorizationSchema = z.object({
   device_code: z.string(),
@@ -32,10 +33,17 @@ export async function requestDeviceAuthorization() {
   });
 
   if (res.status === 403)
-    throw new Error(
-      "Device authorization is not enabled for this Privy app. Enable CLI and agent access in the Privy dashboard.",
+    throw new CliError(
+      "DEVICE_AUTH_DISABLED",
+      "Device authorization is not enabled for this Privy app.",
+      "Enable CLI and agent access in the Privy dashboard.",
     );
-  if (!res.ok) throw new Error(`Device authorization failed: HTTP ${res.status}`);
+  if (!res.ok)
+    throw new CliError(
+      "DEVICE_AUTH_FAILED",
+      `Device authorization failed: HTTP ${res.status}`,
+      "Check your network, then run `hrld auth login` again.",
+    );
 
   return deviceAuthorizationSchema.parse(await res.json());
 }
@@ -66,8 +74,10 @@ export async function completeDeviceAuthorization(deviceCode: string): Promise<T
   if (result.tokens) return result.tokens;
 
   if (result.error === "authorization_pending" || result.error === "slow_down")
-    throw new Error(
-      "Authorization is still pending. Approve the login in the browser, then retry.",
+    throw new CliError(
+      "AUTH_PENDING",
+      "Authorization is still pending.",
+      "Approve the login in your browser, then run this command again.",
     );
 
   throw toTokenError(result);
@@ -99,11 +109,23 @@ async function exchangeDeviceCode(deviceCode: string): Promise<ExchangeResult> {
 
 function toTokenError(result: { error?: string; status: number }): Error {
   if (result.error === "expired_token")
-    return new Error("The device code expired. Run `hrld auth login` again.");
+    return new CliError(
+      "DEVICE_CODE_EXPIRED",
+      "The device code expired.",
+      "Run `hrld auth login` to get a new code.",
+    );
   if (result.error === "access_denied")
-    return new Error("Authorization was denied in the browser.");
+    return new CliError(
+      "AUTH_DENIED",
+      "Authorization was denied in the browser.",
+      "Run `hrld auth login` again and approve it in the browser.",
+    );
 
-  return new Error(`Token request failed: HTTP ${result.status}`);
+  return new CliError(
+    "TOKEN_REQUEST_FAILED",
+    `Token request failed: HTTP ${result.status}`,
+    "Run the command again, or start over with `hrld auth login`.",
+  );
 }
 
 export async function refreshTokens(refreshToken: string): Promise<Tokens> {
@@ -113,7 +135,12 @@ export async function refreshTokens(refreshToken: string): Promise<Tokens> {
     body: JSON.stringify({ grant_type: "refresh_token", refresh_token: refreshToken }),
   });
 
-  if (!res.ok) throw new Error("Session expired or revoked. Run `hrld auth login` again.");
+  if (!res.ok)
+    throw new CliError(
+      "SESSION_EXPIRED",
+      "Session expired or revoked.",
+      "Run `hrld auth login` to log in again.",
+    );
 
   return tokensSchema.parse(await res.json());
 }

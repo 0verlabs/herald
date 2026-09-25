@@ -14,6 +14,7 @@ import {
   pollForTokens,
   requestDeviceAuthorization,
 } from "../lib/privy.ts";
+import { CliError } from "../utils/errors.ts";
 import { err, isJson, ok } from "../utils/result.ts";
 
 const login = zodCommand({
@@ -32,7 +33,14 @@ const login = zodCommand({
   action: async (_args, opts) => {
     const json = isJson(login);
     if (opts.start && opts.complete)
-      return err("--start and --complete cannot be used together.", json);
+      return err(
+        new CliError(
+          "FLAG_CONFLICT",
+          "--start and --complete cannot be used together.",
+          "Run `hrld auth login --start` first, then `hrld auth login --complete <request_id>`.",
+        ),
+        json,
+      );
 
     if (opts.complete) {
       const tokens = await completeDeviceAuthorization(opts.complete).catch(
@@ -104,7 +112,8 @@ const status = zodCommand({
     const json = isJson(status);
 
     const accessToken = await getValidAccessToken();
-    if (!accessToken) return err("Not logged in. Run `hrld auth login`.", json);
+    if (!accessToken)
+      return err(new CliError("NOT_LOGGED_IN", "Not logged in.", "Run `hrld auth login`."), json);
 
     ok({ status: "authenticated" }, json);
   },

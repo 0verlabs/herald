@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import pc from "picocolors";
+import { CliError } from "./errors.ts";
 
 export function isJson(cmd: Command): boolean {
   return cmd.optsWithGlobals().json === true;
@@ -26,13 +27,21 @@ export function ok<T extends Record<string, unknown>>(value: T, json: boolean): 
 
 export function err(error: string | Error, json: boolean): void {
   const message = error instanceof Error ? error.message : error;
+  const code = error instanceof CliError ? error.code : undefined;
+  const recovery = error instanceof CliError ? error.recovery : undefined;
+  process.exitCode = 1;
 
   if (!json) {
-    console.error(pc.red(message));
-    process.exitCode = 1;
+    console.error(code ? `${pc.red(message)} ${pc.dim(`[${code}]`)}` : pc.red(message));
+    if (recovery) console.error(pc.yellow(`→ ${recovery}`));
     return;
   }
 
-  console.error(JSON.stringify({ error: message }, null, 2));
-  process.exitCode = 1;
+  console.error(
+    JSON.stringify(
+      { error: message, ...(code && { code }), ...(recovery && { recovery }) },
+      null,
+      2,
+    ),
+  );
 }
