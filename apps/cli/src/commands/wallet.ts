@@ -9,9 +9,18 @@ import {
   type Wallet,
 } from "@hrld/core";
 import pc from "picocolors";
-import { createPublicClient, createWalletClient, formatEther, type Hex, http } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  erc20Abi,
+  formatEther,
+  formatUnits,
+  type Hex,
+  http,
+} from "viem";
 import { z } from "zod";
 import { zodCommand } from "zod-commander";
+import { getCached, setCached } from "../lib/cache.ts";
 import { getValidAccessToken } from "../lib/credentials.ts";
 import { openWalletSession, type WalletSession } from "../lib/privy.ts";
 import { toWalletAccount } from "../lib/viem.ts";
@@ -246,20 +255,28 @@ async function listAddresses(
 
 const balance = zodCommand({
   name: "balance",
-  description: "Show the embedded wallet's native token balance",
+  description: "Show the embedded wallet's token balance",
   opts: {
     chain: evmChainOpt,
+    token: z
+      .string()
+      .regex(/^0x[0-9a-fA-F]{40}$/, "Expected a 0x-prefixed address")
+      .optional()
+      .describe("t;ERC-20 token contract address; defaults to the chain's native token"),
   },
   action: async (_args, opts) => {
     const json = isJson(balance);
 
-    const result = await readBalance(opts.chain).catch((error: Error) => error);
+    const result = await (
+      opts.token ? readTokenBalance(opts.chain, opts.token) : readBalance(opts.chain)
+    ).catch((error: Error) => error);
     if (result instanceof Error) return err(result)(json);
 
     ok(
       fields([
         ["Chain", pc.bold(chainDisplayName[result.chain])],
         ["Address", pc.cyan(result.address)],
+        ...(result.token ? [["Token", pc.cyan(result.token)] as [string, unknown]] : []),
         ["Balance", pc.bold(result.balance)],
       ]),
       result,
@@ -282,7 +299,52 @@ async function readBalance(chain: EvmChain) {
     chain,
     address: wallet.address,
     balance: `${formatEther(wei)} ${config.nativeCurrency.symbol}`,
+    // Present so the ternary in the action stays a proper union rather than
+    // collapsing into the token-balance shape, which is otherwise a subtype.
+    token: null,
   };
+}
+
+async function readTokenBalance(chain: EvmChain, token: string) {
+  const session = await openSession();
+  const wallet = requireWallet(session, chain);
+  const client = createPublicClient({ chain: viemChainByChain[chain], transport: http() });
+  const contract = { address: token as Hex, abi: erc20Abi } as const;
+
+  const [wei, { decimals, symbol }] = await Promise.all([
+    client.readContract({ ...contract, functionName: "balanceOf", args: [wallet.address as Hex] }),
+    readTokenMetadata(client, chain, contract),
+  ]);
+
+  return {
+    chain,
+    address: wallet.address,
+    token: contract.address,
+    balance: `${formatUnits(wei, decimals)} ${symbol}`,
+  };
+}
+
+type TokenMetadata = { decimals: number; symbol: string };
+
+async function readTokenMetadata(
+  client: ReturnType<typeof createPublicClient>,
+  chain: EvmChain,
+  contract: { address: Hex; abi: typeof erc20Abi },
+): Promise<TokenMetadata> {
+  // Decimals and symbol are immutable for a deployed contract, so they cache
+  // forever; only the balance itself is read fresh on every call.
+  const key = `${chain}:${contract.address.toLowerCase()}`;
+  const cached = getCached<TokenMetadata>("token-metadata", key);
+  if (cached) return cached;
+
+  const [decimals, symbol] = await Promise.all([
+    client.readContract({ ...contract, functionName: "decimals" }),
+    client.readContract({ ...contract, functionName: "symbol" }),
+  ]);
+
+  const metadata = { decimals, symbol };
+  setCached("token-metadata", key, metadata);
+  return metadata;
 }
 
 const evm = zodCommand({

@@ -26,6 +26,7 @@
     "canonicalize": "catalog:",
     "commander": "catalog:",
     "cross-keychain": "catalog:",
+    "flat-cache": "catalog:",
     "picocolors": "catalog:",
     "uqr": "catalog:",
     "viem": "catalog:",
