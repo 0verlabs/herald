@@ -54,7 +54,7 @@ function requireWallet(session: WalletSession, chain: Chain): Wallet {
 
 const evmSignMessage = zodCommand({
   name: "sign-message",
-  description: "Sign a plaintext message with the embedded EVM wallet",
+  description: "Sign a plaintext message with active EVM wallet",
   opts: {
     chain: evmChainOpt,
     message: z.string().describe("m;The message to sign"),
@@ -113,7 +113,7 @@ const jsonStringSchema = z.string().transform((str, ctx) => {
 
 const evmSignTypedData = zodCommand({
   name: "sign-typed-data",
-  description: "Sign EIP-712 typed data with the embedded EVM wallet",
+  description: "Sign EIP-712 typed data with active EVM wallet",
   opts: {
     chain: evmChainOpt,
     data: jsonStringSchema
@@ -152,7 +152,7 @@ async function signTypedData(chain: EvmChain, typedData: z.infer<typeof typedDat
 
 const evmSendTx = zodCommand({
   name: "send-tx",
-  description: "Sign and broadcast a transaction with the embedded EVM wallet",
+  description: "Sign and broadcast a transaction with active EVM wallet",
   opts: {
     chain: evmChainOpt,
     to: z
@@ -210,40 +210,27 @@ async function sendTransaction(opts: {
 
 const address = zodCommand({
   name: "address",
-  description: "Show the embedded wallet addresses",
-  opts: {
-    chain: chainSchema.optional().describe("c;Limit the output to a single chain"),
-  },
-  action: async (_args, opts) => {
+  description: "Show wallet address",
+  action: async () => {
     const json = isJson(address);
 
-    const result = await listAddresses(opts.chain).catch((error: Error) => error);
+    const result = await listAddresses().catch((error: Error) => error);
     if (result instanceof Error) return err(result)(json);
 
-    const stdout =
-      "address" in result
-        ? fields([
-            ["Chain", pc.bold(chainDisplayName[result.chain])],
-            ["Address", pc.cyan(result.address)],
-          ])
-        : fields(
-            result.wallets.map((wallet): [string, unknown] => [
-              networkDisplayName[wallet.network],
-              pc.cyan(wallet.address),
-            ]),
-          );
-
-    ok(stdout, result)(json);
+    ok(
+      fields(
+        result.wallets.map((wallet): [string, unknown] => [
+          networkDisplayName[wallet.network],
+          pc.cyan(wallet.address),
+        ]),
+      ),
+      result,
+    )(json);
   },
 });
 
-async function listAddresses(
-  chain: Chain | undefined,
-): Promise<
-  { chain: Chain; address: string } | { wallets: Array<{ network: Network; address: string }> }
-> {
+async function listAddresses() {
   const session = await openSession();
-  if (chain) return { chain, address: requireWallet(session, chain).address };
 
   return {
     wallets: session.wallets.map((wallet) => ({
@@ -255,7 +242,7 @@ async function listAddresses(
 
 const balance = zodCommand({
   name: "balance",
-  description: "Show the embedded wallet's token balance",
+  description: "Show wallet's token balance",
   opts: {
     chain: evmChainOpt,
     token: z
