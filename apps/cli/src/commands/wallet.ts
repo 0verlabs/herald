@@ -3,18 +3,21 @@ import {
   chainSchema,
   type EvmChain,
   evmChainSchema,
+  type Network,
   networkByChain,
   viemChainByChain,
   type Wallet,
 } from "@hrld/core";
+import pc from "picocolors";
 import { createPublicClient, createWalletClient, formatEther, type Hex, http } from "viem";
 import { z } from "zod";
 import { zodCommand } from "zod-commander";
 import { getValidAccessToken } from "../lib/credentials.ts";
 import { openWalletSession, type WalletSession } from "../lib/privy.ts";
 import { toWalletAccount } from "../lib/viem.ts";
+import { chainDisplayName, networkDisplayName } from "../utils/chain.ts";
 import { CliError } from "../utils/errors.ts";
-import { err, isJson, ok } from "../utils/result.ts";
+import { err, fields, isJson, ok } from "../utils/result.ts";
 
 // Only 0G is supported today, but every command takes `--chain` so adding a
 // network is a change to the enum in @hrld/core rather than to each command.
@@ -51,9 +54,16 @@ const evmSignMessage = zodCommand({
     const json = isJson(evmSignMessage);
 
     const result = await signMessage(opts.chain, opts.message).catch((error: Error) => error);
-    if (result instanceof Error) return err(result, json);
+    if (result instanceof Error) return err(result)(json);
 
-    ok(result, json);
+    ok(
+      fields([
+        ["Address", pc.cyan(result.address)],
+        ["Message", result.message],
+        ["Signature", pc.cyan(result.signature)],
+      ]),
+      result,
+    )(json);
   },
 });
 
@@ -105,9 +115,16 @@ const evmSignTypedData = zodCommand({
     const json = isJson(evmSignTypedData);
 
     const result = await signTypedData(opts.chain, opts.data).catch((error: Error) => error);
-    if (result instanceof Error) return err(result, json);
+    if (result instanceof Error) return err(result)(json);
 
-    ok(result, json);
+    ok(
+      fields([
+        ["Address", pc.cyan(result.address)],
+        ["Type", result.primaryType],
+        ["Signature", pc.cyan(result.signature)],
+      ]),
+      result,
+    )(json);
   },
 });
 
@@ -144,9 +161,17 @@ const evmSendTx = zodCommand({
     const json = isJson(evmSendTx);
 
     const result = await sendTransaction(opts).catch((error: Error) => error);
-    if (result instanceof Error) return err(result, json);
+    if (result instanceof Error) return err(result)(json);
 
-    ok(result, json);
+    ok(
+      fields([
+        ["Chain", pc.bold(chainDisplayName[result.chain])],
+        ["From", pc.cyan(result.from)],
+        ["To", pc.cyan(result.to)],
+        ["Hash", pc.cyan(result.hash)],
+      ]),
+      result,
+    )(json);
   },
 });
 
@@ -184,13 +209,30 @@ const address = zodCommand({
     const json = isJson(address);
 
     const result = await listAddresses(opts.chain).catch((error: Error) => error);
-    if (result instanceof Error) return err(result, json);
+    if (result instanceof Error) return err(result)(json);
 
-    ok(result, json);
+    const stdout =
+      "address" in result
+        ? fields([
+            ["Chain", pc.bold(chainDisplayName[result.chain])],
+            ["Address", pc.cyan(result.address)],
+          ])
+        : fields(
+            result.wallets.map((wallet): [string, unknown] => [
+              networkDisplayName[wallet.network],
+              pc.cyan(wallet.address),
+            ]),
+          );
+
+    ok(stdout, result)(json);
   },
 });
 
-async function listAddresses(chain: Chain | undefined) {
+async function listAddresses(
+  chain: Chain | undefined,
+): Promise<
+  { chain: Chain; address: string } | { wallets: Array<{ network: Network; address: string }> }
+> {
   const session = await openSession();
   if (chain) return { chain, address: requireWallet(session, chain).address };
 
@@ -212,9 +254,16 @@ const balance = zodCommand({
     const json = isJson(balance);
 
     const result = await readBalance(opts.chain).catch((error: Error) => error);
-    if (result instanceof Error) return err(result, json);
+    if (result instanceof Error) return err(result)(json);
 
-    ok(result, json);
+    ok(
+      fields([
+        ["Chain", pc.bold(chainDisplayName[result.chain])],
+        ["Address", pc.cyan(result.address)],
+        ["Balance", pc.bold(result.balance)],
+      ]),
+      result,
+    )(json);
   },
 });
 
@@ -233,7 +282,6 @@ async function readBalance(chain: EvmChain) {
     chain,
     address: wallet.address,
     balance: `${formatEther(wei)} ${config.nativeCurrency.symbol}`,
-    wei: wei.toString(),
   };
 }
 

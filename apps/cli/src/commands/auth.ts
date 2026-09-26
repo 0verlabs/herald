@@ -16,7 +16,7 @@ import {
   requestDeviceAuthorization,
 } from "../lib/privy.ts";
 import { CliError } from "../utils/errors.ts";
-import { err, isJson, ok } from "../utils/result.ts";
+import { err, fields, isJson, ok, success } from "../utils/result.ts";
 
 const login = zodCommand({
   name: "login",
@@ -40,60 +40,63 @@ const login = zodCommand({
           "--start and --complete cannot be used together.",
           "Run `hrld auth login --start` first, then `hrld auth login --complete <request_id>`.",
         ),
-        json,
-      );
+      )(json);
 
     if (opts.complete) {
       const tokens = await completeDeviceAuthorization(opts.complete).catch(
         (error: Error) => error,
       );
-      if (tokens instanceof Error) return err(tokens, json);
+      if (tokens instanceof Error) return err(tokens)(json);
 
       await saveCredentials(toCredentials(tokens));
-      return ok({ message: "Logged in" }, json);
+      return ok(success("Logged in"), { message: "Logged in" })(json);
     }
 
     const device = await requestDeviceAuthorization().catch((error: Error) => error);
-    if (device instanceof Error) return err(device, json);
+    if (device instanceof Error) return err(device)(json);
 
     if (opts.start) {
-      if (json)
-        return ok(
-          {
-            verification_uri: device.verification_uri_complete,
-            user_code: device.user_code,
-            request_id: device.device_code,
-            expires_in: device.expires_in,
-          },
-          json,
-        );
+      const stdout = [
+        renderUnicodeCompact(device.verification_uri_complete),
+        "",
+        fields([
+          ["Visit", pc.cyan(device.verification_uri_complete)],
+          ["Code", pc.bold(device.user_code)],
+        ]),
+        "",
+        pc.dim(
+          `After approving, run: ${pc.bold(`hrld auth login --complete ${device.device_code}`)}`,
+        ),
+        pc.dim(`Expires in ${Math.round(device.expires_in / 60)} minutes.`),
+      ].join("\n");
 
-      console.log(renderUnicodeCompact(device.verification_uri_complete));
-      console.log(`Visit:  ${pc.cyan(device.verification_uri_complete)}`);
-      console.log(`Code:   ${pc.bold(device.user_code)}`);
-      console.log("");
-      console.log(
-        `After approving, run: ${pc.bold(`hrld auth login --complete ${device.device_code}`)}`,
-      );
-      console.log(`The request expires in ${Math.round(device.expires_in / 60)} minutes.`);
-      return;
+      return ok(stdout, {
+        verification_uri: device.verification_uri_complete,
+        user_code: device.user_code,
+        request_id: device.device_code,
+        expires_in: device.expires_in,
+      })(json);
     }
 
     // Keep stdout clean for JSON output; progress goes to stderr.
     const print = json ? console.error : console.log;
-    print(`Visit:  ${pc.cyan(device.verification_uri_complete)}`);
-    print(`Code:   ${pc.bold(device.user_code)}`);
+    print(
+      fields([
+        ["Visit", pc.cyan(device.verification_uri_complete)],
+        ["Code", pc.bold(device.user_code)],
+      ]),
+    );
     print("");
-    print("Waiting for authorization in the browser…");
+    print(pc.dim("Waiting for authorization in the browser…"));
     openBrowser(device.verification_uri_complete);
 
     const tokens = await pollForTokens(device.device_code, device.interval).catch(
       (error: Error) => error,
     );
-    if (tokens instanceof Error) return err(tokens, json);
+    if (tokens instanceof Error) return err(tokens)(json);
 
     await saveCredentials(toCredentials(tokens));
-    ok({ message: "Logged in" }, json);
+    ok(success("Logged in"), { message: "Logged in" })(json);
   },
 });
 
@@ -102,7 +105,7 @@ const logout = zodCommand({
   description: "Remove stored credentials from this machine",
   action: async () => {
     await clearCredentials();
-    ok({ message: "Logged out" }, isJson(logout));
+    ok(success("Logged out"), { message: "Logged out" })(isJson(logout));
   },
 });
 
@@ -114,15 +117,10 @@ const info = zodCommand({
 
     const accessToken = await getValidAccessToken();
     if (!accessToken)
-      return err(new CliError("NOT_LOGGED_IN", "Not logged in.", "Run `hrld auth login`."), json);
+      return err(new CliError("NOT_LOGGED_IN", "Not logged in.", "Run `hrld auth login`."))(json);
 
     const claims = decodeAccessTokenClaims(accessToken);
-    ok(
-      {
-        user_id: claims.sub,
-      },
-      json,
-    );
+    ok(fields([["User ID", pc.cyan(claims.sub)]]), { user_id: claims.sub })(json);
   },
 });
 
