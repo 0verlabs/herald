@@ -3,13 +3,7 @@ import { renderUnicodeCompact } from "uqr";
 import { z } from "zod";
 import { zodCommand } from "zod-commander";
 import { openBrowser } from "../lib/browser.ts";
-import {
-  clearCredentials,
-  getValidAccessToken,
-  saveCredentials,
-  toCredentials,
-} from "../lib/credentials.ts";
-import { decodeAccessTokenClaims } from "../lib/jwt.ts";
+import { clearCredentials, saveCredentials, toCredentials } from "../lib/credentials.ts";
 import {
   completeDeviceAuthorization,
   pollForTokens,
@@ -109,25 +103,9 @@ const logout = zodCommand({
   },
 });
 
-const info = zodCommand({
-  name: "info",
-  description: "Show the authenticated account",
-  action: async () => {
-    const json = isJson(info);
-
-    const accessToken = await getValidAccessToken();
-    if (!accessToken)
-      return err(new CliError("NOT_LOGGED_IN", "Not logged in.", "Run `hrld auth login`."))(json);
-
-    const claims = decodeAccessTokenClaims(accessToken);
-    ok(fields([["User ID", pc.cyan(claims.sub)]]), { user_id: claims.sub })(json);
-  },
-});
-
 export const auth = zodCommand({
   name: "auth",
   description: "Authenticate Herald ACP",
 })
   .addCommand(login)
-  .addCommand(logout)
-  .addCommand(info);
+  .addCommand(logout);
