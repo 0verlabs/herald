@@ -7,7 +7,11 @@ export type ErrorCode =
   | "DEVICE_CODE_EXPIRED"
   | "AUTH_DENIED"
   | "TOKEN_REQUEST_FAILED"
-  | "SESSION_EXPIRED";
+  | "SESSION_EXPIRED"
+  | "WALLET_AUTH_FAILED"
+  | "WALLET_NOT_FOUND"
+  | "WALLET_NOT_ACCESSIBLE"
+  | "WALLET_RPC_FAILED";
 
 export class CliError extends Error {
   readonly code: ErrorCode;

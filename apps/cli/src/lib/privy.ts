@@ -1,6 +1,16 @@
-import { PRIVY_APP_ID, PRIVY_AUTH_ORIGIN } from "@hrld/core";
+import crypto from "node:crypto";
+import {
+  PRIVY_APP_ID,
+  PRIVY_AUTH_ORIGIN,
+  PRIVY_GRANT_TYPE_DEVICE_CODE,
+  PRIVY_OAUTH_PATH,
+  privyWalletSchema,
+  toWallet,
+} from "@hrld/core";
+import canonicalize from "canonicalize";
 import { z } from "zod";
 import { CliError } from "../utils/errors.ts";
+import { createRecipientKeyPair, openSealed } from "./hpke.ts";
 
 const deviceAuthorizationSchema = z.object({
   device_code: z.string(),
@@ -143,4 +153,124 @@ export async function refreshTokens(refreshToken: string): Promise<Tokens> {
     );
 
   return tokensSchema.parse(await res.json());
+}
+
+const authenticateWalletsSchema = z.object({
+  encrypted_authorization_key: z.object({
+    encapsulated_key: z.string(),
+    ciphertext: z.string(),
+  }),
+  wallets: z.array(privyWalletSchema),
+});
+
+// The authorization key grants direct signing authority over the user's wallets
+// for up to 15 minutes, so it is minted per process and never written to disk.
+// Each CLI invocation pays one extra round trip in exchange for that.
+export async function openWalletSession(accessToken: string) {
+  const recipient = createRecipientKeyPair();
+  const res = await fetch(`${PRIVY_AUTH_ORIGIN}${PRIVY_OAUTH_PATH}/wallets/authenticate`, {
+    method: "POST",
+    headers: walletHeaders(accessToken),
+    body: JSON.stringify({
+      encryption_type: "HPKE",
+      recipient_public_key: recipient.publicKeySpki,
+    }),
+  });
+
+  if (res.status === 401)
+    throw new CliError(
+      "SESSION_EXPIRED",
+      "Session expired or revoked.",
+      "Run `hrld auth login` to log in again.",
+    );
+  if (!res.ok)
+    throw new CliError(
+      "WALLET_AUTH_FAILED",
+      `Wallet authorization failed: HTTP ${res.status}`,
+      "Run the command again, or start over with `hrld auth login`.",
+    );
+
+  const body = authenticateWalletsSchema.parse(await res.json());
+  return {
+    accessToken,
+    authorizationKey: await openSealed(recipient.privateKeyPem, {
+      encapsulatedKey: body.encrypted_authorization_key.encapsulated_key,
+      ciphertext: body.encrypted_authorization_key.ciphertext,
+    }),
+    wallets: body.wallets.map(toWallet).filter((wallet) => wallet !== null),
+  };
+}
+
+export type WalletSession = Awaited<ReturnType<typeof openWalletSession>>;
+
+// Privy's RPC responses wrap the result in `data`; callers pick the field their
+// method returns.
+export const walletSignatureSchema = z.object({ data: z.object({ signature: z.string() }) });
+export const walletSignedTransactionSchema = z.object({
+  data: z.object({ signed_transaction: z.string() }),
+});
+
+export async function walletRpc(session: WalletSession, walletId: string, body: object) {
+  const url = `${PRIVY_AUTH_ORIGIN}${PRIVY_OAUTH_PATH}/wallets/${walletId}/rpc`;
+  // Round-trip through JSON so the signed payload and the transmitted bytes agree
+  // on how absent fields are dropped.
+  const payload = JSON.parse(JSON.stringify(body));
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      ...walletHeaders(session.accessToken),
+      "privy-authorization-signature": authorizationSignature(
+        session.authorizationKey,
+        url,
+        payload,
+      ),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (res.status === 403)
+    throw new CliError(
+      "WALLET_NOT_ACCESSIBLE",
+      "That wallet does not belong to the authenticated account.",
+      "Run `hrld auth info` to check who is logged in.",
+    );
+  if (!res.ok)
+    throw new CliError(
+      "WALLET_RPC_FAILED",
+      `Wallet request failed: HTTP ${res.status} ${await res.text()}`,
+      "Run the command again, or start over with `hrld auth login`.",
+    );
+
+  return res.json();
+}
+
+// Proves to Privy that the wallet owner authorized this exact request. The
+// payload is canonicalized per RFC 8785 and signed with ECDSA P-256.
+export function authorizationSignature(authorizationKey: string, url: string, body: unknown) {
+  const payload = canonicalize({
+    version: 1,
+    method: "POST",
+    url,
+    body,
+    headers: { "privy-app-id": PRIVY_APP_ID },
+  });
+
+  const privateKey = authorizationKey.startsWith("-----BEGIN")
+    ? crypto.createPrivateKey(authorizationKey)
+    : crypto.createPrivateKey({
+        key: Buffer.from(authorizationKey, "base64"),
+        format: "der",
+        type: "pkcs8",
+      });
+
+  return crypto.sign("sha256", Buffer.from(payload ?? ""), privateKey).toString("base64");
+}
+
+function walletHeaders(accessToken: string) {
+  return {
+    ...headers,
+    "privy-grant-type": PRIVY_GRANT_TYPE_DEVICE_CODE,
+    Authorization: `Bearer ${accessToken}`,
+  };
 }

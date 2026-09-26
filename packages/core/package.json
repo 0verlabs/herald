@@ -11,6 +11,10 @@
     "build": "vp pack",
     "test": "vp test --passWithNoTests"
   },
+  "dependencies": {
+    "viem": "catalog:",
+    "zod": "catalog:"
+  },
   "devDependencies": {
     "@types/node": "catalog:",
     "typescript": "catalog:",

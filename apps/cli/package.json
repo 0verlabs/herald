@@ -21,10 +21,14 @@
     "prepublishOnly": "vp run build"
   },
   "dependencies": {
+    "@hpke/chacha20poly1305": "catalog:",
+    "@hpke/core": "catalog:",
+    "canonicalize": "catalog:",
     "commander": "catalog:",
     "cross-keychain": "catalog:",
     "picocolors": "catalog:",
     "uqr": "catalog:",
+    "viem": "catalog:",
     "zod": "catalog:",
     "zod-commander": "catalog:"
   },
