@@ -1,13 +1,4 @@
-import {
-  type Chain,
-  chainSchema,
-  type EvmChain,
-  evmChainSchema,
-  type Network,
-  networkByChain,
-  viemChainByChain,
-  type Wallet,
-} from "@hrld/core";
+import { type EvmChain, evmChainSchema, viemChainByChain } from "@hrld/core";
 import pc from "picocolors";
 import {
   createPublicClient,
@@ -21,36 +12,14 @@ import {
 import { z } from "zod";
 import { zodCommand } from "zod-commander";
 import { getCached, setCached } from "../lib/cache.ts";
-import { getValidAccessToken } from "../lib/credentials.ts";
-import { openWalletSession, type WalletSession } from "../lib/privy.ts";
+import { openSession, requireWallet } from "../lib/session.ts";
 import { toWalletAccount } from "../lib/viem.ts";
 import { chainDisplayName, networkDisplayName } from "../utils/chain.ts";
-import { CliError } from "../utils/errors.ts";
 import { err, fields, isJson, ok } from "../utils/result.ts";
 
 // Only 0G is supported today, but every command takes `--chain` so adding a
 // network is a change to the enum in @hrld/core rather than to each command.
 const evmChainOpt = evmChainSchema.prefault("0g").describe("c;Chain to operate on");
-
-async function openSession() {
-  const accessToken = await getValidAccessToken();
-  if (!accessToken) throw new CliError("NOT_LOGGED_IN", "Not logged in.", "Run `hrld auth login`.");
-
-  return openWalletSession(accessToken);
-}
-
-function requireWallet(session: WalletSession, chain: Chain): Wallet {
-  const network = networkByChain[chain];
-  const wallet = session.wallets.find((candidate) => candidate.network === network);
-  if (!wallet)
-    throw new CliError(
-      "WALLET_NOT_FOUND",
-      `This account has no ${network} embedded wallet.`,
-      "Create one by signing in to the Herald app, then run this command again.",
-    );
-
-  return wallet;
-}
 
 const evmSignMessage = zodCommand({
   name: "sign-message",

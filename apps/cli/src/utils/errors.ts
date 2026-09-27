@@ -11,7 +11,10 @@ export type ErrorCode =
   | "WALLET_AUTH_FAILED"
   | "WALLET_NOT_FOUND"
   | "WALLET_NOT_ACCESSIBLE"
-  | "WALLET_RPC_FAILED";
+  | "WALLET_RPC_FAILED"
+  | "STORAGE_PATH_NOT_FOUND"
+  | "STORAGE_UPLOAD_FAILED"
+  | "STORAGE_DOWNLOAD_FAILED";
 
 export class CliError extends Error {
   readonly code: ErrorCode;
