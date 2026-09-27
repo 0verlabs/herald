@@ -1,4 +1,4 @@
-import { type EvmChain, evmChainSchema, viemChainByChain } from "@hrld/core";
+import { type EvmChain, viemChainByChain } from "@hrld/core";
 import pc from "picocolors";
 import {
   createPublicClient,
@@ -14,24 +14,19 @@ import { zodCommand } from "zod-commander";
 import { getCached, setCached } from "../lib/cache.ts";
 import { openSession, requireWallet } from "../lib/session.ts";
 import { toWalletAccount } from "../lib/viem.ts";
-import { chainDisplayName, networkDisplayName } from "../utils/chain.ts";
+import { activeChain, chainDisplayName, networkDisplayName } from "../utils/chain.ts";
 import { err, fields, isJson, ok } from "../utils/result.ts";
-
-// Only 0G is supported today, but every command takes `--chain` so adding a
-// network is a change to the enum in @hrld/core rather than to each command.
-const evmChainOpt = evmChainSchema.prefault("0g").describe("c;Chain to operate on");
 
 const evmSignMessage = zodCommand({
   name: "sign-message",
   description: "Sign a plaintext message with active EVM wallet",
   opts: {
-    chain: evmChainOpt,
     message: z.string().describe("m;The message to sign"),
   },
   action: async (_args, opts) => {
     const json = isJson(evmSignMessage);
 
-    const result = await signMessage(opts.chain, opts.message).catch((error: Error) => error);
+    const result = await signMessage(activeChain, opts.message).catch((error: Error) => error);
     if (result instanceof Error) return err(result)(json);
 
     ok(
@@ -84,7 +79,6 @@ const evmSignTypedData = zodCommand({
   name: "sign-typed-data",
   description: "Sign EIP-712 typed data with active EVM wallet",
   opts: {
-    chain: evmChainOpt,
     data: jsonStringSchema
       .pipe(typedDataSchema)
       .describe("d;EIP-712 payload as JSON: { domain, types, primaryType, message }"),
@@ -92,7 +86,7 @@ const evmSignTypedData = zodCommand({
   action: async (_args, opts) => {
     const json = isJson(evmSignTypedData);
 
-    const result = await signTypedData(opts.chain, opts.data).catch((error: Error) => error);
+    const result = await signTypedData(activeChain, opts.data).catch((error: Error) => error);
     if (result instanceof Error) return err(result)(json);
 
     ok(
@@ -123,7 +117,6 @@ const evmSendTx = zodCommand({
   name: "send-tx",
   description: "Sign and broadcast a transaction with active EVM wallet",
   opts: {
-    chain: evmChainOpt,
     to: z
       .string()
       .regex(/^0x[0-9a-fA-F]{40}$/, "Expected a 0x-prefixed address")
@@ -138,7 +131,9 @@ const evmSendTx = zodCommand({
   action: async (_args, opts) => {
     const json = isJson(evmSendTx);
 
-    const result = await sendTransaction(opts).catch((error: Error) => error);
+    const result = await sendTransaction({ ...opts, chain: activeChain }).catch(
+      (error: Error) => error,
+    );
     if (result instanceof Error) return err(result)(json);
 
     ok(
@@ -201,11 +196,15 @@ const address = zodCommand({
 async function listAddresses() {
   const session = await openSession();
 
+  // Privy also provisions an SVM embedded wallet, but the CLI is EVM-only for
+  // now, so only EVM addresses are surfaced.
   return {
-    wallets: session.wallets.map((wallet) => ({
-      network: wallet.network,
-      address: wallet.address,
-    })),
+    wallets: session.wallets
+      .filter((wallet) => wallet.network === "evm")
+      .map((wallet) => ({
+        network: wallet.network,
+        address: wallet.address,
+      })),
   };
 }
 
@@ -213,7 +212,6 @@ const balance = zodCommand({
   name: "balance",
   description: "Show wallet's token balance",
   opts: {
-    chain: evmChainOpt,
     token: z
       .string()
       .regex(/^0x[0-9a-fA-F]{40}$/, "Expected a 0x-prefixed address")
@@ -224,7 +222,7 @@ const balance = zodCommand({
     const json = isJson(balance);
 
     const result = await (
-      opts.token ? readTokenBalance(opts.chain, opts.token) : readBalance(opts.chain)
+      opts.token ? readTokenBalance(activeChain, opts.token) : readBalance(activeChain)
     ).catch((error: Error) => error);
     if (result instanceof Error) return err(result)(json);
 

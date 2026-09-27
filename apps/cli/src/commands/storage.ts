@@ -9,7 +9,7 @@ import {
   SYMMETRIC_VERSION,
   ZgFile,
 } from "@0gfoundation/0g-storage-ts-sdk";
-import { type EvmChain, evmChainSchema, viemChainByChain } from "@hrld/core";
+import { type EvmChain, viemChainByChain } from "@hrld/core";
 import pc from "picocolors";
 import { z } from "zod";
 import { zodCommand } from "zod-commander";
@@ -24,12 +24,9 @@ import {
   type UploadRecord,
   withQuietConsole,
 } from "../lib/storage.ts";
+import { activeChain } from "../utils/chain.ts";
 import { CliError } from "../utils/errors.ts";
 import { err, fields, isJson, ok } from "../utils/result.ts";
-
-// Only 0G is supported today, but every command takes `--chain` so adding a
-// network is a change to the enum in @hrld/core rather than to each command.
-const evmChainOpt = evmChainSchema.prefault("0g").describe("c;Chain to operate on");
 
 const upload = zodCommand({
   name: "upload",
@@ -38,7 +35,6 @@ const upload = zodCommand({
     path: z.string().describe("File to upload, or a directory to upload every file inside"),
   },
   opts: {
-    chain: evmChainOpt,
     encrypt: z
       .boolean()
       .prefault(false)
@@ -47,7 +43,7 @@ const upload = zodCommand({
   action: async (args, opts) => {
     const json = isJson(upload);
 
-    const result = await uploadPath(opts.chain, args.path, opts.encrypt, json).catch(
+    const result = await uploadPath(activeChain, args.path, opts.encrypt, json).catch(
       (error: Error) => error,
     );
     if (result instanceof Error) return err(result)(json);
@@ -157,7 +153,6 @@ const download = zodCommand({
       .describe("Merkle root hash of the file"),
   },
   opts: {
-    chain: evmChainOpt,
     output: z
       .string()
       .optional()
@@ -176,7 +171,7 @@ const download = zodCommand({
   action: async (args, opts) => {
     const json = isJson(download);
 
-    const result = await downloadFile(opts.chain, args.rootHash, opts, json).catch(
+    const result = await downloadFile(activeChain, args.rootHash, opts, json).catch(
       (error: Error) => error,
     );
     if (result instanceof Error) return err(result)(json);
