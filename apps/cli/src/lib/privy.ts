@@ -233,7 +233,7 @@ export async function walletRpc(session: WalletSession, walletId: string, body: 
     throw new CliError(
       "WALLET_NOT_ACCESSIBLE",
       "That wallet does not belong to the authenticated account.",
-      "Run `hrld whoami` to check who is logged in.",
+      "Run `hrld auth whoami` to check who is logged in.",
     );
   if (!res.ok)
     throw new CliError(
