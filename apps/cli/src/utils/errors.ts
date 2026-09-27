@@ -14,7 +14,8 @@ export type ErrorCode =
   | "WALLET_RPC_FAILED"
   | "STORAGE_PATH_NOT_FOUND"
   | "STORAGE_UPLOAD_FAILED"
-  | "STORAGE_DOWNLOAD_FAILED";
+  | "STORAGE_DOWNLOAD_FAILED"
+  | "STORAGE_KEY_NOT_FOUND";
 
 export class CliError extends Error {
   readonly code: ErrorCode;

@@ -58,13 +58,12 @@ const upload = zodCommand({
         ["Root Hash", pc.cyan(record.rootHash)],
         ["Tx Hash", pc.cyan(record.txHash)],
         ["Size", formatBytes(record.size)],
-        ...(record.encryptionKey
-          ? [["Key", pc.cyan(record.encryptionKey)] as [string, unknown]]
-          : []),
       ]),
     );
+    // The key is deliberately not shown: it lives in the OS keychain, and
+    // printing it would leak an irrecoverable secret into scrollback and logs.
     const keyNote = opts.encrypt
-      ? `\n\n${pc.yellow("Keys are saved to this machine's keychain; downloads by this account decrypt automatically. Anyone else needs the key.")}`
+      ? `\n\n${pc.yellow("Keys are saved to this machine's keychain; downloads by this account decrypt automatically. To share a file, run `hrld storage key <root_hash>`.")}`
       : "";
 
     ok(`${blocks.join("\n\n")}${keyNote}`, result)(json);
@@ -82,7 +81,7 @@ async function uploadPath(chain: EvmChain, inputPath: string, encrypt: boolean, 
   const indexer = new Indexer(indexerRpcByChain[chain]);
   const root = path.dirname(path.resolve(inputPath));
 
-  const records: Array<UploadRecord & { encryptionKey?: string }> = [];
+  const records: UploadRecord[] = [];
   for (const filePath of files) {
     const name = path.relative(root, filePath);
     progress(json, `Uploading ${name}...`);
@@ -104,13 +103,11 @@ async function uploadPath(chain: EvmChain, inputPath: string, encrypt: boolean, 
         "Check the wallet's 0G balance covers the storage fee and gas, then retry.",
       );
 
-    const uploadedAt = new Date().toISOString();
-    const encryptionKey = key ? `0x${key.toString("hex")}` : undefined;
-    records.push({
+    const record: UploadRecord = {
       name,
       size,
-      uploadedAt,
-      ...(encryptionKey && { encrypted: true, encryptionKey }),
+      uploadedAt: new Date().toISOString(),
+      ...(key && { encrypted: true }),
       ...("rootHash" in tx
         ? { rootHash: tx.rootHash, txHash: tx.txHash }
         : {
@@ -118,24 +115,16 @@ async function uploadPath(chain: EvmChain, inputPath: string, encrypt: boolean, 
             rootHashes: tx.rootHashes,
             txHash: tx.txHashes[0] ?? "",
           }),
-    });
-  }
+    };
 
-  // The key never touches the JSON index; it goes to the OS keychain so this
-  // account's downloads can decrypt without flags.
-  await appendUploads(
-    userId,
-    records.map(({ encryptionKey: _encryptionKey, ...record }) => record),
-  );
-  if (encrypt)
-    await saveStorageKeys(
-      userId,
-      Object.fromEntries(
-        records
-          .filter((record) => record.encryptionKey)
-          .map((record) => [record.rootHash, record.encryptionKey as string]),
-      ),
-    );
+    // Persisted per file, not after the loop: the key is the only way to ever
+    // decrypt, so a failure on a later file must not lose earlier ones. The
+    // key itself goes to the OS keychain, never the plain-JSON index.
+    await appendUploads(userId, [record]);
+    if (key) await saveStorageKeys(userId, { [record.rootHash]: `0x${key.toString("hex")}` });
+
+    records.push(record);
+  }
 
   return { chain, address: wallet.address, records };
 }
@@ -323,6 +312,44 @@ async function listUploads() {
   return { userId, uploads: await readUploads(userId) };
 }
 
+const key = zodCommand({
+  name: "key",
+  description: "Show the saved encryption key for a file uploaded with --encrypt",
+  args: {
+    rootHash: z
+      .string()
+      .regex(/^0x[0-9a-fA-F]{64}$/, "Expected a 0x-prefixed root hash")
+      .describe("Merkle root hash of the encrypted file"),
+  },
+  action: async (args) => {
+    const json = isJson(key);
+
+    const result = await readKey(args.rootHash).catch((error: Error) => error);
+    if (result instanceof Error) return err(result)(json);
+
+    ok(
+      fields([
+        ["Root Hash", pc.cyan(result.rootHash)],
+        ["Key", pc.cyan(result.key)],
+      ]),
+      result,
+    )(json);
+  },
+});
+
+async function readKey(rootHash: string) {
+  const userId = await requireUserId();
+  const saved = (await readStorageKeys(userId))[rootHash];
+  if (!saved)
+    throw new CliError(
+      "STORAGE_KEY_NOT_FOUND",
+      "No encryption key saved for this root hash.",
+      "Keys are machine-local: only files uploaded with --encrypt by this account on this machine have one.",
+    );
+
+  return { rootHash, key: saved };
+}
+
 function progress(json: boolean, message: string) {
   // Progress goes to stderr so stdout stays parseable in both output modes.
   if (!json) process.stderr.write(pc.dim(`${message}\n`));
@@ -341,4 +368,5 @@ export const storage = zodCommand({
 })
   .addCommand(upload)
   .addCommand(download)
-  .addCommand(list);
+  .addCommand(list)
+  .addCommand(key);
