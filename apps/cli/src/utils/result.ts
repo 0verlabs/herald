@@ -6,6 +6,16 @@ export function isJson(cmd: Command): boolean {
   return cmd.optsWithGlobals().json === true;
 }
 
+/**
+ * Declares --json on a command and every subcommand below it. Root options
+ * stop at the first subcommand (positional options), so each subcommand must
+ * accept the flag itself; isJson() merges all levels via optsWithGlobals().
+ */
+export function addJsonOption(command: Command): void {
+  command.option("--json", "Output results as JSON");
+  command.commands.forEach(addJsonOption);
+}
+
 export function toStringOutput<T>(value: T): string {
   if (typeof value === "string") return value;
   if (typeof value === "object" && value !== null) return JSON.stringify(value, null, 2);

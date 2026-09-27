@@ -1,5 +1,7 @@
 export type ErrorCode =
   | "FLAG_CONFLICT"
+  | "FLAG_MISSING"
+  | "FILE_NOT_FOUND"
   | "NOT_LOGGED_IN"
   | "DEVICE_AUTH_DISABLED"
   | "DEVICE_AUTH_FAILED"
@@ -15,7 +17,11 @@ export type ErrorCode =
   | "STORAGE_PATH_NOT_FOUND"
   | "STORAGE_UPLOAD_FAILED"
   | "STORAGE_DOWNLOAD_FAILED"
-  | "STORAGE_KEY_NOT_FOUND";
+  | "STORAGE_KEY_NOT_FOUND"
+  | "AGENT_NOT_FOUND"
+  | "AGENT_CARD_INVALID"
+  | "AGENT_SERVICE_NOT_FOUND"
+  | "AGENT_SYNC_FAILED";
 
 export class CliError extends Error {
   readonly code: ErrorCode;

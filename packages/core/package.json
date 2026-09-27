@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./abis/*": "./src/abis/*.ts",
     "./package.json": "./package.json"
   },
   "scripts": {

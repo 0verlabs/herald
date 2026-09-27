@@ -15,6 +15,7 @@ import { getCached, setCached } from "../lib/cache.ts";
 import { openSession, requireWallet } from "../lib/session.ts";
 import { toWalletAccount } from "../lib/viem.ts";
 import { activeChain, chainDisplayName, networkDisplayName } from "../utils/chain.ts";
+import { jsonStringSchema } from "../utils/json.ts";
 import { err, fields, isJson, ok } from "../utils/result.ts";
 
 const evmSignMessage = zodCommand({
@@ -56,23 +57,6 @@ const typedDataSchema = z.object({
   types: z.record(z.string(), z.unknown()),
   primaryType: z.string(),
   message: z.record(z.string(), z.unknown()),
-});
-
-const jsonStringSchema = z.string().transform((str, ctx) => {
-  try {
-    return JSON.parse(str);
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "Invalid JSON format";
-
-    ctx.addIssue({
-      code: "invalid_format",
-      format: "json_string",
-      input: str,
-      message: message,
-    });
-
-    return z.NEVER;
-  }
 });
 
 const evmSignTypedData = zodCommand({
