@@ -1,6 +1,14 @@
+import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { Indexer, ZgFile } from "@0gfoundation/0g-storage-ts-sdk";
+import {
+  ECIES_HEADER_SIZE,
+  ECIES_VERSION,
+  Indexer,
+  SYMMETRIC_HEADER_SIZE,
+  SYMMETRIC_VERSION,
+  ZgFile,
+} from "@0gfoundation/0g-storage-ts-sdk";
 import { type EvmChain, evmChainSchema, viemChainByChain } from "@hrld/core";
 import pc from "picocolors";
 import { z } from "zod";
@@ -10,7 +18,9 @@ import { openSession, requireUserId, requireWallet } from "../lib/session.ts";
 import {
   appendUploads,
   indexerRpcByChain,
+  readStorageKeys,
   readUploads,
+  saveStorageKeys,
   type UploadRecord,
   withQuietConsole,
 } from "../lib/storage.ts";
@@ -27,30 +37,41 @@ const upload = zodCommand({
   args: {
     path: z.string().describe("File to upload, or a directory to upload every file inside"),
   },
-  opts: { chain: evmChainOpt },
+  opts: {
+    chain: evmChainOpt,
+    encrypt: z
+      .boolean()
+      .prefault(false)
+      .describe("e;Encrypt with AES-256 before upload, generating a fresh key per file"),
+  },
   action: async (args, opts) => {
     const json = isJson(upload);
 
-    const result = await uploadPath(opts.chain, args.path, json).catch((error: Error) => error);
+    const result = await uploadPath(opts.chain, args.path, opts.encrypt, json).catch(
+      (error: Error) => error,
+    );
     if (result instanceof Error) return err(result)(json);
 
-    ok(
-      result.records
-        .map((record) =>
-          fields([
-            ["Name", record.name],
-            ["Root Hash", pc.cyan(record.rootHash)],
-            ["Tx Hash", pc.cyan(record.txHash)],
-            ["Size", formatBytes(record.size)],
-          ]),
-        )
-        .join("\n\n"),
-      result,
-    )(json);
+    const blocks = result.records.map((record) =>
+      fields([
+        ["Name", record.name],
+        ["Root Hash", pc.cyan(record.rootHash)],
+        ["Tx Hash", pc.cyan(record.txHash)],
+        ["Size", formatBytes(record.size)],
+        ...(record.encryptionKey
+          ? [["Key", pc.cyan(record.encryptionKey)] as [string, unknown]]
+          : []),
+      ]),
+    );
+    const keyNote = opts.encrypt
+      ? `\n\n${pc.yellow("Keys are saved to this machine's keychain; downloads by this account decrypt automatically. Anyone else needs the key.")}`
+      : "";
+
+    ok(`${blocks.join("\n\n")}${keyNote}`, result)(json);
   },
 });
 
-async function uploadPath(chain: EvmChain, inputPath: string, json: boolean) {
+async function uploadPath(chain: EvmChain, inputPath: string, encrypt: boolean, json: boolean) {
   const userId = await requireUserId();
   const session = await openSession();
   const wallet = requireWallet(session, chain);
@@ -61,16 +82,18 @@ async function uploadPath(chain: EvmChain, inputPath: string, json: boolean) {
   const indexer = new Indexer(indexerRpcByChain[chain]);
   const root = path.dirname(path.resolve(inputPath));
 
-  const records: UploadRecord[] = [];
+  const records: Array<UploadRecord & { encryptionKey?: string }> = [];
   for (const filePath of files) {
     const name = path.relative(root, filePath);
     progress(json, `Uploading ${name}...`);
 
+    const key = encrypt ? randomBytes(32) : undefined;
     const size = (await fs.stat(filePath)).size;
     const file = await ZgFile.fromFilePath(filePath);
     const [tx, uploadErr] = await withQuietConsole(() =>
       indexer.upload(file, rpcUrl, signer, {
         onProgress: (message: string) => progress(json, message),
+        ...(key && { encryption: { type: "aes256", key } }),
       }),
     );
     await file.close();
@@ -82,21 +105,38 @@ async function uploadPath(chain: EvmChain, inputPath: string, json: boolean) {
       );
 
     const uploadedAt = new Date().toISOString();
-    records.push(
-      "rootHash" in tx
-        ? { name, size, rootHash: tx.rootHash, txHash: tx.txHash, uploadedAt }
+    const encryptionKey = key ? `0x${key.toString("hex")}` : undefined;
+    records.push({
+      name,
+      size,
+      uploadedAt,
+      ...(encryptionKey && { encrypted: true, encryptionKey }),
+      ...("rootHash" in tx
+        ? { rootHash: tx.rootHash, txHash: tx.txHash }
         : {
-            name,
-            size,
             rootHash: tx.rootHashes[0] ?? "",
             rootHashes: tx.rootHashes,
             txHash: tx.txHashes[0] ?? "",
-            uploadedAt,
-          },
-    );
+          }),
+    });
   }
 
-  await appendUploads(userId, records);
+  // The key never touches the JSON index; it goes to the OS keychain so this
+  // account's downloads can decrypt without flags.
+  await appendUploads(
+    userId,
+    records.map(({ encryptionKey: _encryptionKey, ...record }) => record),
+  );
+  if (encrypt)
+    await saveStorageKeys(
+      userId,
+      Object.fromEntries(
+        records
+          .filter((record) => record.encryptionKey)
+          .map((record) => [record.rootHash, record.encryptionKey as string]),
+      ),
+    );
+
   return { chain, address: wallet.address, records };
 }
 
@@ -134,6 +174,15 @@ const download = zodCommand({
       .optional()
       .describe("o;Output path; defaults to the root hash in the current directory"),
     proof: z.boolean().prefault(false).describe("p;Verify merkle proofs while downloading"),
+    key: z
+      .string()
+      .regex(/^(0x)?[0-9a-fA-F]{64}$/, "Expected a 32-byte hex AES-256 key")
+      .optional()
+      .describe("k;AES-256 key to decrypt with; defaults to a key saved by this account"),
+    raw: z
+      .boolean()
+      .prefault(false)
+      .describe("r;Save the file exactly as stored on the network, skipping decryption"),
   },
   action: async (args, opts) => {
     const json = isJson(download);
@@ -149,6 +198,7 @@ const download = zodCommand({
         ["Saved To", result.path],
         ["Size", formatBytes(result.size)],
         ["Verified", result.verified ? "yes" : "no"],
+        ["Decrypted", result.decrypted ? "yes" : "no"],
       ]),
       result,
     )(json);
@@ -156,18 +206,43 @@ const download = zodCommand({
 });
 
 // Downloads are public: any file on the network is retrievable by root hash,
-// so no login or wallet is required.
+// so no login or wallet is required. A key saved by this account is picked up
+// automatically when available; encryption is otherwise the caller's call via
+// --key/--raw, because the on-network header has no magic bytes to detect it
+// reliably.
 async function downloadFile(
   chain: EvmChain,
   rootHash: string,
-  opts: { output?: string; proof: boolean },
+  opts: { output?: string; proof: boolean; key?: string; raw: boolean },
   json: boolean,
 ) {
+  if (opts.key && opts.raw)
+    throw new CliError("FLAG_CONFLICT", "--key and --raw cannot be combined.");
+
   const outputPath = path.resolve(opts.output ?? rootHash);
+  const indexer = new Indexer(indexerRpcByChain[chain]);
+  const key = opts.raw ? undefined : (opts.key ?? (await savedKey(rootHash)));
   progress(json, `Downloading ${rootHash}...`);
 
+  if (key) {
+    // Decryption only works through downloadToBlob, which buffers the whole
+    // file in memory; acceptable for the file sizes the CLI deals in.
+    const [blob, downloadErr] = await withQuietConsole(() =>
+      indexer.downloadToBlob(rootHash, { proof: opts.proof, decryption: { symmetricKey: key } }),
+    );
+    if (downloadErr !== null)
+      throw new CliError(
+        "STORAGE_DOWNLOAD_FAILED",
+        downloadErr.message,
+        "Verify the root hash and that the file is finalized on the network.",
+      );
+
+    await fs.writeFile(outputPath, Buffer.from(await blob.arrayBuffer()));
+    return { rootHash, path: outputPath, size: blob.size, verified: opts.proof, decrypted: true };
+  }
+
   const downloadErr = await withQuietConsole(() =>
-    new Indexer(indexerRpcByChain[chain]).download(rootHash, outputPath, opts.proof),
+    indexer.download(rootHash, outputPath, opts.proof),
   );
   if (downloadErr !== null)
     throw new CliError(
@@ -176,12 +251,46 @@ async function downloadFile(
       "Verify the root hash and that the file is finalized on the network.",
     );
 
+  if (!opts.raw && (await hasEncryptionHeader(outputPath)))
+    process.stderr.write(
+      pc.yellow(
+        "The file starts with a 0G encryption header and is likely ciphertext. Re-run with --key <hex> to decrypt, or --raw to silence this warning.\n",
+      ),
+    );
+
   return {
     rootHash,
     path: outputPath,
     size: (await fs.stat(outputPath)).size,
     verified: opts.proof,
+    decrypted: false,
   };
+}
+
+// A saved key is a best-effort convenience: downloads must keep working
+// logged out and for files this account never uploaded.
+async function savedKey(rootHash: string): Promise<string | undefined> {
+  const userId = await requireUserId().catch(() => null);
+  if (!userId) return undefined;
+
+  return (await readStorageKeys(userId))[rootHash];
+}
+
+// The header carries no magic bytes, only a version byte, so this can false-
+// positive on plaintext that happens to start with 0x01/0x02 — which is why
+// it powers a warning rather than a hard failure.
+async function hasEncryptionHeader(filePath: string): Promise<boolean> {
+  const handle = await fs.open(filePath, "r");
+  const { buffer, bytesRead } = await handle.read(
+    Buffer.alloc(ECIES_HEADER_SIZE),
+    0,
+    ECIES_HEADER_SIZE,
+    0,
+  );
+  await handle.close();
+
+  if (buffer[0] === SYMMETRIC_VERSION) return bytesRead >= SYMMETRIC_HEADER_SIZE;
+  return buffer[0] === ECIES_VERSION && bytesRead >= ECIES_HEADER_SIZE;
 }
 
 const list = zodCommand({
@@ -200,7 +309,7 @@ const list = zodCommand({
         .map(
           (record) =>
             `${pc.cyan(record.rootHash)}  ${record.name}  ${pc.dim(
-              `${formatBytes(record.size)}, ${record.uploadedAt.slice(0, 10)}`,
+              `${formatBytes(record.size)}, ${record.uploadedAt.slice(0, 10)}${record.encrypted ? ", encrypted" : ""}`,
             )}`,
         )
         .join("\n"),

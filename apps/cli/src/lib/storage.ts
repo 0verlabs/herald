@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { EvmChain } from "@hrld/core";
+import { getPassword, setPassword } from "cross-keychain";
 import { z } from "zod";
 
 // 0G Storage runs two independent networks (turbo and standard) with separate
@@ -21,6 +22,7 @@ const uploadRecordSchema = z.object({
   rootHashes: z.array(z.string()).optional(),
   txHash: z.string(),
   uploadedAt: z.string(),
+  encrypted: z.boolean().optional(),
 });
 
 export type UploadRecord = z.infer<typeof uploadRecordSchema>;
@@ -44,6 +46,31 @@ export async function appendUploads(userId: string, records: UploadRecord[]): Pr
   const existing = await readUploads(userId);
   await fs.mkdir(STORAGE_DIR, { recursive: true });
   await fs.writeFile(indexPath(userId), `${JSON.stringify([...existing, ...records], null, 2)}\n`);
+}
+
+// AES keys are irrecoverable (the network only ever sees ciphertext), so they
+// stay out of the plain-JSON index and live in the OS keychain instead: one
+// entry per user holding a rootHash → key map, mirroring how credentials.ts
+// stores tokens under the same service.
+const KEYCHAIN_SERVICE = "hrld-cli";
+
+const storageKeysSchema = z.record(z.string(), z.string());
+
+export async function readStorageKeys(userId: string): Promise<Record<string, string>> {
+  const raw = await getPassword(KEYCHAIN_SERVICE, `storage-keys-${userId}`).catch(() => null);
+  if (!raw) return {};
+
+  return Promise.resolve(raw)
+    .then((value) => storageKeysSchema.parse(JSON.parse(value)))
+    .catch(() => ({}));
+}
+
+export async function saveStorageKeys(
+  userId: string,
+  entries: Record<string, string>,
+): Promise<void> {
+  const merged = { ...(await readStorageKeys(userId)), ...entries };
+  await setPassword(KEYCHAIN_SERVICE, `storage-keys-${userId}`, JSON.stringify(merged));
 }
 
 // The 0G SDK narrates its internals with console.log/error, which would
