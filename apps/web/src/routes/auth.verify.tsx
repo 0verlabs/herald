@@ -15,10 +15,26 @@ export const Route = createFileRoute("/auth/verify")({
 function AuthorizeRoute() {
   return (
     <ClientOnly fallback={null}>
-      <PrivyProvider appId={PRIVY_APP_ID}>
-        <AuthorizePage />
-      </PrivyProvider>
+      <AuthorizeProvider />
     </ClientOnly>
+  );
+}
+
+function AuthorizeProvider() {
+  // Matches the .dark class set on <html> by the theme script and ThemeToggle.
+  const dark = document.documentElement.classList.contains("dark");
+  return (
+    <PrivyProvider
+      appId={PRIVY_APP_ID}
+      config={{
+        appearance: {
+          theme: dark ? "dark" : "light",
+          accentColor: dark ? "#e4e4e7" : "#27272a",
+        },
+      }}
+    >
+      <AuthorizePage />
+    </PrivyProvider>
   );
 }
 
@@ -113,7 +129,7 @@ function AuthorizeContent(props: {
         {props.userCode}
       </p>
       {!props.privy.authenticated ? (
-        <Button className="w-full" onClick={() => props.privy.login()} size="lg">
+        <Button className="w-full" onClick={() => props.privy.login()}>
           Log in to continue
         </Button>
       ) : (
@@ -123,7 +139,6 @@ function AuthorizeContent(props: {
               className="flex-1"
               disabled={props.submitting}
               onClick={() => props.submit("approve")}
-              size="lg"
             >
               Approve
             </Button>
@@ -131,7 +146,6 @@ function AuthorizeContent(props: {
               className="flex-1"
               disabled={props.submitting}
               onClick={() => props.submit("deny")}
-              size="lg"
               variant="outline"
             >
               Deny
