@@ -48,7 +48,8 @@ const login = zodCommand({
       );
       if (tokens instanceof Error) return err(tokens)(json);
 
-      await saveCredentials(toCredentials(tokens));
+      const saveErr = await saveCredentials(toCredentials(tokens)).catch((error: Error) => error);
+      if (saveErr instanceof Error) return err(saveErr)(json);
       return ok(success("Logged in"), { message: "Logged in" })(json);
     }
 
@@ -95,7 +96,8 @@ const login = zodCommand({
     );
     if (tokens instanceof Error) return err(tokens)(json);
 
-    await saveCredentials(toCredentials(tokens));
+    const saveErr = await saveCredentials(toCredentials(tokens)).catch((error: Error) => error);
+    if (saveErr instanceof Error) return err(saveErr)(json);
     ok(success("Logged in"), { message: "Logged in" })(json);
   },
 });

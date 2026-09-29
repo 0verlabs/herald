@@ -221,8 +221,21 @@ async function downloadFile(
         "Verify the root hash and that the file is finalized on the network.",
       );
 
-    await fs.writeFile(outputPath, Buffer.from(await blob.arrayBuffer()));
-    return { rootHash, path: outputPath, size: blob.size, verified: opts.proof, decrypted: true };
+    const blobBuffer = Buffer.from(await blob.arrayBuffer());
+    await fs.writeFile(outputPath, blobBuffer);
+
+    // The SDK returns the untouched ciphertext (`[rawBlob, null]`) when
+    // decryption fails, so a surviving header is the only signal that the key
+    // was wrong. Warn rather than throw: the check can false-positive.
+    const decrypted = !hasEncryptionHeader(blobBuffer);
+    if (!decrypted)
+      process.stderr.write(
+        pc.yellow(
+          "The downloaded file still starts with a 0G encryption header, so decryption likely failed — check the key. The file was saved as stored on the network.\n",
+        ),
+      );
+
+    return { rootHash, path: outputPath, size: blob.size, verified: opts.proof, decrypted };
   }
 
   const downloadErr = await withQuietConsole(() =>
@@ -235,7 +248,7 @@ async function downloadFile(
       "Verify the root hash and that the file is finalized on the network.",
     );
 
-  if (!opts.raw && (await hasEncryptionHeader(outputPath)))
+  if (!opts.raw && (await fileHasEncryptionHeader(outputPath)))
     process.stderr.write(
       pc.yellow(
         "The file starts with a 0G encryption header and is likely ciphertext. Re-run with --key <hex> to decrypt, or --raw to silence this warning.\n",
@@ -260,10 +273,7 @@ async function savedKey(rootHash: string): Promise<string | undefined> {
   return (await readStorageKeys(userId))[rootHash];
 }
 
-// The header carries no magic bytes, only a version byte, so this can false-
-// positive on plaintext that happens to start with 0x01/0x02 — which is why
-// it powers a warning rather than a hard failure.
-async function hasEncryptionHeader(filePath: string): Promise<boolean> {
+async function fileHasEncryptionHeader(filePath: string): Promise<boolean> {
   const handle = await fs.open(filePath, "r");
   const { buffer, bytesRead } = await handle.read(
     Buffer.alloc(ECIES_HEADER_SIZE),
@@ -273,8 +283,15 @@ async function hasEncryptionHeader(filePath: string): Promise<boolean> {
   );
   await handle.close();
 
-  if (buffer[0] === SYMMETRIC_VERSION) return bytesRead >= SYMMETRIC_HEADER_SIZE;
-  return buffer[0] === ECIES_VERSION && bytesRead >= ECIES_HEADER_SIZE;
+  return hasEncryptionHeader(buffer.subarray(0, bytesRead));
+}
+
+// The header carries no magic bytes, only a version byte, so this can false-
+// positive on plaintext that happens to start with 0x01/0x02 — which is why
+// it powers a warning rather than a hard failure.
+function hasEncryptionHeader(head: Buffer): boolean {
+  if (head[0] === SYMMETRIC_VERSION) return head.length >= SYMMETRIC_HEADER_SIZE;
+  return head[0] === ECIES_VERSION && head.length >= ECIES_HEADER_SIZE;
 }
 
 const list = zodCommand({

@@ -1,6 +1,7 @@
 import type { Wallet } from "@hrld/core";
 import { type Address, type Hex, numberToHex, type TransactionSerializable } from "viem";
 import { toAccount } from "viem/accounts";
+import { CliError } from "../utils/errors.ts";
 import {
   walletRpc,
   type WalletSession,
@@ -63,6 +64,15 @@ const transactionTypes = {
 // Privy's transaction schema is snake_case and rejects unknown keys, so viem's
 // camelCase fields are mapped across explicitly.
 function toPrivyTransaction(transaction: TransactionSerializable) {
+  // Privy's schema has no access_list field, so an eip2930 access list would be
+  // silently dropped and a different transaction signed than was prepared.
+  if (transaction.type === "eip2930" && transaction.accessList?.length)
+    throw new CliError(
+      "WALLET_RPC_FAILED",
+      "Access lists are not supported by the Privy wallet adapter.",
+      "Send this transaction as eip1559 (the default) instead.",
+    );
+
   const quantity = (value: bigint | number | undefined) =>
     value === undefined ? undefined : numberToHex(value);
 
