@@ -11,6 +11,7 @@ export const agentSummarySchema = z.object({
   description: z.string(),
   image: z.string().nullable(),
   metadata: z.record(z.string(), z.unknown()),
+  agentURI: z.string(),
   feedbackCount: z.number(),
   owner: z.string(),
   createdAt: z.number(),

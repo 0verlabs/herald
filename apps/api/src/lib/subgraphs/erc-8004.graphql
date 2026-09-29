@@ -2,6 +2,9 @@
 # the deployed subgraph errors at the store level when the field is null. All
 # queries filter on registration_not: null, and single-agent queries use the
 # list field with an id filter so agents without a registration return [].
+# Herald agents keep their whole card onchain as a data: URI, so every query
+# also hardcodes agentURIKind: DATA — agents hosted elsewhere are invisible
+# to the API.
 fragment AgentSummary on Agent {
   id: agentId
   owner {
@@ -16,30 +19,37 @@ fragment AgentSummary on Agent {
     key
     value
   }
+  agentURI
   feedbackCount: activeFeedbackCount
   createdAt
   createdAtTransaction
 }
 
 query GetAgent($id: Bytes!) {
-  agents(first: 1, where: { id: $id, registration_not: null }) {
+  agents(first: 1, where: { id: $id, registration_not: null, agentURIKind: DATA }) {
     ...AgentSummary
   }
 }
 
-query ListAgents($first: Int, $skip: Int, $where: Agent_filter) {
-  agents(first: $first, skip: $skip, orderBy: agentId, orderDirection: asc, where: $where) {
+query ListAgents($first: Int, $skip: Int, $owner: String) {
+  agents(
+    first: $first
+    skip: $skip
+    orderBy: agentId
+    orderDirection: asc
+    where: { registration_not: null, agentURIKind: DATA, owner: $owner }
+  ) {
     ...AgentSummary
   }
 }
 
-query SearchAgentProfiles(
-  $text: String!
-  $first: Int
-  $skip: Int
-  $where: AgentRegistration_filter
-) {
-  agentProfileSearch(text: $text, first: $first, skip: $skip, where: $where) {
+query SearchAgentProfiles($text: String!, $first: Int, $skip: Int, $owner: String) {
+  agentProfileSearch(
+    text: $text
+    first: $first
+    skip: $skip
+    where: { agent_: { agentURIKind: DATA, owner: $owner } }
+  ) {
     agent {
       ...AgentSummary
     }
@@ -47,7 +57,7 @@ query SearchAgentProfiles(
 }
 
 query GetAgentServices($id: Bytes!) {
-  agents(first: 1, where: { id: $id, registration_not: null }) {
+  agents(first: 1, where: { id: $id, registration_not: null, agentURIKind: DATA }) {
     registration {
       ... on AgentRegistration {
         services(orderBy: position, orderDirection: asc) {
@@ -72,7 +82,7 @@ query GetAgentServices($id: Bytes!) {
 }
 
 query GetAgentFeedbacks($id: Bytes!, $first: Int, $skip: Int) {
-  agents(first: 1, where: { id: $id, registration_not: null }) {
+  agents(first: 1, where: { id: $id, registration_not: null, agentURIKind: DATA }) {
     feedback(
       first: $first
       skip: $skip

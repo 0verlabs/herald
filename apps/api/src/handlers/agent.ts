@@ -26,6 +26,7 @@ const toAgentSummary = (agent: AgentSummaryFragment) => ({
   description: agent.profile?.description ?? "",
   image: agent.profile?.image ?? null,
   metadata: Object.fromEntries(agent.metadata.map(({ key, value }) => [key, value])),
+  agentURI: agent.agentURI,
   feedbackCount: Number(agent.feedbackCount),
   owner: agent.owner?.address ?? "0x",
   createdAt: parseTimestamp(agent.createdAt),
@@ -132,30 +133,38 @@ const attributeValue = (attribute: { value: string; valueType: string }): unknow
   return attribute.value;
 };
 
+// agentProfileSearch takes tsquery syntax, where a bare space is a syntax
+// error. Quote each term and AND them together so plain text queries work.
+const toFulltextQuery = (text: string) =>
+  text
+    .split(/\s+/)
+    .map((term) => term.replaceAll("'", ""))
+    .filter(Boolean)
+    .map((term) => `'${term}'`)
+    .join(" & ");
+
 export const agentHandlers = new OpenAPIHono<Env>()
   .openapi(searchAgentsRoute, async (c) => {
     const query = c.req.valid("query");
     const owner = query.owner?.toLowerCase();
 
     // agentProfileSearch requires a non-empty fulltext query, so fall back to
-    // listing agents with a registration when q is absent.
-    const agents = query.q
+    // listing agents when q is absent or all punctuation.
+    const text = query.q ? toFulltextQuery(query.q) : "";
+    const agents = text
       ? (
           await c.var.erc8004.SearchAgentProfiles({
-            text: query.q,
+            text,
             first: query.limit,
             skip: query.skip,
-            where: owner ? { agent_: { owner } } : undefined,
+            owner,
           })
         ).agentProfileSearch.map((profile) => profile.agent)
       : (
           await c.var.erc8004.ListAgents({
             first: query.limit,
             skip: query.skip,
-            where: {
-              registration_not: null,
-              ...(owner ? { owner } : {}),
-            },
+            owner,
           })
         ).agents;
 

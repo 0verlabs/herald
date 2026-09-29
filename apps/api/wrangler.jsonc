@@ -9,7 +9,7 @@
     "head_sampling_rate": 1,
   },
   "vars": {
-    "ERC_8004_SUBGRAPH_URL": "https://api.goldsky.com/api/private/project_cmszppc46ojv3010sebuo5trd/subgraphs/erc-8004-subgraph/1.0.0/gn",
-    "ERC_8183_SUBGRAPH_URL": "https://api.goldsky.com/api/private/project_cmszppc46ojv3010sebuo5trd/subgraphs/erc-8183-subgraph/1.0.0/gn",
+    "ERC_8004_SUBGRAPH_URL": "https://api.goldsky.com/api/private/project_cmszppc46ojv3010sebuo5trd/subgraphs/erc-8004-0g/v0.3.0/gn",
+    "ERC_8183_SUBGRAPH_URL": "https://api.goldsky.com/api/private/project_cmszppc46ojv3010sebuo5trd/subgraphs/erc-8183-0g/v0.1.0/gn",
   },
 }
