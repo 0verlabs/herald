@@ -64,13 +64,21 @@ const transactionTypes = {
 // Privy's transaction schema is snake_case and rejects unknown keys, so viem's
 // camelCase fields are mapped across explicitly.
 function toPrivyTransaction(transaction: TransactionSerializable) {
-  // Privy's schema has no access_list field, so an eip2930 access list would be
-  // silently dropped and a different transaction signed than was prepared.
-  if (transaction.type === "eip2930" && transaction.accessList?.length)
+  // Privy's schema carries neither access_list nor authorization_list, so these
+  // would be silently dropped and a different transaction signed than the one
+  // that was prepared. Checked by field rather than by type because every
+  // non-legacy type can carry an access list.
+  if (transaction.accessList?.length)
     throw new CliError(
       "WALLET_RPC_FAILED",
       "Access lists are not supported by the Privy wallet adapter.",
-      "Send this transaction as eip1559 (the default) instead.",
+      "Send this transaction without an access list.",
+    );
+  if (transaction.authorizationList?.length)
+    throw new CliError(
+      "WALLET_RPC_FAILED",
+      "eip7702 authorization lists are not supported by the Privy wallet adapter.",
+      "Send this transaction without an authorization list.",
     );
 
   const quantity = (value: bigint | number | undefined) =>
