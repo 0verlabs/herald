@@ -21,12 +21,23 @@
     "prepublishOnly": "vp run build"
   },
   "dependencies": {
+    "@0gfoundation/0g-storage-ts-sdk": "catalog:",
+    "@hpke/chacha20poly1305": "catalog:",
+    "@hpke/core": "catalog:",
+    "canonicalize": "catalog:",
     "commander": "catalog:",
+    "cross-keychain": "catalog:",
+    "ethers": "catalog:",
+    "flat-cache": "catalog:",
     "picocolors": "catalog:",
+    "uqr": "catalog:",
+    "uuid": "catalog:",
+    "viem": "catalog:",
     "zod": "catalog:",
     "zod-commander": "catalog:"
   },
   "devDependencies": {
+    "@hrld/core": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",

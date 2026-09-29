@@ -1,8 +1,19 @@
 import type { Command } from "commander";
 import pc from "picocolors";
+import { CliError } from "./errors.ts";
 
 export function isJson(cmd: Command): boolean {
   return cmd.optsWithGlobals().json === true;
+}
+
+/**
+ * Declares --json on a command and every subcommand below it. Root options
+ * stop at the first subcommand (positional options), so each subcommand must
+ * accept the flag itself; isJson() merges all levels via optsWithGlobals().
+ */
+export function addJsonOption(command: Command): void {
+  command.option("--json", "Output results as JSON");
+  command.commands.forEach(addJsonOption);
 }
 
 export function toStringOutput<T>(value: T): string {
@@ -12,27 +23,59 @@ export function toStringOutput<T>(value: T): string {
   return String(value);
 }
 
-export function ok<T extends Record<string, unknown>>(value: T, json: boolean): void {
-  if (!json) {
-    for (const key in value) {
-      const display = toStringOutput(value[key]);
-      console.log(`${key}: ${display}`);
-    }
-    return;
-  }
-
-  console.log(JSON.stringify(value, null, 2));
+/**
+ * Renders label/value pairs as aligned lines with dimmed labels, e.g.:
+ * ```
+ * Address    0xabc…
+ * Chain      0g
+ * ```
+ */
+export function fields(entries: Array<[label: string, value: unknown]>): string {
+  const width = Math.max(...entries.map(([label]) => label.length));
+  return entries
+    .map(([label, value]) => `${pc.dim(`${label.padEnd(width)}`)}   ${toStringOutput(value)}`)
+    .join("\n");
 }
 
-export function err(error: string | Error, json: boolean): void {
+/** A short, colored confirmation line, e.g. "✓ Logged in". */
+export function success(message: string): string {
+  return pc.green(`✓ ${message}`);
+}
+
+/** Prints one of two representations once the caller knows whether `--json` was passed. */
+export type Result = (json: boolean) => void;
+
+/**
+ * Builds a deferred success output. `stdout` is printed as-is for humans;
+ * build it with `fields()` or `success()`, or write it by hand for anything
+ * more custom (QR codes, multi-section layouts). `payload` is what gets
+ * serialized for `--json`.
+ */
+export function ok(stdout: string, payload: unknown): Result {
+  return (isJson) => console.log(isJson ? JSON.stringify(payload, null, 2) : stdout);
+}
+
+/** Builds a deferred error output and sets `process.exitCode`. */
+export function err(error: string | Error, payload?: unknown): Result {
   const message = error instanceof Error ? error.message : error;
+  const code = error instanceof CliError ? error.code : undefined;
+  const recovery = error instanceof CliError ? error.recovery : undefined;
 
-  if (!json) {
-    console.error(pc.red(message));
+  return (isJson) => {
     process.exitCode = 1;
-    return;
-  }
 
-  console.error(JSON.stringify({ error: message }, null, 2));
-  process.exitCode = 1;
+    if (!isJson) {
+      console.error(code ? `${pc.red(message)} ${pc.dim(`[${code}]`)}` : pc.red(message));
+      if (recovery) console.error(pc.yellow(`→ ${recovery}`));
+      return;
+    }
+
+    console.error(
+      JSON.stringify(
+        payload ?? { error: message, ...(code && { code }), ...(recovery && { recovery }) },
+        null,
+        2,
+      ),
+    );
+  };
 }
