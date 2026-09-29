@@ -21,7 +21,10 @@ export type ErrorCode =
   | "AGENT_NOT_FOUND"
   | "AGENT_CARD_INVALID"
   | "AGENT_SERVICE_NOT_FOUND"
-  | "AGENT_SYNC_FAILED";
+  | "AGENT_SYNC_FAILED"
+  | "AGENT_PULL_FAILED"
+  | "AGENT_ID_INVALID"
+  | "API_REQUEST_FAILED";
 
 export class CliError extends Error {
   readonly code: ErrorCode;

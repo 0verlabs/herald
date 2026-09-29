@@ -131,3 +131,25 @@ export async function writeAgentCard(
 export function toAgentUri(card: AgentCard): string {
   return `data:application/json;base64,${Buffer.from(JSON.stringify(card)).toString("base64")}`;
 }
+
+// The inverse of toAgentUri, for pulling onchain agents back into local cards.
+// Anything else (ipfs://, https://, malformed JSON) cannot become a local
+// card; the error is returned so bulk pulls can report it without try/catch.
+export function parseAgentUriCard(agentUri: string): AgentCard | CliError {
+  const base64 = agentUri.match(/^data:application\/json;base64,(.*)$/)?.[1];
+  if (base64 === undefined)
+    return new CliError("AGENT_PULL_FAILED", "The agent URI is not a base64 JSON data URI.");
+
+  const parsed = jsonStringSchema.safeParse(Buffer.from(base64, "base64").toString("utf8"));
+  if (!parsed.success || typeof parsed.data !== "object" || parsed.data === null)
+    return new CliError("AGENT_PULL_FAILED", "The agent URI does not contain a JSON object.");
+
+  const card = agentCardSchema.safeParse(normalizeCard(parsed.data as Record<string, unknown>));
+  if (!card.success)
+    return new CliError(
+      "AGENT_PULL_FAILED",
+      `The agent URI is not a valid agent card: ${z.prettifyError(card.error)}`,
+    );
+
+  return card.data;
+}

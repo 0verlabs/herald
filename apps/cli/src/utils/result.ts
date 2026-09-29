@@ -42,6 +42,17 @@ export function success(message: string): string {
   return pc.green(`✓ ${message}`);
 }
 
+/** Collapses whitespace and caps `text` at `max` characters with an ellipsis. */
+export function truncate(text: string, max: number): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  return clean.length <= max ? clean : `${clean.slice(0, max - 1)}…`;
+}
+
+/** Shortens a 0x address to its first and last characters, e.g. 0x1234…abcd. */
+export function shortAddress(address: string): string {
+  return address.length <= 12 ? address : `${address.slice(0, 6)}…${address.slice(-4)}`;
+}
+
 /** Prints one of two representations once the caller knows whether `--json` was passed. */
 export type Result = (json: boolean) => void;
 
