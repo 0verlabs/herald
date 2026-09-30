@@ -176,7 +176,9 @@ export const agentHandlers = new OpenAPIHono<Env>()
             text,
             first: query.limit,
             skip: query.skip,
-            where: { agent_: { agentURIKind: "DATA", ...(owner ? { owner } : {}) } },
+            where: {
+              agent_: { agentURIKind: "DATA", isBurned: false, ...(owner ? { owner } : {}) },
+            },
           })
         ).agentProfileSearch.map((profile) => profile.agent)
       : (
@@ -186,6 +188,7 @@ export const agentHandlers = new OpenAPIHono<Env>()
             where: {
               registration_not: null,
               agentURIKind: "DATA",
+              isBurned: false,
               ...(owner ? { owner } : {}),
             },
           })

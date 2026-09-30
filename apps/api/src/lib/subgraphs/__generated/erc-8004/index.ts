@@ -2884,7 +2884,10 @@ export const AgentSummaryFragmentDoc = gql`
     `;
 export const GetAgentDocument = gql`
     query GetAgent($id: Bytes!) {
-  agents(first: 1, where: { id: $id, registration_not: null, agentURIKind: DATA }) {
+  agents(
+    first: 1
+    where: { id: $id, registration_not: null, agentURIKind: DATA, isBurned: false }
+  ) {
     ...AgentSummary
     reputationSample: feedback(
       first: 1000
@@ -2924,7 +2927,10 @@ export const SearchAgentProfilesDocument = gql`
     ${AgentSummaryFragmentDoc}`;
 export const GetAgentServicesDocument = gql`
     query GetAgentServices($id: Bytes!) {
-  agents(first: 1, where: { id: $id, registration_not: null, agentURIKind: DATA }) {
+  agents(
+    first: 1
+    where: { id: $id, registration_not: null, agentURIKind: DATA, isBurned: false }
+  ) {
     registration {
       ... on AgentRegistration {
         services(orderBy: position, orderDirection: asc) {
@@ -2950,7 +2956,10 @@ export const GetAgentServicesDocument = gql`
     `;
 export const GetAgentFeedbacksDocument = gql`
     query GetAgentFeedbacks($id: Bytes!, $first: Int, $skip: Int, $where: Feedback_filter) {
-  agents(first: 1, where: { id: $id, registration_not: null, agentURIKind: DATA }) {
+  agents(
+    first: 1
+    where: { id: $id, registration_not: null, agentURIKind: DATA, isBurned: false }
+  ) {
     feedback(
       first: $first
       skip: $skip
