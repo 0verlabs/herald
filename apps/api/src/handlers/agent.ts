@@ -143,6 +143,25 @@ const toFulltextQuery = (text: string) =>
     .map((term) => `'${term}'`)
     .join(" & ");
 
+// The subgraph has no aggregate fields, so averageScore and the tag breakdown
+// come from the sampled feedback (most recent 1000 active entries); count is
+// the exact activeFeedbackCount.
+const toReputation = (
+  count: number,
+  sample: Array<{ value: string; valueDecimals: number; tag1: string; tag2: string }>,
+) => ({
+  count,
+  averageScore:
+    sample.length > 0
+      ? sample.reduce((sum, entry) => sum + Number(entry.value) / 10 ** entry.valueDecimals, 0) /
+        sample.length
+      : null,
+  tags: sample
+    .flatMap((entry) => [entry.tag1, entry.tag2])
+    .filter((tag) => tag !== "")
+    .reduce<Record<string, number>>((acc, tag) => ({ ...acc, [tag]: (acc[tag] ?? 0) + 1 }), {}),
+});
+
 export const agentHandlers = new OpenAPIHono<Env>()
   .openapi(searchAgentsRoute, async (c) => {
     const query = c.req.valid("query");
@@ -185,7 +204,10 @@ export const agentHandlers = new OpenAPIHono<Env>()
 
     if (!agent) throw notFound(agentId);
 
-    const result = getAgentOutputSchema.safeParse(toAgentSummary(agent));
+    const result = getAgentOutputSchema.safeParse({
+      ...toAgentSummary(agent),
+      reputation: toReputation(Number(agent.feedbackCount), agent.reputationSample),
+    });
     if (!result.success) throw new Error(result.error.message);
 
     return c.json(result.data);
@@ -222,10 +244,18 @@ export const agentHandlers = new OpenAPIHono<Env>()
     const agentId = c.req.valid("param").agentId.toString();
     const query = c.req.valid("query");
 
+    // Filters combine under `and` because graph-node treats `or` alongside
+    // sibling keys as undefined behavior; the tag matches either tag slot.
+    const conditions = [
+      ...(query.includeRevoked ? [] : [{ isRevoked: false }]),
+      ...(query.client ? [{ client: query.client.toLowerCase() }] : []),
+      ...(query.tag ? [{ or: [{ tag1: query.tag }, { tag2: query.tag }] }] : []),
+    ];
     const { agents } = await c.var.erc8004.GetAgentFeedbacks({
       id: entityId(agentId),
       first: query.limit,
       skip: query.skip,
+      where: conditions.length > 0 ? { and: conditions } : null,
     });
     const [agent] = agents;
 
@@ -234,11 +264,13 @@ export const agentHandlers = new OpenAPIHono<Env>()
     const result = listAgentFeedbacksOutputSchema.safeParse(
       agent.feedback.map((feedback) => ({
         id: feedback.id,
+        feedbackIndex: Number(feedback.feedbackIndex),
         client: feedback.client.address,
         score: Number(feedback.value) / 10 ** feedback.valueDecimals,
         tag1: feedback.tag1,
         tag2: feedback.tag2,
         uri: feedback.feedbackURI,
+        revoked: feedback.isRevoked,
         createdAt: parseTimestamp(feedback.createdAt),
         createdAtTransaction: feedback.createdAtTransaction,
       })),

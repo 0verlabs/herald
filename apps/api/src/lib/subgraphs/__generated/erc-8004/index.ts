@@ -2811,7 +2811,7 @@ export type GetAgentQueryVariables = Exact<{
 }>;
 
 
-export type GetAgentQuery = { agents: Array<{ agentURI: string, createdAt: string, createdAtTransaction: string, id: string, feedbackCount: string, owner: { address: string } | null, profile:
+export type GetAgentQuery = { agents: Array<{ agentURI: string, createdAt: string, createdAtTransaction: string, id: string, feedbackCount: string, reputationSample: Array<{ value: string, valueDecimals: number, tag1: string, tag2: string }>, owner: { address: string } | null, profile:
       | { name: string | null, description: string | null, image: string | null }
       | { name: string | null, description: string | null, image: string | null }
      | null, metadata: Array<{ key: string, value: string }> }> };
@@ -2855,10 +2855,11 @@ export type GetAgentFeedbacksQueryVariables = Exact<{
   id: string;
   first?: number | null | undefined;
   skip?: number | null | undefined;
+  where?: Feedback_Filter | null | undefined;
 }>;
 
 
-export type GetAgentFeedbacksQuery = { agents: Array<{ feedback: Array<{ id: string, value: string, valueDecimals: number, tag1: string, tag2: string, feedbackURI: string, createdAt: string, createdAtTransaction: string, client: { address: string } }> }> };
+export type GetAgentFeedbacksQuery = { agents: Array<{ feedback: Array<{ id: string, feedbackIndex: string, value: string, valueDecimals: number, tag1: string, tag2: string, feedbackURI: string, isRevoked: boolean, createdAt: string, createdAtTransaction: string, client: { address: string } }> }> };
 
 export const AgentSummaryFragmentDoc = gql`
     fragment AgentSummary on Agent {
@@ -2885,6 +2886,17 @@ export const GetAgentDocument = gql`
     query GetAgent($id: Bytes!) {
   agents(first: 1, where: { id: $id, registration_not: null, agentURIKind: DATA }) {
     ...AgentSummary
+    reputationSample: feedback(
+      first: 1000
+      orderBy: createdAt
+      orderDirection: desc
+      where: { isRevoked: false }
+    ) {
+      value
+      valueDecimals
+      tag1
+      tag2
+    }
   }
 }
     ${AgentSummaryFragmentDoc}`;
@@ -2937,16 +2949,17 @@ export const GetAgentServicesDocument = gql`
 }
     `;
 export const GetAgentFeedbacksDocument = gql`
-    query GetAgentFeedbacks($id: Bytes!, $first: Int, $skip: Int) {
+    query GetAgentFeedbacks($id: Bytes!, $first: Int, $skip: Int, $where: Feedback_filter) {
   agents(first: 1, where: { id: $id, registration_not: null, agentURIKind: DATA }) {
     feedback(
       first: $first
       skip: $skip
       orderBy: createdAt
       orderDirection: desc
-      where: { isRevoked: false }
+      where: $where
     ) {
       id
+      feedbackIndex
       client {
         address: id
       }
@@ -2955,6 +2968,7 @@ export const GetAgentFeedbacksDocument = gql`
       tag1
       tag2
       feedbackURI
+      isRevoked
       createdAt
       createdAtTransaction
     }

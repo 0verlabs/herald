@@ -42,7 +42,16 @@ export const searchAgentsOutputSchema = z.array(agentSummarySchema);
 export const getAgentParamsSchema = z.object({
   agentId: agentIdSchema,
 });
-export const getAgentOutputSchema = agentSummarySchema;
+// Aggregates cover the most recent 1000 active feedback entries; count is
+// always exact. averageScore is null until the agent has feedback.
+export const agentReputationSchema = z.object({
+  count: z.number(),
+  averageScore: z.number().nullable(),
+  tags: z.record(z.string(), z.number()).describe("Tag occurrences across active feedback"),
+});
+export const getAgentOutputSchema = agentSummarySchema.extend({
+  reputation: agentReputationSchema,
+});
 
 export const listAgentServicesParamsSchema = z.object({
   agentId: agentIdSchema,
@@ -63,6 +72,13 @@ export const listAgentFeedbacksParamsSchema = z.object({
   agentId: agentIdSchema,
 });
 export const listAgentFeedbacksQuerySchema = z.object({
+  client: addressSchema.optional().describe("Only feedback left by this client address"),
+  tag: z.string().optional().describe("Only feedback carrying this tag (matches tag1 or tag2)"),
+  includeRevoked: z
+    .stringbool()
+    .default(false)
+    .describe("Include revoked feedback entries")
+    .meta({ example: "false" }),
   limit: z.coerce
     .number()
     .int()
@@ -82,11 +98,13 @@ export const listAgentFeedbacksQuerySchema = z.object({
 export const listAgentFeedbacksOutputSchema = z.array(
   z.object({
     id: z.string(),
+    feedbackIndex: z.number().describe("Per-client index used to revoke or respond to feedback"),
     client: z.string(),
     score: z.number(),
     tag1: z.string(),
     tag2: z.string(),
     uri: z.string(),
+    revoked: z.boolean(),
     createdAt: z.number(),
     createdAtTransaction: z.string(),
   }),

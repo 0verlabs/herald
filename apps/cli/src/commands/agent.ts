@@ -21,6 +21,7 @@ import {
   writeAgentCard,
 } from "../lib/agents.ts";
 import { api, requestJson, requireOnchainAgentId } from "../lib/api.ts";
+import { formatScore } from "../lib/feedback.ts";
 import { openSession, requireUserId, requireWallet } from "../lib/session.ts";
 import type { WalletSession } from "../lib/privy.ts";
 import { toWalletAccount } from "../lib/viem.ts";
@@ -39,6 +40,7 @@ import {
   truncate,
 } from "../utils/result.ts";
 import { job } from "./job.ts";
+import { feedback } from "./feedback.ts";
 
 const list = zodCommand({
   name: "list",
@@ -225,19 +227,26 @@ const profile = zodCommand({
       const result = await readAcpProfile(args.agentId).catch((error: Error) => error);
       if (result instanceof Error) return err(result)(json);
 
+      const tags = topTags(result.reputation.tags);
       return ok(
-        fields([
-          ["Agent ID", pc.cyan(`#${result.id}`)],
-          ["Name", pc.bold(result.name)],
-          ["Description", result.description],
-          ...(result.image ? [["Image", result.image] as [string, unknown]] : []),
-          ["Owner", result.owner],
-          ["Feedback", result.feedbackCount > 0 ? `★ ${result.feedbackCount}` : pc.dim("none yet")],
-          [
-            "Created",
-            `${formatTimestamp(result.createdAt)} ${pc.dim(`(${formatRelative(result.createdAt)})`)}`,
-          ],
-        ]),
+        [
+          fields([
+            ["Agent ID", pc.cyan(`#${result.id}`)],
+            ["Name", pc.bold(result.name)],
+            ["Description", result.description],
+            ...(result.image ? [["Image", result.image] as [string, unknown]] : []),
+            ["Owner", result.owner],
+            ["Reputation", reputationLabel(result.reputation)],
+            ...(tags ? [["Top Tags", tags] as [string, unknown]] : []),
+            [
+              "Created",
+              `${formatTimestamp(result.createdAt)} ${pc.dim(`(${formatRelative(result.createdAt)})`)}`,
+            ],
+          ]),
+          ...(result.reputation.count > 0
+            ? ["", pc.dim(`Run \`hrld agent feedback list ${result.id}\` to read the feedback.`)]
+            : []),
+        ].join("\n"),
         result,
       )(json);
     }
@@ -280,10 +289,16 @@ async function readProfile(agentId: string) {
 }
 
 async function readAcpProfile(agentId: string) {
-  return requestJson(
+  const agent = await requestJson(
     api.v1.agents[":agentId"].$get({ param: { agentId: requireOnchainAgentId(agentId) } }),
     acpAgentNotFound(agentId),
   );
+  // Deployed APIs may predate the reputation aggregates; fall back to the
+  // bare feedback count so profile keeps working across version skew.
+  return {
+    ...agent,
+    reputation: agent.reputation ?? { count: agent.feedbackCount, averageScore: null, tags: {} },
+  };
 }
 
 function acpAgentNotFound(agentId: string): CliError {
@@ -292,6 +307,23 @@ function acpAgentNotFound(agentId: string): CliError {
     `No onchain agent with id ${agentId}.`,
     "Run `hrld agent discover <query>` to find onchain agents.",
   );
+}
+
+// The average covers the most recent 1000 active feedback entries (the API's
+// sample); the review count is always exact.
+function reputationLabel(reputation: { count: number; averageScore: number | null }): string {
+  if (reputation.count === 0) return pc.dim("no feedback yet");
+  const reviews = `${reputation.count} review${reputation.count === 1 ? "" : "s"}`;
+  if (reputation.averageScore === null) return reviews;
+  return `★ ${formatScore(reputation.averageScore)} avg ${pc.dim(`· ${reviews}`)}`;
+}
+
+function topTags(tags: Record<string, number>): string {
+  return Object.entries(tags)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5)
+    .map(([tag, count]) => (count > 1 ? `${tag} ${pc.dim(`×${count}`)}` : tag))
+    .join(" · ");
 }
 
 const update = zodCommand({
@@ -972,5 +1004,6 @@ export const agent = zodCommand({
   .addCommand(deactivate)
   .addCommand(service)
   .addCommand(job)
+  .addCommand(feedback)
   .addCommand(push)
   .addCommand(pull);
