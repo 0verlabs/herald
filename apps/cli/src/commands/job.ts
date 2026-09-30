@@ -341,21 +341,27 @@ const setBudget = zodCommand({
   description: "Set a job's price as its provider",
   args: {
     jobId: z.string().describe("Onchain job id"),
-    budget: z.string().describe("Budget in token units, or raw base units with --unit"),
+    budget: z.string().describe("Budget in token units, or raw base units with --as-unit"),
   },
   opts: {
     token: z
       .string()
       .optional()
       .describe("t;Payment token address (must be whitelisted); omit for wrapped native (W0G)"),
-    unit: z.boolean().prefault(false).describe("Treat <budget> as raw base units"),
+    "as-unit": z.boolean().prefault(false).describe("Treat <budget> as raw base units"),
   },
   action: async (args, opts) => {
     const json = isJson(setBudget);
+    // commander camelCases --as-unit; zod-commander's opts type keeps the literal key.
+    const asUnit = (opts as { asUnit?: boolean }).asUnit === true;
 
-    const result = await setJobBudget(activeChain, args.jobId, args.budget, opts, json).catch(
-      (error: Error) => error,
-    );
+    const result = await setJobBudget(
+      activeChain,
+      args.jobId,
+      args.budget,
+      { token: opts.token, unit: asUnit },
+      json,
+    ).catch((error: Error) => error);
     if (result instanceof Error) return err(result)(json);
 
     ok(
@@ -401,7 +407,7 @@ async function setJobBudget(
     throw new CliError(
       "JOB_ACTION_FAILED",
       `Could not read the decimals of token ${token}.`,
-      "Pass --unit with the amount in raw base units.",
+      "Pass --as-unit with the amount in raw base units.",
     );
   const amount = parseBudget(budget, opts.unit, metadata?.decimals ?? 0);
 
