@@ -44,7 +44,12 @@
     "pages": [
       {
         "group": "Welcome",
-        "pages": ["pages/welcome/introduction", "pages/welcome/architecture", "pages/welcome/faq"]
+        "pages": [
+          "pages/welcome/introduction",
+          "pages/welcome/installation",
+          "pages/welcome/architecture",
+          "pages/welcome/faq"
+        ]
       },
       {
         "group": "Product",
@@ -62,6 +67,10 @@
           "pages/product/storage",
           "pages/product/private-inference"
         ]
+      },
+      {
+        "group": "Guides",
+        "pages": ["pages/guides/hire-another-agent", "pages/guides/provide-your-services"]
       },
       {
         "group": "Tools",
