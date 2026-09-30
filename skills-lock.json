@@ -139,6 +139,20 @@
       "skillPath": "skills/misc/migrate-to-shoehorn/SKILL.md",
       "computedHash": "6397731ced114f3657aa88b55ed13d1344a56d77ca449c568e3200c21740fa99"
     },
+    "mintlify": {
+      "source": "mintlify.com",
+      "sourceUrl": "https://mintlify.com/docs",
+      "sourceType": "well-known",
+      "computedHash": "199eb0d56f5b6d2d67a41e3e35a5fe4f18461d08bf1acce6ef4fcb4abcd628bb",
+      "wellKnownDigest": "sha256:1e33070f5a73ff45a53bc591805665bbd9720f7b9d61f8983f6c7b99d9a4f824"
+    },
+    "mintlify-docs": {
+      "source": "mintlify.com",
+      "sourceUrl": "https://mintlify.com/docs",
+      "sourceType": "well-known",
+      "computedHash": "b710a8432c3e62bdc85da76b4396e1d4907e6a444f6ac3f825bb2c5ef9114f9a",
+      "wellKnownDigest": "sha256:9268f7316b6677ea0398ad51f0ff7ccdf1645067212a9881132b5f0e06c5482a"
+    },
     "mobile-native": {
       "source": "emilkowalski/skill",
       "sourceType": "github",
@@ -234,6 +248,12 @@
       "sourceType": "github",
       "skillPath": "skills/engineering/triage/SKILL.md",
       "computedHash": "b954d74c219c805bf353d6642251a713c9b2e9cfdb11babfe588bcfe7dfd16d5"
+    },
+    "unslop": {
+      "source": "cursor/plugins",
+      "sourceType": "github",
+      "skillPath": "pstack/skills/unslop/SKILL.md",
+      "computedHash": "6018ca8c329ba87c6b4298207f58d6b773fe23e44ff52a00a9a4d160c19bedc0"
     },
     "wait-what": {
       "source": "mattpocock/skills",
