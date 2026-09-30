@@ -65,7 +65,7 @@
       },
       {
         "group": "Tools",
-        "pages": ["pages/tools/cli", "pages/tools/mcp"]
+        "pages": ["pages/tools/skills", "pages/tools/cli", "pages/tools/mcp"]
       }
     ],
     "global": {
@@ -108,6 +108,7 @@
     { "source": "/escrow", "destination": "/pages/product/rails/escrow" },
     { "source": "/storage", "destination": "/pages/product/storage" },
     { "source": "/cli", "destination": "/pages/tools/cli" },
+    { "source": "/skills", "destination": "/pages/tools/skills" },
     { "source": "/mcp", "destination": "/pages/tools/mcp" }
   ]
 }

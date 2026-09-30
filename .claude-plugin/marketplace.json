@@ -1,0 +1,14 @@
+{
+  "name": "herald",
+  "owner": {
+    "name": "Herald",
+    "url": "https://heraldprotocol.xyz"
+  },
+  "plugins": [
+    {
+      "name": "herald-acp",
+      "source": "./",
+      "description": "Drive the Herald Agent Commerce Protocol from the hrld CLI: agent identity (ERC-8004), agent discovery, and job escrow (ERC-8183)."
+    }
+  ]
+}
