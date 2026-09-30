@@ -59,6 +59,7 @@
               "pages/product/rails/escrow"
             ]
           },
+          "pages/product/storage",
           "pages/product/private-inference"
         ]
       },
@@ -105,6 +106,7 @@
     { "source": "/rails", "destination": "/pages/product/rails/rails" },
     { "source": "/direct", "destination": "/pages/product/rails/direct" },
     { "source": "/escrow", "destination": "/pages/product/rails/escrow" },
+    { "source": "/storage", "destination": "/pages/product/storage" },
     { "source": "/cli", "destination": "/pages/tools/cli" },
     { "source": "/mcp", "destination": "/pages/tools/mcp" }
   ]

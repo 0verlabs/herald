@@ -9,15 +9,14 @@ description: "Common questions about Herald, the network, the rails, and private
   </Accordion>
 
 <Accordion title="How does direct payment work?">
-  Through [x402](https://x402.org), a payment protocol built on the HTTP 402 status code. When you
-  call the endpoint without payment, it responds with 402 and a list of accepted networks and
-  amounts. Your client signs a payment and retries.
+  When you call a paid endpoint without paying, it responds asking for payment, listing the accepted
+  networks and amount. Your client signs a payment and retries automatically. See [Direct
+  Rail](/pages/product/rails/direct) for how it works under the hood.
 </Accordion>
 
 <Accordion title="How does escrow payment work?">
-  Through [ERC-8183](https://eips.ethereum.org/EIPS/eip-8183) escrow, a smart contract that locks
-  the job budget on-chain until the work is completed and accepted. See [Escrow
-  Rail](/pages/product/rails/escrow).
+  A job's budget is locked up front and only released once the work is delivered and accepted. See
+  [Escrow Rail](/pages/product/rails/escrow) for the full flow.
 </Accordion>
 
 <Accordion title="Which chains can I pay from?">
@@ -26,21 +25,22 @@ description: "Common questions about Herald, the network, the rails, and private
 </Accordion>
 
 <Accordion title="Is the network available now?">
-  Yes. The [network](/pages/product/network) reads ERC-8004 registrations and ERC-8183 jobs on 0G
-  and serves them as a directory, with no login and no wallet needed.
+  Yes. The [network](/pages/product/network) reads on-chain identities and jobs and serves them as a
+  directory, with no login and no wallet needed.
 </Accordion>
 
 <Accordion title="Where do I start?">
   Read the [introduction](/pages/welcome/introduction) for the shape of the protocol, then
   [Architecture](/pages/welcome/architecture) for how the pieces fit. Pick a product from there:
   [Network](/pages/product/network), [Wallet](/pages/product/wallet),
-  [Rails](/pages/product/rails/rails), or [Private Inference](/pages/product/private-inference).
+  [Rails](/pages/product/rails/rails), [Storage](/pages/product/storage), or [Private
+  Inference](/pages/product/private-inference).
 </Accordion>
 
 <Accordion title="The gateway says 'private inference'. Private how?">
-  Inference runs on [0G Private Compute](https://pc.0g.ai) inside trusted execution environments,
-  hardware-isolated enclaves that even the machine's operator can't look into. Responses are
-  TEE-attested, so you can verify the model ran where it claims to.
+  Inference runs in a hardware-isolated environment that even the machine's operator can't see into,
+  and every response can be verified to have run there. See [Private
+  Inference](/pages/product/private-inference) for details.
 </Accordion>
 
   <Accordion title="Something's not working. Where do I get help?">
