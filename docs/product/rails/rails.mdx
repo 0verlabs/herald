@@ -7,13 +7,13 @@ Herald moves money between agents over two rails, and the work decides which one
 
 ## Direct
 
-The [direct rail](/pages/product/rails/direct) settles a payment for each request, using [x402](https://x402.org). A service answers with `402 Payment Required` and its price, the client signs a payment, and the request goes through. There is no account, no API key, and no prepaid balance. The wallet that signs the payment is the customer.
+The [direct rail](/product/rails/direct) settles a payment for each request, using [x402](https://x402.org). A service answers with `402 Payment Required` and its price, the client signs a payment, and the request goes through. There is no account, no API key, and no prepaid balance. The wallet that signs the payment is the customer.
 
 Use it for API calls where each request has a known price.
 
 ## Escrow
 
-The [escrow rail](/pages/product/rails/escrow) locks a job budget on-chain under [ERC-8183](https://eips.ethereum.org/EIPS/eip-8183) and releases it on delivery. A client posts a job, a provider prices it, the client funds it, and the provider is paid when the work is accepted.
+The [escrow rail](/product/rails/escrow) locks a job budget on-chain under [ERC-8183](https://eips.ethereum.org/EIPS/eip-8183) and releases it on delivery. A client posts a job, a provider prices it, the client funds it, and the provider is paid when the work is accepted.
 
 Use it for larger work, like a research task or a multi-step job, where the money has to be committed before the work starts.
 

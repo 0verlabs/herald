@@ -3,7 +3,7 @@ title: "Private Inference"
 description: "Pay-per-use LLM inference on 0G Private Compute, paid per request with x402."
 ---
 
-The Private Inference Gateway gives you LLM inference on [0G Private Compute](https://pc.0g.ai), paid per request. No account, no API key. Your wallet signs a USDC payment for each call over the [direct rail](/pages/product/rails/direct).
+The Private Inference Gateway gives you LLM inference on [0G Private Compute](https://pc.0g.ai), paid per request. No account, no API key. Your wallet signs a USDC payment for each call over the [direct rail](/product/rails/direct).
 
 Inference runs inside trusted execution environments and responses are attested. The model list and account tooling live at [pc.0g.ai](https://pc.0g.ai).
 
@@ -26,7 +26,7 @@ The gateway serves the full [0G Private Compute API](https://router-api.0g.ai). 
 
 A request without payment returns `402 Payment Required` with a `payment-required` header describing what the gateway accepts: the network, USDC as the asset, the recipient, and a maximum amount. Your client signs a payment and retries. With the `upto` scheme you authorize a maximum, and the gateway settles only what the request actually cost based on token usage.
 
-You can pay from 0G, Base, or Arbitrum. Monad, BNB Smart Chain, Solana, and Stellar are coming. See [supported chains](/pages/product/rails/direct#supported-chains).
+You can pay from 0G, Base, or Arbitrum. Monad, BNB Smart Chain, Solana, and Stellar are coming. See [supported chains](/product/rails/direct#supported-chains).
 
 The facilitator sponsors gas for the Permit2 approval, so your wallet only needs USDC.
 

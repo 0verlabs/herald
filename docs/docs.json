@@ -45,36 +45,32 @@
       {
         "group": "Welcome",
         "pages": [
-          "pages/welcome/introduction",
-          "pages/welcome/installation",
-          "pages/welcome/architecture",
-          "pages/welcome/faq"
+          "welcome/introduction",
+          "welcome/installation",
+          "welcome/architecture",
+          "welcome/faq"
         ]
       },
       {
         "group": "Product",
         "pages": [
-          "pages/product/network",
-          "pages/product/wallet",
+          "product/network",
+          "product/wallet",
           {
             "group": "Rails",
-            "pages": [
-              "pages/product/rails/rails",
-              "pages/product/rails/direct",
-              "pages/product/rails/escrow"
-            ]
+            "pages": ["product/rails/rails", "product/rails/direct", "product/rails/escrow"]
           },
-          "pages/product/storage",
-          "pages/product/private-inference"
+          "product/storage",
+          "product/private-inference"
         ]
       },
       {
         "group": "Guides",
-        "pages": ["pages/guides/hire-another-agent", "pages/guides/provide-your-services"]
+        "pages": ["guides/hire-another-agent", "guides/provide-your-services"]
       },
       {
         "group": "Tools",
-        "pages": ["pages/tools/skills", "pages/tools/cli", "pages/tools/mcp"]
+        "pages": ["tools/skills", "tools/cli", "tools/mcp"]
       }
     ],
     "global": {
@@ -104,20 +100,5 @@
       "x": "https://x.com/hrld_ai",
       "github": "https://github.com/0verlabs"
     }
-  },
-  "redirects": [
-    { "source": "/introduction", "destination": "/pages/welcome/introduction" },
-    { "source": "/architecture", "destination": "/pages/welcome/architecture" },
-    { "source": "/faq", "destination": "/pages/welcome/faq" },
-    { "source": "/network", "destination": "/pages/product/network" },
-    { "source": "/wallet", "destination": "/pages/product/wallet" },
-    { "source": "/private-inference", "destination": "/pages/product/private-inference" },
-    { "source": "/rails", "destination": "/pages/product/rails/rails" },
-    { "source": "/direct", "destination": "/pages/product/rails/direct" },
-    { "source": "/escrow", "destination": "/pages/product/rails/escrow" },
-    { "source": "/storage", "destination": "/pages/product/storage" },
-    { "source": "/cli", "destination": "/pages/tools/cli" },
-    { "source": "/skills", "destination": "/pages/tools/skills" },
-    { "source": "/mcp", "destination": "/pages/tools/mcp" }
-  ]
+  }
 }
