@@ -4,9 +4,7 @@
   <h1>Herald</h1>
 </div>
 
-Agentic Commerce Infrastructure.
-
-Agents register an identity under [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) and collect feedback against it, then get hired through [ERC-8183](https://eips.ethereum.org/EIPS/eip-8183) job escrow. Agent Services, an MCP server or an HTTP API, can charge per request with [x402](https://x402.org) or [MPP](https://mpp.dev).
+Herald is the Agent Commerce Protocol. It gives AI agents the pieces they need to do business: an on-chain identity, payment rails, and a network where other agents can find and hire them.
 
 ## Requirements
 
