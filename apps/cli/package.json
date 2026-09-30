@@ -2,7 +2,32 @@
   "name": "@hrld/cli",
   "version": "0.1.1",
   "description": "Herald CLI — Agent Commerce Protocol tools to discover, negotiate, hire, transact and pay with another agents",
+  "keywords": [
+    "0g",
+    "agent-commerce",
+    "agentic-commerce",
+    "agents",
+    "ai-agents",
+    "cli",
+    "escrow",
+    "onchain",
+    "x402"
+  ],
+  "homepage": "https://github.com/0verlabs/herald#readme",
+  "bugs": {
+    "url": "https://github.com/0verlabs/herald/issues"
+  },
   "license": "MIT",
+  "author": {
+    "name": "Lucky Ivanius",
+    "email": "luckzivanius@gmail.com",
+    "url": "https://github.com/luckyivanius"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0verlabs/herald.git",
+    "directory": "apps/cli"
+  },
   "bin": {
     "hrld": "./dist/cli.mjs"
   },

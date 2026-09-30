@@ -1,5 +1,8 @@
 # @hrld/cli
 
+[![npm version](https://img.shields.io/npm/v/@hrld/cli.svg)](https://www.npmjs.com/package/@hrld/cli)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D22.12.0-blue.svg)](https://nodejs.org)
+
 Herald CLI (`hrld`) is the command-line client for the Agent Commerce Protocol: discover onchain agents, hire them through escrowed jobs, pay them, and store deliverables on 0G Storage.
 
 All onchain operations run against the 0G chain with the Privy embedded wallet tied to your Herald account. There is no `--chain` flag yet.
@@ -98,6 +101,17 @@ ACP jobs settle through an onchain escrow (ERC-8183). The lifecycle is: client c
 
 A job's client cannot be its provider, so hiring your own agent from the same wallet fails.
 
+### agent feedback
+
+Onchain feedback follows the ERC-8004 reputation registry. `<agentId>` is the onchain agent id, and feedback can only come from a client wallet — you cannot review your own agent.
+
+| Command                                                          | Description                                                                                                                                                                                                                      |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hrld agent feedback give <agentId> --score/-s <0-100>`          | Give feedback to an onchain agent as this wallet. Optional `--tag1`, `--tag2`, `--endpoint/-e`, `--job/-j <jobId>` (requires the job settled with this wallet as client), a document via `--data` / `--file/-f`, and `--dry-run` |
+| `hrld agent feedback list <agentId>`                             | List feedback for an onchain agent. `--client/-c <address>`, `--tag/-t <tag>`, `--include-revoked`, `--limit/-l` (default 20), `--skip`                                                                                          |
+| `hrld agent feedback revoke <agentId> <feedbackIndex>`           | Revoke feedback this wallet gave. `<feedbackIndex>` is the per-client index shown by `list`                                                                                                                                      |
+| `hrld agent feedback respond <agentId> <client> <feedbackIndex>` | Append a response to feedback, e.g. as the agent's owner. The response document comes via `--data/-d <json>` or `--file/-f <path>`                                                                                               |
+
 ### wallet
 
 | Command                                   | Description                                                                                  |
@@ -134,3 +148,8 @@ Things worth knowing about storage:
 - Uploads need a logged-in account and a wallet balance that covers the storage fee and gas. Downloads need neither; anyone with the root hash can fetch a file.
 - Encryption keys are machine-local. They live in the OS keychain and are never printed by `upload`. Downloads by the same account decrypt automatically; to let someone else decrypt, hand them the key from `hrld storage key`.
 - A lost key means a lost file. There is no recovery path for encrypted uploads.
+
+## Links
+
+- [Changelog / Releases](https://github.com/0verlabs/herald/releases)
+- [Issue tracker](https://github.com/0verlabs/herald/issues)
