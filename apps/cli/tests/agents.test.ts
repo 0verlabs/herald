@@ -9,11 +9,18 @@ import {
   toAgentUri,
 } from "../src/lib/agents.ts";
 
-test("fills in the profile type and an empty services array", () => {
+test("fills in the profile type, an empty services array and an active flag", () => {
   const card = parseAgentCard({ name: "DataAnalyst", description: "Analyzes data" });
 
   expect(card.type).toBe(AGENT_CARD_TYPE);
   expect(card.services).toEqual([]);
+  expect(card.active).toBe(true);
+});
+
+test("keeps an explicit inactive flag", () => {
+  const card = parseAgentCard({ name: "Paused", description: "Offline for now", active: false });
+
+  expect(card.active).toBe(false);
 });
 
 test("keeps fields the flags don't cover", () => {

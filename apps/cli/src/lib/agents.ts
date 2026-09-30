@@ -8,8 +8,8 @@ import { jsonStringSchema } from "../utils/json.ts";
 export const AGENT_CARD_TYPE = "https://eips.ethereum.org/EIPS/eip-8004#registration-v1";
 
 // Loose objects keep fields the flags don't cover (mcpTools, capabilities,
-// active, custom extensions) intact — --data/--file exist precisely to carry
-// them, and edits must not strip them.
+// custom extensions) intact — --data/--file exist precisely to carry them, and
+// edits must not strip them.
 export const agentServiceSchema = z.looseObject({
   name: z.string().min(1),
   endpoint: z.string().min(1),
@@ -28,6 +28,10 @@ export const agentCardSchema = z.looseObject({
   name: z.string().min(1),
   description: z.string(),
   image: z.string().optional(),
+  // Agents are active on create; `hrld agent deactivate` takes one offline
+  // without deleting its card. Cards written before this field existed read
+  // back as active.
+  active: z.boolean().prefault(true),
   services: z.array(agentServiceSchema).prefault([]),
   registrations: z.array(registrationSchema).optional(),
   updatedAt: z.number().optional(),

@@ -60,7 +60,7 @@ const list = zodCommand({
           (agent) =>
             `${pc.cyan(agent.id)}  ${pc.bold(truncate(agent.card.name, 24).padEnd(nameWidth))}  ${pc.dim(
               `${agent.card.services.length} service${agent.card.services.length === 1 ? "" : "s"} · ${registrationLabel(agent.card)}`,
-            )}`,
+            )}${agent.card.active ? "" : `  ${pc.yellow("inactive")}`}`,
         )
         .join("\n"),
       result,
@@ -253,6 +253,7 @@ const profile = zodCommand({
           ["Name", pc.bold(result.card.name)],
           ["Description", result.card.description],
           ...(result.card.image ? [["Image", result.card.image] as [string, unknown]] : []),
+          ["Status", statusLabel(result.card)],
         ]),
         "",
         pc.dim("Registrations"),
@@ -354,7 +355,7 @@ async function updateAgent(
 }
 
 // --data and --file both carry arbitrary JSON for card fields the flags don't
-// cover (active, x402Support, supportedTrust, …); only one source may be
+// cover (x402Support, supportedTrust, …); only one source may be
 // given. Legacy `endpoints` input is normalized here so merges into cards that
 // already have `services` don't leave both fields behind.
 async function resolveCardInput(opts: {
@@ -380,6 +381,74 @@ async function resolveCardInput(opts: {
 function stampUpdatedAt(card: AgentCard, provided: Record<string, unknown> | null): AgentCard {
   if (provided !== null && "updatedAt" in provided) return card;
   return { ...card, updatedAt: Math.floor(Date.now() / 1000) };
+}
+
+const activate = zodCommand({
+  name: "activate",
+  description: "Mark a local agent as active",
+  args: {
+    agentId: z.string().describe("Local agent id (uuid)"),
+  },
+  action: async (args) => {
+    const json = isJson(activate);
+
+    const result = await setAgentActive(args.agentId, true).catch((error: Error) => error);
+    if (result instanceof Error) return err(result)(json);
+
+    ok(
+      [
+        success("Agent activated"),
+        fields([
+          ["ID", pc.cyan(result.id)],
+          ["Name", pc.bold(result.card.name)],
+          ["Status", statusLabel(result.card)],
+        ]),
+      ].join("\n"),
+      result,
+    )(json);
+  },
+});
+
+const deactivate = zodCommand({
+  name: "deactivate",
+  description: "Mark a local agent as inactive",
+  args: {
+    agentId: z.string().describe("Local agent id (uuid)"),
+  },
+  action: async (args) => {
+    const json = isJson(deactivate);
+
+    const result = await setAgentActive(args.agentId, false).catch((error: Error) => error);
+    if (result instanceof Error) return err(result)(json);
+
+    ok(
+      [
+        success("Agent deactivated"),
+        fields([
+          ["ID", pc.cyan(result.id)],
+          ["Name", pc.bold(result.card.name)],
+          ["Status", statusLabel(result.card)],
+        ]),
+        pc.dim("Run `hrld agent push <agentId>` to publish the change onchain."),
+      ].join("\n"),
+      result,
+    )(json);
+  },
+});
+
+// Idempotent: re-activating an active agent still stamps updatedAt, so the
+// card stays the single source of truth for what push would publish.
+async function setAgentActive(agentId: string, active: boolean) {
+  const userId = await requireUserId();
+  const card = await readAgentCard(userId, agentId);
+
+  const next = stampUpdatedAt({ ...card, active }, null);
+  await writeAgentCard(userId, agentId, next);
+  return { id: agentId, card: next };
+}
+
+function statusLabel(card: AgentCard): string {
+  return card.active ? pc.green("active") : pc.yellow("inactive");
 }
 
 const serviceList = zodCommand({
@@ -899,6 +968,8 @@ export const agent = zodCommand({
   .addCommand(create)
   .addCommand(profile)
   .addCommand(update)
+  .addCommand(activate)
+  .addCommand(deactivate)
   .addCommand(service)
   .addCommand(job)
   .addCommand(push)
