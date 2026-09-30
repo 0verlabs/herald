@@ -2,7 +2,17 @@ import { PrivyProvider, usePrivy } from "@privy-io/react-auth";
 import { ClientOnly, createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { PRIVY_APP_ID, PRIVY_AUTH_ORIGIN } from "@hrld/core";
+import { Alert, AlertDescription, AlertTitle } from "@hrld/ui/components/alert";
 import { Button } from "@hrld/ui/components/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@hrld/ui/components/card";
+import { Spinner } from "@hrld/ui/components/spinner";
 import { accountLabel } from "../lib/privy";
 
 export const Route = createFileRoute("/auth/verify")({
@@ -69,10 +79,7 @@ function AuthorizePage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col items-center justify-center px-6">
-      <div className="w-full rounded-xl border border-border bg-card p-8 shadow-2xl shadow-black/10">
-        <p className="mb-5 font-mono text-xs tracking-[0.22em] text-muted-foreground uppercase">
-          Device authorization
-        </p>
+      <Card className="w-full">
         <AuthorizeContent
           privy={privy}
           result={result}
@@ -80,7 +87,7 @@ function AuthorizePage() {
           submitting={submitting}
           userCode={search.user_code}
         />
-      </div>
+      </Card>
     </main>
   );
 }
@@ -94,52 +101,80 @@ function AuthorizeContent(props: {
 }) {
   if (!props.userCode)
     return (
-      <p className="text-sm text-muted-foreground">
-        No code found. Open the link shown by the Herald CLI, or restart the login with{" "}
-        <code className="font-mono">hrld auth login</code>.
-      </p>
+      <CardHeader>
+        <CardTitle>No code found</CardTitle>
+        <CardDescription>
+          Open the link shown by the Herald CLI, or restart the login with{" "}
+          <code className="font-mono">hrld auth login</code>.
+        </CardDescription>
+      </CardHeader>
     );
 
   if (props.result === "approved")
     return (
-      <p className="text-sm">Access approved. You can close this tab and return to the CLI.</p>
+      <CardHeader>
+        <CardTitle>Access approved</CardTitle>
+        <CardDescription>You can close this tab and return to the CLI.</CardDescription>
+      </CardHeader>
     );
 
   if (props.result === "denied")
-    return <p className="text-sm">Access denied. You can close this tab.</p>;
+    return (
+      <CardHeader>
+        <CardTitle>Access denied</CardTitle>
+        <CardDescription>You can close this tab.</CardDescription>
+      </CardHeader>
+    );
 
   if (props.result === "error")
     return (
-      <p className="text-sm text-destructive">
-        Something went wrong. The code may be invalid or expired — restart the login with{" "}
-        <code className="font-mono">hrld auth login</code>.
-      </p>
+      <CardContent>
+        <Alert variant="destructive">
+          <AlertTitle>Something went wrong</AlertTitle>
+          <AlertDescription>
+            The code may be invalid or expired — restart the login with{" "}
+            <code className="font-mono">hrld auth login</code>.
+          </AlertDescription>
+        </Alert>
+      </CardContent>
     );
 
-  if (!props.privy.ready) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  if (!props.privy.ready)
+    return (
+      <CardContent className="flex justify-center py-8">
+        <Spinner />
+      </CardContent>
+    );
 
   return (
     <>
-      <h1 className="font-serif text-2xl font-medium tracking-tight">Authorize the Herald CLI</h1>
-      <p className="mt-3 text-sm leading-6 text-muted-foreground">
-        A command line on another device is asking for access to your Herald account. Only continue
-        if the code below matches the one shown in your terminal.
-      </p>
-      <p className="my-6 text-center font-mono text-3xl font-semibold tracking-widest">
-        {props.userCode}
-      </p>
+      <CardHeader>
+        <CardTitle>Authorize the Herald CLI</CardTitle>
+        <CardDescription>
+          A command line on another device is asking for access to your Herald account. Only
+          continue if the code below matches the one shown in your terminal.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <p className="py-4 text-center font-mono text-3xl font-semibold tracking-widest">
+          {props.userCode}
+        </p>
+      </CardContent>
       {!props.privy.authenticated ? (
-        <Button className="w-full" onClick={() => props.privy.login()}>
-          Log in to continue
-        </Button>
+        <CardFooter>
+          <Button className="w-full" onClick={() => props.privy.login()}>
+            Log in to continue
+          </Button>
+        </CardFooter>
       ) : (
-        <>
-          <div className="flex gap-3">
+        <CardFooter className="flex-col gap-3">
+          <div className="flex w-full gap-3">
             <Button
               className="flex-1"
               disabled={props.submitting}
               onClick={() => props.submit("approve")}
             >
+              {props.submitting && <Spinner data-icon="inline-start" />}
               Approve
             </Button>
             <Button
@@ -151,7 +186,7 @@ function AuthorizeContent(props: {
               Deny
             </Button>
           </div>
-          <p className="mt-4 text-center text-xs text-muted-foreground">
+          <p className="text-center text-xs text-muted-foreground">
             {props.privy.user && (
               <>
                 Approving as <span className="font-mono">{accountLabel(props.privy.user)}</span>{" "}
@@ -167,7 +202,7 @@ function AuthorizeContent(props: {
               Switch account
             </button>
           </p>
-        </>
+        </CardFooter>
       )}
     </>
   );
