@@ -12,7 +12,6 @@ import {
   createPublicClient,
   createWalletClient,
   erc20Abi,
-  formatUnits,
   http,
   isAddress,
   parseEventLogs,
@@ -26,10 +25,21 @@ import { zodCommand } from "zod-commander";
 import { api, requestJson, requireOnchainAgentId } from "../lib/api.ts";
 import type { WalletSession } from "../lib/privy.ts";
 import { openSession, requireWallet } from "../lib/session.ts";
+import { formatTokenAmount, readTokenMetadata, type TokenMetadata } from "../lib/token.ts";
 import { toWalletAccount } from "../lib/viem.ts";
 import { activeChain } from "../utils/chain.ts";
 import { CliError } from "../utils/errors.ts";
-import { err, fields, isJson, ok, shortAddress, success, truncate } from "../utils/result.ts";
+import {
+  err,
+  fields,
+  formatRelative,
+  formatTimestamp,
+  isJson,
+  ok,
+  shortAddress,
+  success,
+  truncate,
+} from "../utils/result.ts";
 
 // Contract enum order; jobStatuses[status] converts a getJob status to a name.
 const jobStatuses = ["OPEN", "FUNDED", "SUBMITTED", "COMPLETED", "REJECTED", "EXPIRED"] as const;
@@ -90,7 +100,7 @@ const list = zodCommand({
 
     ok(
       [
-        ...result.jobs.map((job) => jobLine(job, result.assigned)),
+        ...(await jobLines(result.jobs, result.assigned)),
         ...(result.jobs.length === opts.limit
           ? ["", pc.dim(`More results may exist — re-run with --skip ${opts.skip + opts.limit}.`)]
           : []),
@@ -128,14 +138,58 @@ async function listJobs(opts: {
 
 type JobSummary = Awaited<ReturnType<typeof listJobs>>["jobs"][number];
 
-function jobLine(job: JobSummary, assigned: boolean): string {
-  return `${pc.cyan(`#${job.id}`)}  ${statusLabel(job.status)}  ${truncate(job.description, 48)}  ${pc.dim(
-    counterparty(job, assigned),
-  )}`;
+async function jobLines(jobs: JobSummary[], assigned: boolean): Promise<string[]> {
+  const metadata = await readBudgetTokens(jobs);
+  const rows = jobs.map((job) => ({
+    id: `#${job.id}`,
+    status: job.status,
+    description: truncate(job.description, 44),
+    budget: job.budget
+      ? formatTokenAmount(BigInt(job.budget.amount), metadata[job.budget.token] ?? null)
+      : "—",
+    meta: jobMeta(job, assigned),
+  }));
+  const width = {
+    id: Math.max(...rows.map((row) => row.id.length)),
+    status: Math.max(...rows.map((row) => row.status.length)),
+    description: Math.max(...rows.map((row) => row.description.length)),
+    budget: Math.max(...rows.map((row) => row.budget.length)),
+  };
+
+  return rows.map((row) =>
+    [
+      pc.cyan(row.id.padEnd(width.id)),
+      statusLabel(row.status, width.status),
+      row.description.padEnd(width.description),
+      pc.bold(row.budget.padStart(width.budget)),
+      pc.dim(row.meta),
+    ].join("  "),
+  );
 }
 
-function statusLabel(status: string): string {
-  const padded = status.padEnd(10);
+// One metadata read per distinct budget token; the cache makes repeats free.
+async function readBudgetTokens(jobs: JobSummary[]): Promise<Record<string, TokenMetadata | null>> {
+  const tokens = [...new Set(jobs.flatMap((job) => (job.budget ? [job.budget.token] : [])))];
+  return Object.fromEntries(
+    await Promise.all(
+      tokens.map(
+        async (token) => [token, await readTokenMetadata(activeChain, token as Address)] as const,
+      ),
+    ),
+  );
+}
+
+function jobMeta(job: JobSummary, assigned: boolean): string {
+  const settled =
+    job.status === "COMPLETED" || job.status === "REJECTED" || job.status === "EXPIRED";
+  return [
+    counterparty(job, assigned),
+    ...(settled ? [] : [`expires ${formatRelative(job.expiresAt)}`]),
+  ].join(" · ");
+}
+
+function statusLabel(status: string, width: number): string {
+  const padded = status.padEnd(width);
   if (status === "COMPLETED") return pc.green(padded);
   if (status === "REJECTED" || status === "EXPIRED") return pc.red(padded);
   if (status === "SUBMITTED") return pc.yellow(padded);
@@ -179,15 +233,17 @@ const create = zodCommand({
         success("Job created"),
         fields([
           ["Job ID", pc.cyan(`#${result.jobId}`)],
-          ["Provider", `${result.provider} ${pc.dim(`(agent #${result.agentId})`)}`],
+          ["Description", truncate(result.description, 60)],
+          ["Provider", `${result.provider} ${pc.dim(`(${result.agentName} #${result.agentId})`)}`],
           ["Evaluator", `${result.evaluator} ${pc.dim("(you)")}`],
-          ["Expires", new Date(result.expiresAt * 1000).toISOString()],
+          [
+            "Expires",
+            `${formatTimestamp(result.expiresAt * 1000)} ${pc.dim(`(${formatRelative(result.expiresAt * 1000)})`)}`,
+          ],
           ["Tx", pc.cyan(result.txHash)],
         ]),
         "",
-        pc.dim(
-          `The provider sets the price next: hrld agent job set-budget ${result.jobId} <budget>`,
-        ),
+        pc.dim(`Next: the provider prices it — hrld agent job set-budget ${result.jobId} <budget>`),
       ].join("\n"),
       result,
     )(json);
@@ -262,6 +318,7 @@ async function createJob(
     chain,
     jobId: jobId.toString(),
     agentId,
+    agentName: agent.name,
     description,
     client: wallet.address,
     provider,
@@ -306,12 +363,12 @@ const setBudget = zodCommand({
         success("Budget set"),
         fields([
           ["Job ID", pc.cyan(`#${result.jobId}`)],
-          ["Budget", `${result.budget} ${pc.dim(`(${result.amount} base units)`)}`],
-          ["Token", result.token],
+          ["Budget", `${pc.bold(result.budget)} ${pc.dim(`(${result.amount} base units)`)}`],
+          ["Token", tokenLabel(result.token, result.symbol)],
           ["Tx", pc.cyan(result.txHash)],
         ]),
         "",
-        pc.dim(`The client funds it next: hrld agent job fund ${result.jobId}`),
+        pc.dim(`Next: the client escrows it — hrld agent job fund ${result.jobId}`),
       ].join("\n"),
       result,
     )(json);
@@ -339,12 +396,14 @@ async function setJobBudget(
       "Pass a whitelisted token with --token <address>.",
     );
 
-  const decimals = await publicClient(chain).readContract({
-    address: token,
-    abi: erc20Abi,
-    functionName: "decimals",
-  });
-  const amount = parseBudget(budget, opts.unit, decimals);
+  const metadata = await readTokenMetadata(chain, token);
+  if (!opts.unit && !metadata)
+    throw new CliError(
+      "JOB_ACTION_FAILED",
+      `Could not read the decimals of token ${token}.`,
+      "Pass --unit with the amount in raw base units.",
+    );
+  const amount = parseBudget(budget, opts.unit, metadata?.decimals ?? 0);
 
   progress(json, `Setting budget on job #${jobId}…`);
   const txHash = await walletClient(chain, await openSession())
@@ -361,10 +420,15 @@ async function setJobBudget(
     chain,
     jobId,
     token,
+    symbol: metadata?.symbol ?? null,
     amount: amount.toString(),
-    budget: formatUnits(amount, decimals),
+    budget: formatTokenAmount(amount, metadata),
     txHash,
   };
+}
+
+function tokenLabel(token: string, symbol: string | null): string {
+  return symbol ? `${symbol} ${pc.dim(`(${token})`)}` : token;
 }
 
 function resolveToken(chain: EvmChain, token: string | undefined): Address {
@@ -403,15 +467,15 @@ const fund = zodCommand({
         success("Job funded"),
         fields([
           ["Job ID", pc.cyan(`#${result.jobId}`)],
-          ["Amount", `${result.amount} ${pc.dim("base units")}`],
-          ["Token", result.token === zeroAddress ? "native" : result.token],
+          ["Escrowed", `${pc.bold(result.budget)} ${pc.dim(`(${result.amount} base units)`)}`],
+          ["Token", tokenLabel(result.token, result.symbol)],
           ...(result.approveTxHash
             ? [["Approve Tx", pc.cyan(result.approveTxHash)] as [string, unknown]]
             : []),
           ["Fund Tx", pc.cyan(result.txHash)],
         ]),
         "",
-        pc.dim("The provider can start working now."),
+        pc.dim("Next: the provider works and delivers — hrld agent job deliver <jobId> <fileHash>"),
       ].join("\n"),
       result,
     )(json);
@@ -436,15 +500,17 @@ async function fundJob(chain: EvmChain, jobId: string, json: boolean) {
   const session = await openSession();
   const wallet = requireWallet(session, chain);
   const escrow = agenticCommerceByChain[chain];
+  const metadata =
+    job.paymentToken === zeroAddress ? null : await readTokenMetadata(chain, job.paymentToken);
 
   // The escrow pulls ERC-20 budgets via transferFrom, so the client must hold
   // and approve the amount before fund() can succeed.
   const approveTxHash =
     job.paymentToken === zeroAddress
       ? null
-      : await approveBudget(chain, session, wallet, job.paymentToken, job.budget, json);
+      : await approveBudget(chain, session, wallet, job.paymentToken, job.budget, metadata, json);
 
-  progress(json, `Funding job #${jobId}…`);
+  progress(json, `Funding job #${jobId} with ${formatTokenAmount(job.budget, metadata)}…`);
   const txHash = await walletClient(chain, session, wallet)
     .writeContract({
       address: escrow,
@@ -459,7 +525,9 @@ async function fundJob(chain: EvmChain, jobId: string, json: boolean) {
     chain,
     jobId,
     token: job.paymentToken,
+    symbol: metadata?.symbol ?? null,
     amount: job.budget.toString(),
+    budget: formatTokenAmount(job.budget, metadata),
     approveTxHash,
     txHash,
   };
@@ -471,6 +539,7 @@ async function approveBudget(
   wallet: Wallet,
   token: Address,
   budget: bigint,
+  metadata: TokenMetadata | null,
   json: boolean,
 ) {
   const escrow = agenticCommerceByChain[chain];
@@ -492,11 +561,14 @@ async function approveBudget(
   if (balance < budget)
     throw new CliError(
       "JOB_ACTION_FAILED",
-      `This wallet holds ${balance} base units of ${token} but the budget is ${budget}.`,
+      `This wallet holds ${formatTokenAmount(balance, metadata)} but the budget is ${formatTokenAmount(budget, metadata)}.`,
+      metadata?.symbol === "W0G"
+        ? "Wrap more native tokens with `hrld wallet evm wrap <amount>`."
+        : undefined,
     );
   if (allowance >= budget) return null;
 
-  progress(json, `Approving ${budget} base units for the escrow…`);
+  progress(json, `Approving ${formatTokenAmount(budget, metadata)} for the escrow…`);
   const txHash = await walletClient(chain, session, wallet)
     .writeContract({
       address: token,
@@ -534,7 +606,7 @@ const deliver = zodCommand({
         ]),
         "",
         pc.dim(
-          `The client evaluates it next: hrld agent job complete ${result.jobId} (or reject).`,
+          `Next: the client evaluates it — hrld agent job complete ${result.jobId} (or reject)`,
         ),
       ].join("\n"),
       result,
@@ -586,8 +658,11 @@ const complete = zodCommand({
         success("Job completed"),
         fields([
           ["Job ID", pc.cyan(`#${result.jobId}`)],
+          ...(result.reason ? [["Reason", result.reason] as [string, unknown]] : []),
           ["Tx", pc.cyan(result.txHash)],
         ]),
+        "",
+        pc.dim("Escrow released to the provider."),
       ].join("\n"),
       result,
     )(json);
@@ -616,8 +691,11 @@ const reject = zodCommand({
         success("Job rejected"),
         fields([
           ["Job ID", pc.cyan(`#${result.jobId}`)],
+          ...(result.reason ? [["Reason", result.reason] as [string, unknown]] : []),
           ["Tx", pc.cyan(result.txHash)],
         ]),
+        "",
+        pc.dim("Any escrow was refunded to the client."),
       ].join("\n"),
       result,
     )(json);
@@ -673,7 +751,7 @@ const refund = zodCommand({
         success("Refund claimed"),
         fields([
           ["Job ID", pc.cyan(`#${result.jobId}`)],
-          ["Refunded", `${result.amount} ${pc.dim("base units")}`],
+          ["Refunded", `${pc.bold(result.budget)} ${pc.dim(`(${result.amount} base units)`)}`],
           ["Tx", pc.cyan(result.txHash)],
         ]),
       ].join("\n"),
@@ -692,6 +770,9 @@ async function refundJob(chain: EvmChain, jobId: string, json: boolean) {
       `Job #${jobId} is ${status}; only funded or submitted jobs hold escrow to refund.`,
     );
 
+  const metadata =
+    job.paymentToken === zeroAddress ? null : await readTokenMetadata(chain, job.paymentToken);
+
   progress(json, `Claiming refund for job #${jobId}…`);
   const txHash = await walletClient(chain, await openSession())
     .writeContract({
@@ -703,7 +784,13 @@ async function refundJob(chain: EvmChain, jobId: string, json: boolean) {
     .catch(rethrowRevert("claim the refund"));
   await publicClient(chain).waitForTransactionReceipt({ hash: txHash });
 
-  return { chain, jobId, amount: job.budget.toString(), txHash };
+  return {
+    chain,
+    jobId,
+    amount: job.budget.toString(),
+    budget: formatTokenAmount(job.budget, metadata),
+    txHash,
+  };
 }
 
 function requireJobId(value: string): bigint {

@@ -27,7 +27,17 @@ import { toWalletAccount } from "../lib/viem.ts";
 import { activeChain, chainDisplayName } from "../utils/chain.ts";
 import { CliError } from "../utils/errors.ts";
 import { jsonStringSchema } from "../utils/json.ts";
-import { err, fields, isJson, ok, shortAddress, success, truncate } from "../utils/result.ts";
+import {
+  err,
+  fields,
+  formatRelative,
+  formatTimestamp,
+  isJson,
+  ok,
+  shortAddress,
+  success,
+  truncate,
+} from "../utils/result.ts";
 import { job } from "./job.ts";
 
 const list = zodCommand({
@@ -41,12 +51,15 @@ const list = zodCommand({
     if (result.agents.length === 0)
       return ok(pc.dim("No agents yet. Run `hrld agent create`."), result)(json);
 
+    const nameWidth = Math.max(
+      ...result.agents.map((agent) => truncate(agent.card.name, 24).length),
+    );
     ok(
       result.agents
         .map(
           (agent) =>
-            `${pc.cyan(agent.id)}  ${agent.card.name}  ${pc.dim(
-              `${agent.card.services.length} service${agent.card.services.length === 1 ? "" : "s"}, ${registrationLabel(agent.card)}`,
+            `${pc.cyan(agent.id)}  ${pc.bold(truncate(agent.card.name, 24).padEnd(nameWidth))}  ${pc.dim(
+              `${agent.card.services.length} service${agent.card.services.length === 1 ? "" : "s"} · ${registrationLabel(agent.card)}`,
             )}`,
         )
         .join("\n"),
@@ -91,11 +104,30 @@ const discover = zodCommand({
     if (result.agents.length === 0)
       return ok(pc.dim("No agents matched. Try a broader query."), result)(json);
 
+    const rows = result.agents.map((agent) => ({
+      id: `#${agent.id}`,
+      name: truncate(agent.name, 24),
+      description: truncate(agent.description, 48),
+      meta: [
+        shortAddress(agent.owner),
+        ...(agent.feedbackCount > 0 ? [`★ ${agent.feedbackCount}`] : []),
+      ].join(" · "),
+    }));
+    const width = {
+      id: Math.max(...rows.map((row) => row.id.length)),
+      name: Math.max(...rows.map((row) => row.name.length)),
+      description: Math.max(...rows.map((row) => row.description.length)),
+    };
+
     ok(
       [
-        ...result.agents.map(
-          (agent) =>
-            `${pc.cyan(`#${agent.id}`)}  ${pc.bold(agent.name)}  ${pc.dim(shortAddress(agent.owner))}  ${truncate(agent.description, 60)}`,
+        ...rows.map((row) =>
+          [
+            pc.cyan(row.id.padEnd(width.id)),
+            pc.bold(row.name.padEnd(width.name)),
+            row.description.padEnd(width.description),
+            pc.dim(row.meta),
+          ].join("  "),
         ),
         ...(result.agents.length === opts.limit
           ? ["", pc.dim(`More results may exist — re-run with --skip ${opts.skip + opts.limit}.`)]
@@ -200,8 +232,11 @@ const profile = zodCommand({
           ["Description", result.description],
           ...(result.image ? [["Image", result.image] as [string, unknown]] : []),
           ["Owner", result.owner],
-          ["Feedback", result.feedbackCount],
-          ["Created", new Date(result.createdAt).toISOString()],
+          ["Feedback", result.feedbackCount > 0 ? `★ ${result.feedbackCount}` : pc.dim("none yet")],
+          [
+            "Created",
+            `${formatTimestamp(result.createdAt)} ${pc.dim(`(${formatRelative(result.createdAt)})`)}`,
+          ],
         ]),
         result,
       )(json);
@@ -763,13 +798,14 @@ const pull = zodCommand({
     if (result.pulled.length === 0 && result.skipped.length === 0)
       return ok(pc.dim("This wallet owns no onchain agents with a data: agent URI."), result)(json);
 
+    const nameWidth = Math.max(0, ...result.pulled.map((agent) => truncate(agent.name, 24).length));
     ok(
       [
         success(`Pulled ${result.pulled.length} agent${result.pulled.length === 1 ? "" : "s"}`),
         ...result.pulled.map(
           (agent) =>
-            `${pc.cyan(agent.id)}  ${agent.name}  ${pc.dim(
-              `#${agent.onchainAgentId}, ${agent.created ? "created" : "updated"}`,
+            `${pc.cyan(agent.id)}  ${pc.bold(truncate(agent.name, 24).padEnd(nameWidth))}  ${pc.dim(
+              `#${agent.onchainAgentId} · ${agent.created ? "created" : "updated"}`,
             )}`,
         ),
         ...result.skipped.map((entry) =>

@@ -6,15 +6,14 @@ import {
   createWalletClient,
   erc20Abi,
   formatEther,
-  formatUnits,
   type Hex,
   http,
   parseEther,
 } from "viem";
 import { z } from "zod";
 import { zodCommand } from "zod-commander";
-import { getCached, setCached } from "../lib/cache.ts";
 import { openSession, requireWallet } from "../lib/session.ts";
+import { formatTokenAmount, readTokenMetadata } from "../lib/token.ts";
 import { toWalletAccount } from "../lib/viem.ts";
 import { activeChain, chainDisplayName, networkDisplayName } from "../utils/chain.ts";
 import { CliError } from "../utils/errors.ts";
@@ -250,42 +249,23 @@ async function readTokenBalance(chain: EvmChain, token: string) {
   const session = await openSession();
   const wallet = requireWallet(session, chain);
   const client = createPublicClient({ chain: viemChainByChain[chain], transport: http() });
-  const contract = { address: token as Hex, abi: erc20Abi } as const;
 
-  const [wei, { decimals, symbol }] = await Promise.all([
-    client.readContract({ ...contract, functionName: "balanceOf", args: [wallet.address as Hex] }),
-    readTokenMetadata(client, chain, contract),
+  const [wei, metadata] = await Promise.all([
+    client.readContract({
+      address: token as Hex,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [wallet.address as Hex],
+    }),
+    readTokenMetadata(chain, token as Hex),
   ]);
 
   return {
     chain,
     address: wallet.address,
-    token: contract.address,
-    balance: `${formatUnits(wei, decimals)} ${symbol}`,
+    token,
+    balance: formatTokenAmount(wei, metadata),
   };
-}
-
-type TokenMetadata = { decimals: number; symbol: string };
-
-async function readTokenMetadata(
-  client: ReturnType<typeof createPublicClient>,
-  chain: EvmChain,
-  contract: { address: Hex; abi: typeof erc20Abi },
-): Promise<TokenMetadata> {
-  // Decimals and symbol are immutable for a deployed contract, so they cache
-  // forever; only the balance itself is read fresh on every call.
-  const key = `${chain}:${contract.address.toLowerCase()}`;
-  const cached = getCached<TokenMetadata>("token-metadata", key);
-  if (cached) return cached;
-
-  const [decimals, symbol] = await Promise.all([
-    client.readContract({ ...contract, functionName: "decimals" }),
-    client.readContract({ ...contract, functionName: "symbol" }),
-  ]);
-
-  const metadata = { decimals, symbol };
-  setCached("token-metadata", key, metadata);
-  return metadata;
 }
 
 const evmWrap = zodCommand({
