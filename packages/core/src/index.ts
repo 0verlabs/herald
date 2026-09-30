@@ -3,5 +3,6 @@ export * from "./chain";
 export * from "./contracts";
 export * from "./network";
 export * from "./privy";
+export * from "./token";
 export * from "./viem";
 export * from "./wallet";

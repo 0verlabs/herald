@@ -46,10 +46,10 @@ export const listJobsQuerySchema = z.object({
     .optional()
     .describe("Job provider agent ID. Pass 0 to find jobs not assigned to any agent"),
   status: z
-    .enum(["OPEN", "FUNDED", "SUBMITTED", "COMPLETED", "REJECTED", "EXPIRED"])
+    .enum(["OPEN", "BUDGET_SET", "FUNDED", "SUBMITTED", "COMPLETED", "REJECTED", "EXPIRED"])
     .optional()
     .describe(
-      "Job status. EXPIRED includes jobs past their deadline even if no refund was claimed yet",
+      "Job status. BUDGET_SET means open with a priced budget awaiting funding; EXPIRED includes jobs past their deadline even if no refund was claimed yet",
     ),
   limit: z.coerce
     .number()

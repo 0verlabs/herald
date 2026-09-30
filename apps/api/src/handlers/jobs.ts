@@ -17,20 +17,24 @@ import {
 // job past its deadline can still read OPEN, FUNDED, or SUBMITTED on-chain.
 // Derive the effective status from expiresAt instead of trusting the stored
 // one. SUBMITTED jobs get the contract's evaluation grace period, during which
-// the evaluator can still complete them.
+// the evaluator can still complete them. OPEN jobs with a priced budget are
+// surfaced as BUDGET_SET so clients know the job is ready to fund.
 const EVALUATION_GRACE_PERIOD_SECONDS = 3600;
 
-const effectiveStatus = (job: JobSummaryFragment, nowSeconds: number): JobStatus => {
+type EffectiveStatus = JobStatus | "BUDGET_SET";
+
+const effectiveStatus = (job: JobSummaryFragment, nowSeconds: number): EffectiveStatus => {
   const expiresAt = Number(job.expiresAt);
   if ((job.status === "OPEN" || job.status === "FUNDED") && expiresAt <= nowSeconds)
     return "EXPIRED";
   if (job.status === "SUBMITTED" && expiresAt + EVALUATION_GRACE_PERIOD_SECONDS <= nowSeconds)
     return "EXPIRED";
+  if (job.status === "OPEN" && job.paymentToken) return "BUDGET_SET";
   return job.status;
 };
 
 // Branches to `or` together for a status filter, mirroring effectiveStatus.
-const statusFilters = (status: JobStatus, nowSeconds: number): Job_Filter[] => {
+const statusFilters = (status: EffectiveStatus, nowSeconds: number): Job_Filter[] => {
   const now = String(nowSeconds);
   const graceCutoff = String(nowSeconds - EVALUATION_GRACE_PERIOD_SECONDS);
   if (status === "EXPIRED")
@@ -39,7 +43,10 @@ const statusFilters = (status: JobStatus, nowSeconds: number): Job_Filter[] => {
       { status_in: ["OPEN", "FUNDED"], expiresAt_lte: now },
       { status: "SUBMITTED", expiresAt_lte: graceCutoff },
     ];
-  if (status === "OPEN" || status === "FUNDED") return [{ status, expiresAt_gt: now }];
+  if (status === "OPEN") return [{ status, expiresAt_gt: now, paymentToken: null }];
+  if (status === "BUDGET_SET")
+    return [{ status: "OPEN", expiresAt_gt: now, paymentToken_not: null }];
+  if (status === "FUNDED") return [{ status, expiresAt_gt: now }];
   if (status === "SUBMITTED") return [{ status, expiresAt_gt: graceCutoff }];
   return [{ status }];
 };

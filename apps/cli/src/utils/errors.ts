@@ -27,6 +27,7 @@ export type ErrorCode =
   | "JOB_NOT_FOUND"
   | "JOB_INPUT_INVALID"
   | "JOB_ACTION_FAILED"
+  | "AMOUNT_INVALID"
   | "API_REQUEST_FAILED";
 
 export class CliError extends Error {

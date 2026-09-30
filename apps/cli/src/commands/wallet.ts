@@ -1,4 +1,5 @@
-import { type EvmChain, viemChainByChain } from "@hrld/core";
+import { type EvmChain, viemChainByChain, WRAPPED_NATIVE_TOKEN } from "@hrld/core";
+import { weth9Abi } from "@hrld/core/abis/weth9";
 import pc from "picocolors";
 import {
   createPublicClient,
@@ -8,6 +9,7 @@ import {
   formatUnits,
   type Hex,
   http,
+  parseEther,
 } from "viem";
 import { z } from "zod";
 import { zodCommand } from "zod-commander";
@@ -15,8 +17,9 @@ import { getCached, setCached } from "../lib/cache.ts";
 import { openSession, requireWallet } from "../lib/session.ts";
 import { toWalletAccount } from "../lib/viem.ts";
 import { activeChain, chainDisplayName, networkDisplayName } from "../utils/chain.ts";
+import { CliError } from "../utils/errors.ts";
 import { jsonStringSchema } from "../utils/json.ts";
-import { err, fields, isJson, ok } from "../utils/result.ts";
+import { err, fields, isJson, ok, success } from "../utils/result.ts";
 
 const evmSignMessage = zodCommand({
   name: "sign-message",
@@ -285,13 +288,146 @@ async function readTokenMetadata(
   return metadata;
 }
 
+const evmWrap = zodCommand({
+  name: "wrap",
+  description: "Wrap native tokens into the wrapped native token (W0G)",
+  args: {
+    amount: z.string().describe("Amount in native units, e.g. 1.5"),
+  },
+  opts: {
+    unit: z.boolean().prefault(false).describe("Treat <amount> as raw wei"),
+  },
+  action: async (args, opts) => {
+    const json = isJson(evmWrap);
+
+    const result = await convertNative(activeChain, "wrap", args.amount, opts.unit).catch(
+      (error: Error) => error,
+    );
+    if (result instanceof Error) return err(result)(json);
+
+    ok(wrapOutput("Wrapped", result), result)(json);
+  },
+});
+
+const evmUnwrap = zodCommand({
+  name: "unwrap",
+  description: "Unwrap wrapped native tokens (W0G) back into native tokens",
+  args: {
+    amount: z.string().describe("Amount in native units, e.g. 1.5"),
+  },
+  opts: {
+    unit: z.boolean().prefault(false).describe("Treat <amount> as raw wei"),
+  },
+  action: async (args, opts) => {
+    const json = isJson(evmUnwrap);
+
+    const result = await convertNative(activeChain, "unwrap", args.amount, opts.unit).catch(
+      (error: Error) => error,
+    );
+    if (result instanceof Error) return err(result)(json);
+
+    ok(wrapOutput("Unwrapped", result), result)(json);
+  },
+});
+
+async function convertNative(
+  chain: EvmChain,
+  direction: "wrap" | "unwrap",
+  amount: string,
+  unit: boolean,
+) {
+  const wei = parseWeiAmount(amount, unit);
+  const session = await openSession();
+  const wallet = requireWallet(session, chain);
+  const token = WRAPPED_NATIVE_TOKEN[chain];
+  const config = viemChainByChain[chain];
+  const client = createPublicClient({ chain: config, transport: http() });
+  const symbol = config.nativeCurrency.symbol;
+
+  const held =
+    direction === "wrap"
+      ? await client.getBalance({ address: wallet.address as Hex })
+      : await client.readContract({
+          address: token,
+          abi: weth9Abi,
+          functionName: "balanceOf",
+          args: [wallet.address as Hex],
+        });
+  if (held < wei)
+    throw new CliError(
+      "AMOUNT_INVALID",
+      `This wallet holds ${formatEther(held)} ${direction === "wrap" ? symbol : `W${symbol}`} but tried to ${direction} ${formatEther(wei)}.`,
+    );
+
+  const walletClient = createWalletClient({
+    account: toWalletAccount(session, wallet),
+    chain: config,
+    transport: http(),
+  });
+  const hash =
+    direction === "wrap"
+      ? await walletClient.writeContract({
+          address: token,
+          abi: weth9Abi,
+          functionName: "deposit",
+          value: wei,
+        })
+      : await walletClient.writeContract({
+          address: token,
+          abi: weth9Abi,
+          functionName: "withdraw",
+          args: [wei],
+        });
+  await client.waitForTransactionReceipt({ hash });
+
+  return {
+    chain,
+    direction,
+    address: wallet.address,
+    token,
+    symbol,
+    amount: wei.toString(),
+    formatted: formatEther(wei),
+    hash,
+  };
+}
+
+function parseWeiAmount(amount: string, unit: boolean): bigint {
+  if (unit) {
+    if (!/^\d+$/.test(amount))
+      throw new CliError("AMOUNT_INVALID", `${amount} is not an integer amount of wei.`);
+    return BigInt(amount);
+  }
+
+  if (!/^\d+(\.\d+)?$/.test(amount))
+    throw new CliError("AMOUNT_INVALID", `${amount} is not a token amount, e.g. 1.5 or 20.`);
+  return parseEther(amount);
+}
+
+function wrapOutput(verb: string, result: Awaited<ReturnType<typeof convertNative>>): string {
+  return [
+    success(
+      `${verb} ${result.formatted} ${result.direction === "wrap" ? result.symbol : `W${result.symbol}`}`,
+    ),
+    fields([
+      ["Chain", pc.bold(chainDisplayName[result.chain])],
+      ["Address", pc.cyan(result.address)],
+      ["Token", pc.cyan(result.token)],
+      ["Amount", `${result.formatted} ${pc.dim(`(${result.amount} wei)`)}`],
+      ["Tx", pc.cyan(result.hash)],
+    ]),
+  ].join("\n");
+}
+
 const evm = zodCommand({
   name: "evm",
   description: "EVM wallet operations",
 })
   .addCommand(evmSignMessage)
   .addCommand(evmSignTypedData)
-  .addCommand(evmSendTx);
+  .addCommand(evmSendTx)
+  .addCommand(evmWrap)
+  .addCommand(evmUnwrap);
 
 export const wallet = zodCommand({
   name: "wallet",

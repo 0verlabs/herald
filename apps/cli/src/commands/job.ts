@@ -1,4 +1,10 @@
-import { agenticCommerceByChain, type EvmChain, viemChainByChain, type Wallet } from "@hrld/core";
+import {
+  agenticCommerceByChain,
+  type EvmChain,
+  viemChainByChain,
+  type Wallet,
+  WRAPPED_NATIVE_TOKEN,
+} from "@hrld/core";
 import { erc8183AgenticCommerceAbi } from "@hrld/core/abis/erc8183";
 import pc from "picocolors";
 import {
@@ -25,7 +31,19 @@ import { activeChain } from "../utils/chain.ts";
 import { CliError } from "../utils/errors.ts";
 import { err, fields, isJson, ok, shortAddress, success, truncate } from "../utils/result.ts";
 
+// Contract enum order; jobStatuses[status] converts a getJob status to a name.
 const jobStatuses = ["OPEN", "FUNDED", "SUBMITTED", "COMPLETED", "REJECTED", "EXPIRED"] as const;
+
+// API filter values; BUDGET_SET is an OPEN job whose provider priced it.
+const jobStatusFilters = [
+  "OPEN",
+  "BUDGET_SET",
+  "FUNDED",
+  "SUBMITTED",
+  "COMPLETED",
+  "REJECTED",
+  "EXPIRED",
+] as const;
 
 const list = zodCommand({
   name: "list",
@@ -39,7 +57,7 @@ const list = zodCommand({
       .string()
       .optional()
       .describe("Only jobs assigned to this onchain agent id (requires --assigned)"),
-    status: z.enum(jobStatuses).optional().describe("s;Filter by job status"),
+    status: z.enum(jobStatusFilters).optional().describe("s;Filter by job status"),
     limit: z.coerce
       .number()
       .int()
@@ -85,7 +103,7 @@ const list = zodCommand({
 async function listJobs(opts: {
   assigned: boolean;
   agentId?: string;
-  status?: (typeof jobStatuses)[number];
+  status?: (typeof jobStatusFilters)[number];
   limit: number;
   skip: number;
 }) {
@@ -117,10 +135,11 @@ function jobLine(job: JobSummary, assigned: boolean): string {
 }
 
 function statusLabel(status: string): string {
-  const padded = status.padEnd(9);
+  const padded = status.padEnd(10);
   if (status === "COMPLETED") return pc.green(padded);
   if (status === "REJECTED" || status === "EXPIRED") return pc.red(padded);
   if (status === "SUBMITTED") return pc.yellow(padded);
+  if (status === "BUDGET_SET") return pc.magenta(padded);
   return pc.cyan(padded);
 }
 
@@ -271,7 +290,7 @@ const setBudget = zodCommand({
     token: z
       .string()
       .optional()
-      .describe("t;Payment token address (must be whitelisted); omit for the native token"),
+      .describe("t;Payment token address (must be whitelisted); omit for wrapped native (W0G)"),
     unit: z.boolean().prefault(false).describe("Treat <budget> as raw base units"),
   },
   action: async (args, opts) => {
@@ -288,10 +307,7 @@ const setBudget = zodCommand({
         fields([
           ["Job ID", pc.cyan(`#${result.jobId}`)],
           ["Budget", `${result.budget} ${pc.dim(`(${result.amount} base units)`)}`],
-          [
-            "Token",
-            result.token === zeroAddress ? `native ${pc.dim(`(${zeroAddress})`)}` : result.token,
-          ],
+          ["Token", result.token],
           ["Tx", pc.cyan(result.txHash)],
         ]),
         "",
@@ -309,7 +325,7 @@ async function setJobBudget(
   opts: { token?: string; unit: boolean },
   json: boolean,
 ) {
-  const token = resolveToken(opts.token);
+  const token = resolveToken(chain, opts.token);
   const allowed = await publicClient(chain).readContract({
     address: agenticCommerceByChain[chain],
     abi: erc8183AgenticCommerceAbi,
@@ -319,18 +335,15 @@ async function setJobBudget(
   if (!allowed)
     throw new CliError(
       "JOB_ACTION_FAILED",
-      `Token ${token === zeroAddress ? "native" : token} is not whitelisted by the escrow contract.`,
+      `Token ${token} is not whitelisted by the escrow contract.`,
       "Pass a whitelisted token with --token <address>.",
     );
 
-  const decimals =
-    token === zeroAddress
-      ? 18
-      : await publicClient(chain).readContract({
-          address: token,
-          abi: erc20Abi,
-          functionName: "decimals",
-        });
+  const decimals = await publicClient(chain).readContract({
+    address: token,
+    abi: erc20Abi,
+    functionName: "decimals",
+  });
   const amount = parseBudget(budget, opts.unit, decimals);
 
   progress(json, `Setting budget on job #${jobId}…`);
@@ -354,8 +367,8 @@ async function setJobBudget(
   };
 }
 
-function resolveToken(token: string | undefined): Address {
-  if (token === undefined) return zeroAddress;
+function resolveToken(chain: EvmChain, token: string | undefined): Address {
+  if (token === undefined) return WRAPPED_NATIVE_TOKEN[chain];
   if (!isAddress(token))
     throw new CliError("JOB_INPUT_INVALID", `${token} is not a token address.`);
   return token;
