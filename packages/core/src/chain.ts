@@ -13,3 +13,7 @@ export type SvmChain = z.infer<typeof svmChainSchema>;
 export const chains = [...evmChains, ...svmChains] as const;
 export const chainSchema = z.enum(chains);
 export type Chain = z.infer<typeof chainSchema>;
+
+export const EVM_CHAIN_IDS = {
+  "0g": 16661,
+} as const satisfies Record<EvmChain, number>;

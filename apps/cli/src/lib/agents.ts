@@ -1,17 +1,9 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { EvmChain } from "@hrld/core";
-import type { Address } from "viem";
 import { z } from "zod";
 import { CliError } from "../utils/errors.ts";
 import { jsonStringSchema } from "../utils/json.ts";
-
-// ERC-8004 identity registries the CLI syncs agent cards to; addresses match
-// apps/api/src/config/contracts.ts for the same chains.
-export const identityRegistryByChain = {
-  "0g": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
-} as const satisfies Record<EvmChain, Address>;
 
 export const AGENT_CARD_TYPE = "https://eips.ethereum.org/EIPS/eip-8004#registration-v1";
 

@@ -283,6 +283,9 @@ importers:
       '@hono/zod-openapi':
         specifier: 'catalog:'
         version: 1.6.3(hono@4.13.9)(zod@4.6.5)
+      '@hrld/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@hrld/utils':
         specifier: workspace:*
         version: link:../../packages/utils

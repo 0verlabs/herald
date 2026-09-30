@@ -12,9 +12,6 @@ import {
   listJobsOutputSchema,
   listJobsQuerySchema,
 } from "../schemas/jobs";
-import { jobEntityId } from "../utils/job";
-import { CHAIN_IDS } from "../config/chain";
-import { ERC8183 } from "../config/contracts";
 
 // The escrow only flips a job to EXPIRED when someone calls claimRefund, so a
 // job past its deadline can still read OPEN, FUNDED, or SUBMITTED on-chain.
@@ -70,9 +67,6 @@ const toJobSummary = (job: JobSummaryFragment, nowSeconds: number) => ({
     txHash: activity.txHash,
   })),
 });
-
-const _entityId = (jobId: string) =>
-  jobEntityId(CHAIN_IDS.zeroG, ERC8183[CHAIN_IDS.zeroG].agenticCommerce, jobId);
 
 export const listJobsRoute = createRoute({
   method: "get",

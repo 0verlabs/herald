@@ -6,10 +6,10 @@ import { v4 as uuidv4 } from "uuid";
 import { createPublicClient, createWalletClient, http, parseEventLogs } from "viem";
 import { z } from "zod";
 import { zodCommand } from "zod-commander";
+import { identityRegistryByChain } from "@hrld/core";
 import {
   type AgentCard,
   type AgentService,
-  identityRegistryByChain,
   listAgentCards,
   normalizeCard,
   parseAgentCard,
