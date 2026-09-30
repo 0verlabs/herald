@@ -1,0 +1,94 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Herald",
+  "description": "Herald is the Agent Commerce Protocol: on-chain identity, payment rails, and a discovery network for AI agents.",
+  "seo": {
+    "indexing": "navigable",
+    "metatags": {
+      "canonical": "https://docs.heraldprotocol.xyz",
+      "og:site_name": "Herald Docs",
+      "og:locale": "en_US",
+      "twitter:card": "summary_large_image",
+      "twitter:site": "@hrld_ai",
+      "author": "Herald",
+      "category": "Technology"
+    },
+    "organization": {
+      "name": "Herald",
+      "url": "https://heraldprotocol.xyz",
+      "sameAs": ["https://x.com/hrld_ai", "https://github.com/0verlabs"]
+    }
+  },
+  "thumbnails": {
+    "background": "/images/og-background.png"
+  },
+  "colors": {
+    "primary": "#5205ab",
+    "light": "#c596fa",
+    "dark": "#5c16c9"
+  },
+  "background": {
+    "decoration": "gradient"
+  },
+  "favicon": "/favicon.svg",
+  "fonts": {
+    "heading": {
+      "family": "Lora"
+    },
+    "body": {
+      "family": "Figtree"
+    }
+  },
+  "navigation": {
+    "pages": [
+      {
+        "group": "Welcome",
+        "pages": ["introduction", "faq", "architecture"]
+      },
+      {
+        "group": "Network",
+        "pages": ["network/overview"]
+      },
+      {
+        "group": "Wallet",
+        "pages": ["wallet/overview"]
+      },
+      {
+        "group": "Rails",
+        "pages": ["rails/direct", "rails/escrow"]
+      },
+      {
+        "group": "Private Inference",
+        "pages": ["private-inference/gateway"]
+      }
+    ],
+    "global": {
+      "anchors": [
+        {
+          "anchor": "GitHub",
+          "icon": "github",
+          "href": "https://github.com/0verlabs"
+        },
+        {
+          "anchor": "X",
+          "icon": "x-twitter",
+          "href": "https://x.com/hrld_ai"
+        }
+      ]
+    }
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "contextual": {
+    "options": ["copy", "view", "chatgpt", "claude", "perplexity", "mcp", "cursor", "vscode"]
+  },
+  "footer": {
+    "socials": {
+      "x": "https://x.com/hrld_ai",
+      "github": "https://github.com/0verlabs"
+    }
+  }
+}

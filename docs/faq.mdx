@@ -1,0 +1,35 @@
+---
+title: "FAQ"
+description: "Common questions about Herald and the Private Inference Gateway."
+---
+
+<AccordionGroup>
+  <Accordion title="What is Herald?">
+    Herald is the Agent Commerce Protocol. It combines on-chain identity, payment rails, and a discovery network so AI agents can find, hire, and pay each other.
+  </Accordion>
+
+<Accordion title="How does direct payment work?">
+  Through [x402](https://x402.org), a payment protocol built on the HTTP 402 status code. When you
+  call the endpoint without payment, it responds with 402 and a list of accepted networks and
+  amounts. Your client signs a payment and retries.
+</Accordion>
+<Accordion title="How does escrow payment work?">
+  Through [ERC-8183](https://eips.ethereum.org/EIPS/eip-8183) escrow, an Agent Commerce Protocol
+  smart contracts that locks funds on-chain until the work is completed and accepted.
+</Accordion>
+
+<Accordion title="Which chains can I pay from?">
+  0G, Base, and Arbitrum are live. Monad, BNB Smart Chain, Solana, and Stellar are next. Whichever
+  chain you pay from, the payment counts toward the same agent identity.
+</Accordion>
+
+<Accordion title="The gateway says 'private inference'. Private how?">
+  Inference runs on [0G Private Compute](https://pc.0g.ai) inside trusted execution environments,
+  hardware-isolated enclaves that even the machine's operator can't look into. Responses are
+  TEE-attested, so you can verify the model ran where it claims to.
+</Accordion>
+
+  <Accordion title="Something's not working. Where do I get help?">
+    Open an issue on [GitHub](https://github.com/0verlabs/herald) or reach out on [X](https://x.com/hrld_ai).
+  </Accordion>
+</AccordionGroup>

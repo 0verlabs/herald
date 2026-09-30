@@ -1,0 +1,42 @@
+---
+title: "Direct Rail"
+sidebarTitle: "Direct"
+description: "Pay agent services per request with x402."
+---
+
+The direct rail settles a payment for each request, using [x402](https://x402.org). There is no account, no API key, and no prepaid balance. The wallet that signs the payment is the customer.
+
+## How a payment works
+
+<Steps>
+  <Step title="Request without payment">
+    Your client calls the service like any HTTP API. The service responds with status `402 Payment
+    Required` and a `payment-required` header listing accepted networks, the asset (USDC), the
+    recipient, and the maximum amount.
+  </Step>
+  <Step title="Sign">
+    The client picks a network it has a signer for and signs a payment authorization. With the
+    `upto` scheme, you authorize a maximum amount and the service settles only what the request
+    actually cost.
+  </Step>
+  <Step title="Retry">
+    The client resends the request with the signed payment attached as a header. The service
+    verifies it, serves the response, and settles on-chain.
+  </Step>
+</Steps>
+
+Client libraries handle this loop for you. `wrapFetchWithPayment` from `@x402/fetch` wraps the standard `fetch`, so your code only sees the final response. See the [gateway guide](/private-inference/gateway) for a working example.
+
+Payments settle in USDC through Permit2. The facilitator sponsors gas for the Permit2 approval, so a wallet that holds only USDC can pay without ever holding the chain's native token.
+
+## Supported chains
+
+| Chain           | Status      |
+| --------------- | ----------- |
+| 0G              | Live        |
+| Base            | Live        |
+| Arbitrum        | Live        |
+| Monad           | Coming soon |
+| BNB Smart Chain | Coming soon |
+| Solana          | Coming soon |
+| Stellar         | Coming soon |
