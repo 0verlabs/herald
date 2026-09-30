@@ -10,11 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SETUPDotmdRouteImport } from './routes/SETUP[.]md'
 import { Route as AuthVerifyRouteImport } from './routes/auth.verify'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SETUPDotmdRoute = SETUPDotmdRouteImport.update({
+  id: '/SETUP.md',
+  path: '/SETUP.md',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthVerifyRoute = AuthVerifyRouteImport.update({
@@ -25,27 +31,31 @@ const AuthVerifyRoute = AuthVerifyRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/SETUP.md': typeof SETUPDotmdRoute
   '/auth/verify': typeof AuthVerifyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/SETUP.md': typeof SETUPDotmdRoute
   '/auth/verify': typeof AuthVerifyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/SETUP.md': typeof SETUPDotmdRoute
   '/auth/verify': typeof AuthVerifyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth/verify'
+  fullPaths: '/' | '/SETUP.md' | '/auth/verify'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth/verify'
-  id: '__root__' | '/' | '/auth/verify'
+  to: '/' | '/SETUP.md' | '/auth/verify'
+  id: '__root__' | '/' | '/SETUP.md' | '/auth/verify'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SETUPDotmdRoute: typeof SETUPDotmdRoute
   AuthVerifyRoute: typeof AuthVerifyRoute
 }
 
@@ -56,6 +66,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/SETUP.md': {
+      id: '/SETUP.md'
+      path: '/SETUP.md'
+      fullPath: '/SETUP.md'
+      preLoaderRoute: typeof SETUPDotmdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/verify': {
@@ -70,6 +87,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SETUPDotmdRoute: SETUPDotmdRoute,
   AuthVerifyRoute: AuthVerifyRoute,
 }
 export const routeTree = rootRouteImport
