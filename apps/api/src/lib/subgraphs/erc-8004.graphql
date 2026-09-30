@@ -3,8 +3,10 @@
 # queries filter on registration_not: null, and single-agent queries use the
 # list field with an id filter so agents without a registration return [].
 # Herald agents keep their whole card onchain as a data: URI, so every query
-# also hardcodes agentURIKind: DATA — agents hosted elsewhere are invisible
-# to the API.
+# also filters on agentURIKind: DATA — agents hosted elsewhere are invisible
+# to the API. The list and search filters are built in the handler instead of
+# inline here: a null variable inside a `where` object matches "field is null"
+# rather than being ignored, so an omitted $owner would filter out every agent.
 fragment AgentSummary on Agent {
   id: agentId
   owner {
@@ -31,25 +33,19 @@ query GetAgent($id: Bytes!) {
   }
 }
 
-query ListAgents($first: Int, $skip: Int, $owner: String) {
-  agents(
-    first: $first
-    skip: $skip
-    orderBy: agentId
-    orderDirection: asc
-    where: { registration_not: null, agentURIKind: DATA, owner: $owner }
-  ) {
+query ListAgents($first: Int, $skip: Int, $where: Agent_filter) {
+  agents(first: $first, skip: $skip, orderBy: agentId, orderDirection: asc, where: $where) {
     ...AgentSummary
   }
 }
 
-query SearchAgentProfiles($text: String!, $first: Int, $skip: Int, $owner: String) {
-  agentProfileSearch(
-    text: $text
-    first: $first
-    skip: $skip
-    where: { agent_: { agentURIKind: DATA, owner: $owner } }
-  ) {
+query SearchAgentProfiles(
+  $text: String!
+  $first: Int
+  $skip: Int
+  $where: AgentRegistration_filter
+) {
+  agentProfileSearch(text: $text, first: $first, skip: $skip, where: $where) {
     agent {
       ...AgentSummary
     }

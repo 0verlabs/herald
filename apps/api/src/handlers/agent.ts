@@ -157,14 +157,18 @@ export const agentHandlers = new OpenAPIHono<Env>()
             text,
             first: query.limit,
             skip: query.skip,
-            owner,
+            where: { agent_: { agentURIKind: "DATA", ...(owner ? { owner } : {}) } },
           })
         ).agentProfileSearch.map((profile) => profile.agent)
       : (
           await c.var.erc8004.ListAgents({
             first: query.limit,
             skip: query.skip,
-            owner,
+            where: {
+              registration_not: null,
+              agentURIKind: "DATA",
+              ...(owner ? { owner } : {}),
+            },
           })
         ).agents;
 
