@@ -2801,7 +2801,7 @@ export type UriKind =
   | 'NONE'
   | 'OTHER';
 
-export type AgentSummaryFragment = { createdAt: string, createdAtTransaction: string, id: string, feedbackCount: string, owner: { address: string } | null, profile:
+export type AgentSummaryFragment = { agentURI: string, createdAt: string, createdAtTransaction: string, id: string, feedbackCount: string, owner: { address: string } | null, profile:
     | { name: string | null, description: string | null, image: string | null }
     | { name: string | null, description: string | null, image: string | null }
    | null, metadata: Array<{ key: string, value: string }> };
@@ -2811,7 +2811,7 @@ export type GetAgentQueryVariables = Exact<{
 }>;
 
 
-export type GetAgentQuery = { agents: Array<{ createdAt: string, createdAtTransaction: string, id: string, feedbackCount: string, owner: { address: string } | null, profile:
+export type GetAgentQuery = { agents: Array<{ agentURI: string, createdAt: string, createdAtTransaction: string, id: string, feedbackCount: string, owner: { address: string } | null, profile:
       | { name: string | null, description: string | null, image: string | null }
       | { name: string | null, description: string | null, image: string | null }
      | null, metadata: Array<{ key: string, value: string }> }> };
@@ -2823,7 +2823,7 @@ export type ListAgentsQueryVariables = Exact<{
 }>;
 
 
-export type ListAgentsQuery = { agents: Array<{ createdAt: string, createdAtTransaction: string, id: string, feedbackCount: string, owner: { address: string } | null, profile:
+export type ListAgentsQuery = { agents: Array<{ agentURI: string, createdAt: string, createdAtTransaction: string, id: string, feedbackCount: string, owner: { address: string } | null, profile:
       | { name: string | null, description: string | null, image: string | null }
       | { name: string | null, description: string | null, image: string | null }
      | null, metadata: Array<{ key: string, value: string }> }> };
@@ -2836,7 +2836,7 @@ export type SearchAgentProfilesQueryVariables = Exact<{
 }>;
 
 
-export type SearchAgentProfilesQuery = { agentProfileSearch: Array<{ agent: { createdAt: string, createdAtTransaction: string, id: string, feedbackCount: string, owner: { address: string } | null, profile:
+export type SearchAgentProfilesQuery = { agentProfileSearch: Array<{ agent: { agentURI: string, createdAt: string, createdAtTransaction: string, id: string, feedbackCount: string, owner: { address: string } | null, profile:
         | { name: string | null, description: string | null, image: string | null }
         | { name: string | null, description: string | null, image: string | null }
        | null, metadata: Array<{ key: string, value: string }> } }> };
@@ -2875,6 +2875,7 @@ export const AgentSummaryFragmentDoc = gql`
     key
     value
   }
+  agentURI
   feedbackCount: activeFeedbackCount
   createdAt
   createdAtTransaction
@@ -2882,7 +2883,7 @@ export const AgentSummaryFragmentDoc = gql`
     `;
 export const GetAgentDocument = gql`
     query GetAgent($id: Bytes!) {
-  agents(first: 1, where: { id: $id, registration_not: null }) {
+  agents(first: 1, where: { id: $id, registration_not: null, agentURIKind: DATA }) {
     ...AgentSummary
   }
 }
@@ -2911,7 +2912,7 @@ export const SearchAgentProfilesDocument = gql`
     ${AgentSummaryFragmentDoc}`;
 export const GetAgentServicesDocument = gql`
     query GetAgentServices($id: Bytes!) {
-  agents(first: 1, where: { id: $id, registration_not: null }) {
+  agents(first: 1, where: { id: $id, registration_not: null, agentURIKind: DATA }) {
     registration {
       ... on AgentRegistration {
         services(orderBy: position, orderDirection: asc) {
@@ -2937,7 +2938,7 @@ export const GetAgentServicesDocument = gql`
     `;
 export const GetAgentFeedbacksDocument = gql`
     query GetAgentFeedbacks($id: Bytes!, $first: Int, $skip: Int) {
-  agents(first: 1, where: { id: $id, registration_not: null }) {
+  agents(first: 1, where: { id: $id, registration_not: null, agentURIKind: DATA }) {
     feedback(
       first: $first
       skip: $skip

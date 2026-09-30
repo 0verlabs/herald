@@ -1,22 +1,28 @@
-import { type EvmChain, viemChainByChain } from "@hrld/core";
+import { type EvmChain, viemChainByChain, WRAPPED_NATIVE_TOKEN } from "@hrld/core";
+import { weth9Abi } from "@hrld/core/abis/weth9";
 import pc from "picocolors";
 import {
   createPublicClient,
   createWalletClient,
   erc20Abi,
   formatEther,
-  formatUnits,
   type Hex,
   http,
 } from "viem";
 import { z } from "zod";
 import { zodCommand } from "zod-commander";
-import { getCached, setCached } from "../lib/cache.ts";
 import { openSession, requireWallet } from "../lib/session.ts";
+import {
+  formatTokenAmount,
+  parseTokenAmount,
+  readTokenMetadata,
+  tokenLabel,
+} from "../lib/token.ts";
 import { toWalletAccount } from "../lib/viem.ts";
 import { activeChain, chainDisplayName, networkDisplayName } from "../utils/chain.ts";
+import { CliError } from "../utils/errors.ts";
 import { jsonStringSchema } from "../utils/json.ts";
-import { err, fields, isJson, ok } from "../utils/result.ts";
+import { err, fields, isJson, ok, success } from "../utils/result.ts";
 
 const evmSignMessage = zodCommand({
   name: "sign-message",
@@ -247,42 +253,258 @@ async function readTokenBalance(chain: EvmChain, token: string) {
   const session = await openSession();
   const wallet = requireWallet(session, chain);
   const client = createPublicClient({ chain: viemChainByChain[chain], transport: http() });
-  const contract = { address: token as Hex, abi: erc20Abi } as const;
 
-  const [wei, { decimals, symbol }] = await Promise.all([
-    client.readContract({ ...contract, functionName: "balanceOf", args: [wallet.address as Hex] }),
-    readTokenMetadata(client, chain, contract),
+  const [wei, metadata] = await Promise.all([
+    client.readContract({
+      address: token as Hex,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [wallet.address as Hex],
+    }),
+    readTokenMetadata(chain, token as Hex),
   ]);
 
   return {
     chain,
     address: wallet.address,
-    token: contract.address,
-    balance: `${formatUnits(wei, decimals)} ${symbol}`,
+    token,
+    balance: formatTokenAmount(wei, metadata),
   };
 }
 
-type TokenMetadata = { decimals: number; symbol: string };
+const transfer = zodCommand({
+  name: "transfer",
+  description: "Send native or ERC-20 tokens from the active wallet",
+  args: {
+    address: z
+      .string()
+      .regex(/^0x[0-9a-fA-F]{40}$/, "Expected a 0x-prefixed address")
+      .describe("Recipient address"),
+    amount: z.string().describe("Amount to send in token units, e.g. 1.5"),
+  },
+  opts: {
+    token: z
+      .string()
+      .regex(/^0x[0-9a-fA-F]{40}$/, "Expected a 0x-prefixed address")
+      .optional()
+      .describe("t;ERC-20 token contract address; defaults to the chain's native token"),
+    "as-unit": z.boolean().prefault(false).describe("Treat <amount> as raw base units"),
+  },
+  action: async (args, opts) => {
+    const json = isJson(transfer);
+    // commander camelCases --as-unit; zod-commander's opts type keeps the literal key.
+    const asUnit = (opts as { asUnit?: boolean }).asUnit === true;
 
-async function readTokenMetadata(
-  client: ReturnType<typeof createPublicClient>,
+    const result = await transferTokens(
+      activeChain,
+      args.address,
+      args.amount,
+      opts.token,
+      asUnit,
+    ).catch((error: Error) => error);
+    if (result instanceof Error) return err(result)(json);
+
+    ok(
+      [
+        success(`Sent ${result.formatted}`),
+        fields([
+          ["Chain", pc.bold(chainDisplayName[result.chain])],
+          ["From", pc.cyan(result.from)],
+          ["To", pc.cyan(result.to)],
+          ["Token", result.token ? tokenLabel(result.token, result.symbol) : "native"],
+          ["Amount", `${result.formatted} ${pc.dim(`(${result.amount} base units)`)}`],
+          ["Tx", pc.cyan(result.hash)],
+        ]),
+      ].join("\n"),
+      result,
+    )(json);
+  },
+});
+
+async function transferTokens(
   chain: EvmChain,
-  contract: { address: Hex; abi: typeof erc20Abi },
-): Promise<TokenMetadata> {
-  // Decimals and symbol are immutable for a deployed contract, so they cache
-  // forever; only the balance itself is read fresh on every call.
-  const key = `${chain}:${contract.address.toLowerCase()}`;
-  const cached = getCached<TokenMetadata>("token-metadata", key);
-  if (cached) return cached;
+  to: string,
+  amount: string,
+  token: string | undefined,
+  asUnit: boolean,
+) {
+  const session = await openSession();
+  const wallet = requireWallet(session, chain);
+  const config = viemChainByChain[chain];
+  const client = createPublicClient({ chain: config, transport: http() });
+  const metadata = token
+    ? await readTokenMetadata(chain, token as Hex)
+    : { decimals: 18, symbol: config.nativeCurrency.symbol };
+  if (token && !asUnit && !metadata)
+    throw new CliError(
+      "AMOUNT_INVALID",
+      `Could not read the decimals of token ${token}.`,
+      "Pass --as-unit with the amount in raw base units.",
+    );
 
-  const [decimals, symbol] = await Promise.all([
-    client.readContract({ ...contract, functionName: "decimals" }),
-    client.readContract({ ...contract, functionName: "symbol" }),
-  ]);
+  const wei = parseTokenAmount(amount, asUnit, metadata?.decimals ?? 18, "AMOUNT_INVALID");
+  const held = token
+    ? await client.readContract({
+        address: token as Hex,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [wallet.address as Hex],
+      })
+    : await client.getBalance({ address: wallet.address as Hex });
+  if (held < wei)
+    throw new CliError(
+      "AMOUNT_INVALID",
+      `This wallet holds ${formatTokenAmount(held, metadata)} but tried to send ${formatTokenAmount(wei, metadata)}.`,
+    );
 
-  const metadata = { decimals, symbol };
-  setCached("token-metadata", key, metadata);
-  return metadata;
+  const walletClient = createWalletClient({
+    account: toWalletAccount(session, wallet),
+    chain: config,
+    transport: http(),
+  });
+  const hash = token
+    ? await walletClient.writeContract({
+        address: token as Hex,
+        abi: erc20Abi,
+        functionName: "transfer",
+        args: [to as Hex, wei],
+      })
+    : await walletClient.sendTransaction({ to: to as Hex, value: wei });
+  await client.waitForTransactionReceipt({ hash });
+
+  return {
+    chain,
+    from: wallet.address,
+    to,
+    token: token ?? null,
+    symbol: metadata?.symbol ?? null,
+    amount: wei.toString(),
+    formatted: formatTokenAmount(wei, metadata),
+    hash,
+  };
+}
+
+const evmWrap = zodCommand({
+  name: "wrap",
+  description: "Wrap native tokens into the wrapped native token (W0G)",
+  args: {
+    amount: z.string().describe("Amount in native units, e.g. 1.5"),
+  },
+  opts: {
+    "as-unit": z.boolean().prefault(false).describe("Treat <amount> as raw wei"),
+  },
+  action: async (args, opts) => {
+    const json = isJson(evmWrap);
+    // commander camelCases --as-unit; zod-commander's opts type keeps the literal key.
+    const asUnit = (opts as { asUnit?: boolean }).asUnit === true;
+
+    const result = await convertNative(activeChain, "wrap", args.amount, asUnit).catch(
+      (error: Error) => error,
+    );
+    if (result instanceof Error) return err(result)(json);
+
+    ok(wrapOutput("Wrapped", result), result)(json);
+  },
+});
+
+const evmUnwrap = zodCommand({
+  name: "unwrap",
+  description: "Unwrap wrapped native tokens (W0G) back into native tokens",
+  args: {
+    amount: z.string().describe("Amount in native units, e.g. 1.5"),
+  },
+  opts: {
+    "as-unit": z.boolean().prefault(false).describe("Treat <amount> as raw wei"),
+  },
+  action: async (args, opts) => {
+    const json = isJson(evmUnwrap);
+    // commander camelCases --as-unit; zod-commander's opts type keeps the literal key.
+    const asUnit = (opts as { asUnit?: boolean }).asUnit === true;
+
+    const result = await convertNative(activeChain, "unwrap", args.amount, asUnit).catch(
+      (error: Error) => error,
+    );
+    if (result instanceof Error) return err(result)(json);
+
+    ok(wrapOutput("Unwrapped", result), result)(json);
+  },
+});
+
+async function convertNative(
+  chain: EvmChain,
+  direction: "wrap" | "unwrap",
+  amount: string,
+  asUnit: boolean,
+) {
+  const wei = parseTokenAmount(amount, asUnit, 18, "AMOUNT_INVALID");
+  const session = await openSession();
+  const wallet = requireWallet(session, chain);
+  const token = WRAPPED_NATIVE_TOKEN[chain];
+  const config = viemChainByChain[chain];
+  const client = createPublicClient({ chain: config, transport: http() });
+  const symbol = config.nativeCurrency.symbol;
+
+  const held =
+    direction === "wrap"
+      ? await client.getBalance({ address: wallet.address as Hex })
+      : await client.readContract({
+          address: token,
+          abi: weth9Abi,
+          functionName: "balanceOf",
+          args: [wallet.address as Hex],
+        });
+  if (held < wei)
+    throw new CliError(
+      "AMOUNT_INVALID",
+      `This wallet holds ${formatEther(held)} ${direction === "wrap" ? symbol : `W${symbol}`} but tried to ${direction} ${formatEther(wei)}.`,
+    );
+
+  const walletClient = createWalletClient({
+    account: toWalletAccount(session, wallet),
+    chain: config,
+    transport: http(),
+  });
+  const hash =
+    direction === "wrap"
+      ? await walletClient.writeContract({
+          address: token,
+          abi: weth9Abi,
+          functionName: "deposit",
+          value: wei,
+        })
+      : await walletClient.writeContract({
+          address: token,
+          abi: weth9Abi,
+          functionName: "withdraw",
+          args: [wei],
+        });
+  await client.waitForTransactionReceipt({ hash });
+
+  return {
+    chain,
+    direction,
+    address: wallet.address,
+    token,
+    symbol,
+    amount: wei.toString(),
+    formatted: formatEther(wei),
+    hash,
+  };
+}
+
+function wrapOutput(verb: string, result: Awaited<ReturnType<typeof convertNative>>): string {
+  return [
+    success(
+      `${verb} ${result.formatted} ${result.direction === "wrap" ? result.symbol : `W${result.symbol}`}`,
+    ),
+    fields([
+      ["Chain", pc.bold(chainDisplayName[result.chain])],
+      ["Address", pc.cyan(result.address)],
+      ["Token", pc.cyan(result.token)],
+      ["Amount", `${result.formatted} ${pc.dim(`(${result.amount} wei)`)}`],
+      ["Tx", pc.cyan(result.hash)],
+    ]),
+  ].join("\n");
 }
 
 const evm = zodCommand({
@@ -291,7 +513,9 @@ const evm = zodCommand({
 })
   .addCommand(evmSignMessage)
   .addCommand(evmSignTypedData)
-  .addCommand(evmSendTx);
+  .addCommand(evmSendTx)
+  .addCommand(evmWrap)
+  .addCommand(evmUnwrap);
 
 export const wallet = zodCommand({
   name: "wallet",
@@ -299,4 +523,5 @@ export const wallet = zodCommand({
 })
   .addCommand(address)
   .addCommand(balance)
+  .addCommand(transfer)
   .addCommand(evm);

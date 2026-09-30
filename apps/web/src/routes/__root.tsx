@@ -1,6 +1,14 @@
 import { HeadContent, Outlet, Scripts, createRootRoute } from "@tanstack/react-router";
 import "@hrld/ui/globals.css";
+import { FileQuestionMarkIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@hrld/ui/components/empty";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -14,8 +22,10 @@ export const Route = createRootRoute({
         title: "Herald",
       },
     ],
+    links: [{ rel: "icon", type: "image/svg+xml", href: "/logo.svg" }],
   }),
   component: RootComponent,
+  notFoundComponent: NotFound,
 });
 
 function RootComponent() {
@@ -23,6 +33,22 @@ function RootComponent() {
     <RootDocument>
       <Outlet />
     </RootDocument>
+  );
+}
+
+function NotFound() {
+  return (
+    <main className="flex min-h-screen items-center justify-center px-6">
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <FileQuestionMarkIcon />
+          </EmptyMedia>
+          <EmptyTitle>404 - Page not found</EmptyTitle>
+          <EmptyDescription>The page you&apos;re looking for doesn&apos;t exist.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    </main>
   );
 }
 

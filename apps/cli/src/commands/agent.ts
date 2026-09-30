@@ -6,26 +6,39 @@ import { v4 as uuidv4 } from "uuid";
 import { createPublicClient, createWalletClient, http, parseEventLogs } from "viem";
 import { z } from "zod";
 import { zodCommand } from "zod-commander";
+import { identityRegistryByChain } from "@hrld/core";
 import {
   type AgentCard,
   type AgentService,
-  identityRegistryByChain,
   listAgentCards,
   normalizeCard,
   parseAgentCard,
   parseAgentService,
+  parseAgentUriCard,
   readAgentCard,
   requireJsonObject,
   toAgentUri,
   writeAgentCard,
 } from "../lib/agents.ts";
+import { api, requestJson, requireOnchainAgentId } from "../lib/api.ts";
 import { openSession, requireUserId, requireWallet } from "../lib/session.ts";
 import type { WalletSession } from "../lib/privy.ts";
 import { toWalletAccount } from "../lib/viem.ts";
 import { activeChain, chainDisplayName } from "../utils/chain.ts";
 import { CliError } from "../utils/errors.ts";
 import { jsonStringSchema } from "../utils/json.ts";
-import { err, fields, isJson, ok, success } from "../utils/result.ts";
+import {
+  err,
+  fields,
+  formatRelative,
+  formatTimestamp,
+  isJson,
+  ok,
+  shortAddress,
+  success,
+  truncate,
+} from "../utils/result.ts";
+import { job } from "./job.ts";
 
 const list = zodCommand({
   name: "list",
@@ -38,13 +51,16 @@ const list = zodCommand({
     if (result.agents.length === 0)
       return ok(pc.dim("No agents yet. Run `hrld agent create`."), result)(json);
 
+    const nameWidth = Math.max(
+      ...result.agents.map((agent) => truncate(agent.card.name, 24).length),
+    );
     ok(
       result.agents
         .map(
           (agent) =>
-            `${pc.cyan(agent.id)}  ${agent.card.name}  ${pc.dim(
-              `${agent.card.services.length} service${agent.card.services.length === 1 ? "" : "s"}, ${registrationLabel(agent.card)}`,
-            )}`,
+            `${pc.cyan(agent.id)}  ${pc.bold(truncate(agent.card.name, 24).padEnd(nameWidth))}  ${pc.dim(
+              `${agent.card.services.length} service${agent.card.services.length === 1 ? "" : "s"} · ${registrationLabel(agent.card)}`,
+            )}${agent.card.active ? "" : `  ${pc.yellow("inactive")}`}`,
         )
         .join("\n"),
       result,
@@ -60,6 +76,73 @@ async function listAgents() {
 function registrationLabel(card: AgentCard): string {
   const registration = card.registrations?.[0];
   return registration ? `synced as #${registration.agentId}` : "local only";
+}
+
+const discover = zodCommand({
+  name: "discover",
+  description: "Search onchain ACP agents",
+  args: {
+    query: z.string().describe("Search text"),
+  },
+  opts: {
+    limit: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(1000)
+      .prefault(20)
+      .describe("l;Maximum results per page"),
+    skip: z.coerce.number().int().nonnegative().prefault(0).describe("Number of results to skip"),
+  },
+  action: async (args, opts) => {
+    const json = isJson(discover);
+
+    const result = await discoverAgents(args.query, opts.limit, opts.skip).catch(
+      (error: Error) => error,
+    );
+    if (result instanceof Error) return err(result)(json);
+    if (result.agents.length === 0)
+      return ok(pc.dim("No agents matched. Try a broader query."), result)(json);
+
+    const rows = result.agents.map((agent) => ({
+      id: `#${agent.id}`,
+      name: truncate(agent.name, 24),
+      description: truncate(agent.description, 48),
+      meta: [
+        shortAddress(agent.owner),
+        ...(agent.feedbackCount > 0 ? [`★ ${agent.feedbackCount}`] : []),
+      ].join(" · "),
+    }));
+    const width = {
+      id: Math.max(...rows.map((row) => row.id.length)),
+      name: Math.max(...rows.map((row) => row.name.length)),
+      description: Math.max(...rows.map((row) => row.description.length)),
+    };
+
+    ok(
+      [
+        ...rows.map((row) =>
+          [
+            pc.cyan(row.id.padEnd(width.id)),
+            pc.bold(row.name.padEnd(width.name)),
+            row.description.padEnd(width.description),
+            pc.dim(row.meta),
+          ].join("  "),
+        ),
+        ...(result.agents.length === opts.limit
+          ? ["", pc.dim(`More results may exist — re-run with --skip ${opts.skip + opts.limit}.`)]
+          : []),
+      ].join("\n"),
+      result,
+    )(json);
+  },
+});
+
+async function discoverAgents(query: string, limit: number, skip: number) {
+  const agents = await requestJson(
+    api.v1.agents.$get({ query: { q: query, limit: String(limit), skip: String(skip) } }),
+  );
+  return { query, limit, skip, agents };
 }
 
 const create = zodCommand({
@@ -128,12 +211,36 @@ async function createAgent(opts: {
 
 const profile = zodCommand({
   name: "profile",
-  description: "Show a local agent's card",
+  description: "Show a local agent's card, or an onchain ACP agent's profile",
   args: {
-    agentId: z.string().describe("Local agent id (uuid)"),
+    agentId: z.string().describe("Local agent id (uuid), or onchain agent id with --acp"),
   },
-  action: async (args) => {
+  opts: {
+    acp: z.boolean().prefault(false).describe("Look up <agentId> as an onchain ACP agent id"),
+  },
+  action: async (args, opts) => {
     const json = isJson(profile);
+
+    if (opts.acp) {
+      const result = await readAcpProfile(args.agentId).catch((error: Error) => error);
+      if (result instanceof Error) return err(result)(json);
+
+      return ok(
+        fields([
+          ["Agent ID", pc.cyan(`#${result.id}`)],
+          ["Name", pc.bold(result.name)],
+          ["Description", result.description],
+          ...(result.image ? [["Image", result.image] as [string, unknown]] : []),
+          ["Owner", result.owner],
+          ["Feedback", result.feedbackCount > 0 ? `★ ${result.feedbackCount}` : pc.dim("none yet")],
+          [
+            "Created",
+            `${formatTimestamp(result.createdAt)} ${pc.dim(`(${formatRelative(result.createdAt)})`)}`,
+          ],
+        ]),
+        result,
+      )(json);
+    }
 
     const result = await readProfile(args.agentId).catch((error: Error) => error);
     if (result instanceof Error) return err(result)(json);
@@ -146,6 +253,7 @@ const profile = zodCommand({
           ["Name", pc.bold(result.card.name)],
           ["Description", result.card.description],
           ...(result.card.image ? [["Image", result.card.image] as [string, unknown]] : []),
+          ["Status", statusLabel(result.card)],
         ]),
         "",
         pc.dim("Registrations"),
@@ -154,7 +262,7 @@ const profile = zodCommand({
               (registration) =>
                 `  #${registration.agentId} on ${pc.cyan(registration.agentRegistry)}`,
             )
-          : [pc.dim("  none — run `hrld agent sync <agentId>`")]),
+          : [pc.dim("  none — run `hrld agent push <agentId>`")]),
         "",
         pc.dim("Services"),
         ...(result.card.services.length > 0
@@ -169,6 +277,21 @@ const profile = zodCommand({
 async function readProfile(agentId: string) {
   const userId = await requireUserId();
   return { id: agentId, card: await readAgentCard(userId, agentId) };
+}
+
+async function readAcpProfile(agentId: string) {
+  return requestJson(
+    api.v1.agents[":agentId"].$get({ param: { agentId: requireOnchainAgentId(agentId) } }),
+    acpAgentNotFound(agentId),
+  );
+}
+
+function acpAgentNotFound(agentId: string): CliError {
+  return new CliError(
+    "AGENT_NOT_FOUND",
+    `No onchain agent with id ${agentId}.`,
+    "Run `hrld agent discover <query>` to find onchain agents.",
+  );
 }
 
 const update = zodCommand({
@@ -232,7 +355,7 @@ async function updateAgent(
 }
 
 // --data and --file both carry arbitrary JSON for card fields the flags don't
-// cover (active, x402Support, supportedTrust, …); only one source may be
+// cover (x402Support, supportedTrust, …); only one source may be
 // given. Legacy `endpoints` input is normalized here so merges into cards that
 // already have `services` don't leave both fields behind.
 async function resolveCardInput(opts: {
@@ -260,14 +383,104 @@ function stampUpdatedAt(card: AgentCard, provided: Record<string, unknown> | nul
   return { ...card, updatedAt: Math.floor(Date.now() / 1000) };
 }
 
-const serviceList = zodCommand({
-  name: "list",
-  description: "List a local agent's services",
+const activate = zodCommand({
+  name: "activate",
+  description: "Mark a local agent as active",
   args: {
     agentId: z.string().describe("Local agent id (uuid)"),
   },
   action: async (args) => {
+    const json = isJson(activate);
+
+    const result = await setAgentActive(args.agentId, true).catch((error: Error) => error);
+    if (result instanceof Error) return err(result)(json);
+
+    ok(
+      [
+        success("Agent activated"),
+        fields([
+          ["ID", pc.cyan(result.id)],
+          ["Name", pc.bold(result.card.name)],
+          ["Status", statusLabel(result.card)],
+        ]),
+      ].join("\n"),
+      result,
+    )(json);
+  },
+});
+
+const deactivate = zodCommand({
+  name: "deactivate",
+  description: "Mark a local agent as inactive",
+  args: {
+    agentId: z.string().describe("Local agent id (uuid)"),
+  },
+  action: async (args) => {
+    const json = isJson(deactivate);
+
+    const result = await setAgentActive(args.agentId, false).catch((error: Error) => error);
+    if (result instanceof Error) return err(result)(json);
+
+    ok(
+      [
+        success("Agent deactivated"),
+        fields([
+          ["ID", pc.cyan(result.id)],
+          ["Name", pc.bold(result.card.name)],
+          ["Status", statusLabel(result.card)],
+        ]),
+        pc.dim("Run `hrld agent push <agentId>` to publish the change onchain."),
+      ].join("\n"),
+      result,
+    )(json);
+  },
+});
+
+// Idempotent: re-activating an active agent still stamps updatedAt, so the
+// card stays the single source of truth for what push would publish.
+async function setAgentActive(agentId: string, active: boolean) {
+  const userId = await requireUserId();
+  const card = await readAgentCard(userId, agentId);
+
+  const next = stampUpdatedAt({ ...card, active }, null);
+  await writeAgentCard(userId, agentId, next);
+  return { id: agentId, card: next };
+}
+
+function statusLabel(card: AgentCard): string {
+  return card.active ? pc.green("active") : pc.yellow("inactive");
+}
+
+const serviceList = zodCommand({
+  name: "list",
+  description: "List a local agent's services, or an onchain ACP agent's services",
+  args: {
+    agentId: z.string().describe("Local agent id (uuid), or onchain agent id with --acp"),
+  },
+  opts: {
+    acp: z.boolean().prefault(false).describe("Look up <agentId> as an onchain ACP agent id"),
+  },
+  action: async (args, opts) => {
     const json = isJson(serviceList);
+
+    if (opts.acp) {
+      const result = await listAcpServices(args.agentId).catch((error: Error) => error);
+      if (result instanceof Error) return err(result)(json);
+      if (result.services.length === 0)
+        return ok(pc.dim("This onchain agent has no services."), result)(json);
+
+      return ok(
+        result.services
+          .map(
+            (service, index) =>
+              `${pc.dim(`[${index}]`)} ${service.name}  ${pc.dim(`(${service.kind})`)}  ${pc.cyan(
+                service.endpoint,
+              )}${service.version ? `  ${pc.dim(service.version)}` : ""}`,
+          )
+          .join("\n"),
+        result,
+      )(json);
+    }
 
     const result = await listServices(args.agentId).catch((error: Error) => error);
     if (result instanceof Error) return err(result)(json);
@@ -289,6 +502,16 @@ const serviceList = zodCommand({
 async function listServices(agentId: string) {
   const userId = await requireUserId();
   return { id: agentId, services: (await readAgentCard(userId, agentId)).services };
+}
+
+async function listAcpServices(agentId: string) {
+  const services = await requestJson(
+    api.v1.agents[":agentId"].services.$get({
+      param: { agentId: requireOnchainAgentId(agentId) },
+    }),
+    acpAgentNotFound(agentId),
+  );
+  return { id: agentId, services };
 }
 
 function serviceLine(service: AgentService, index: number): string {
@@ -442,8 +665,8 @@ function requireService(card: AgentCard, agentId: string, index: number): AgentS
   return service;
 }
 
-const sync = zodCommand({
-  name: "sync",
+const push = zodCommand({
+  name: "push",
   description: "Publish a local agent card to the onchain ERC-8004 identity registry",
   args: {
     agentId: z.string().describe("Local agent id (uuid)"),
@@ -452,14 +675,14 @@ const sync = zodCommand({
     "dry-run": z
       .boolean()
       .prefault(false)
-      .describe("Show what sync would do without sending transactions"),
+      .describe("Show what push would do without sending transactions"),
   },
   action: async (args, opts) => {
-    const json = isJson(sync);
+    const json = isJson(push);
     // commander camelCases --dry-run; zod-commander's opts type keeps the literal key.
     const dryRun = (opts as { dryRun?: boolean }).dryRun === true;
 
-    const result = await syncAgent(activeChain, args.agentId, dryRun, json).catch(
+    const result = await pushAgent(activeChain, args.agentId, dryRun, json).catch(
       (error: Error) => error,
     );
     if (result instanceof Error) return err(result)(json);
@@ -492,7 +715,7 @@ const sync = zodCommand({
 
     ok(
       [
-        success("Agent synced"),
+        success("Agent pushed"),
         fields([
           ["Agent", `${pc.bold(result.name)} ${pc.dim(`(${result.id})`)}`],
           ["Chain", pc.bold(chainDisplayName[result.chain])],
@@ -509,7 +732,7 @@ const sync = zodCommand({
   },
 });
 
-async function syncAgent(chain: EvmChain, agentId: string, dryRun: boolean, json: boolean) {
+async function pushAgent(chain: EvmChain, agentId: string, dryRun: boolean, json: boolean) {
   const userId = await requireUserId();
   const card = await readAgentCard(userId, agentId);
   const session = await openSession();
@@ -536,7 +759,7 @@ async function syncAgent(chain: EvmChain, agentId: string, dryRun: boolean, json
     : await registerAgent(chain, session, wallet, agentRegistry, json);
 
   // The onchain id is persisted before setAgentURI so a failure there cannot
-  // orphan the registration; re-running sync then skips register().
+  // orphan the registration; re-running push then skips register().
   const next = {
     ...card,
     registrations: [
@@ -614,7 +837,7 @@ async function registerAgent(
     throw new CliError(
       "AGENT_SYNC_FAILED",
       "The register transaction confirmed but emitted no Registered event.",
-      `Inspect transaction ${txHash}, then re-run \`hrld agent sync\`.`,
+      `Inspect transaction ${txHash}, then re-run \`hrld agent push\`.`,
     );
 
   return { registration: { agentId: Number(onchainAgentId), agentRegistry }, txHash };
@@ -623,6 +846,108 @@ async function registerAgent(
 function progress(json: boolean, message: string) {
   // Progress goes to stderr so stdout stays parseable in both output modes.
   if (!json) process.stderr.write(pc.dim(`${message}\n`));
+}
+
+const pull = zodCommand({
+  name: "pull",
+  description: "Pull this wallet's onchain agents into local agent cards",
+  opts: {
+    "agent-id": z
+      .string()
+      .optional()
+      .describe("Onchain agent id to pull; omit to pull every agent this wallet owns"),
+  },
+  action: async (_args, opts) => {
+    const json = isJson(pull);
+    // commander camelCases --agent-id; zod-commander's opts type keeps the literal key.
+    const onchainAgentId = (opts as { agentId?: string }).agentId;
+
+    const result = await pullAgents(activeChain, onchainAgentId).catch((error: Error) => error);
+    if (result instanceof Error) return err(result)(json);
+    if (result.pulled.length === 0 && result.skipped.length === 0)
+      return ok(pc.dim("This wallet owns no onchain agents with a data: agent URI."), result)(json);
+
+    const nameWidth = Math.max(0, ...result.pulled.map((agent) => truncate(agent.name, 24).length));
+    ok(
+      [
+        success(`Pulled ${result.pulled.length} agent${result.pulled.length === 1 ? "" : "s"}`),
+        ...result.pulled.map(
+          (agent) =>
+            `${pc.cyan(agent.id)}  ${pc.bold(truncate(agent.name, 24).padEnd(nameWidth))}  ${pc.dim(
+              `#${agent.onchainAgentId} · ${agent.created ? "created" : "updated"}`,
+            )}`,
+        ),
+        ...result.skipped.map((entry) =>
+          pc.yellow(`Skipped #${entry.onchainAgentId}: ${entry.reason}`),
+        ),
+      ].join("\n"),
+      result,
+    )(json);
+  },
+});
+
+async function pullAgents(chain: EvmChain, onchainAgentId: string | undefined) {
+  const userId = await requireUserId();
+  const session = await openSession();
+  const wallet = requireWallet(session, chain);
+  const agentRegistry = `eip155:${viemChainByChain[chain].id}:${identityRegistryByChain[chain]}`;
+
+  const agents = onchainAgentId
+    ? [await readOwnedAgent(onchainAgentId, wallet.address)]
+    : await requestJson(api.v1.agents.$get({ query: { owner: wallet.address, limit: "1000" } }));
+
+  const locals = await listAgentCards(userId);
+  const results = await Promise.all(
+    agents.map(async (agent) => {
+      const parsed = parseAgentUriCard(agent.agentURI);
+      // A single-agent pull fails loudly; a bulk pull reports and moves on.
+      if (parsed instanceof CliError) {
+        if (onchainAgentId) throw parsed;
+        return { skipped: { onchainAgentId: agent.id, reason: parsed.message } };
+      }
+
+      const registration = { agentId: Number(agent.id), agentRegistry };
+      const next = {
+        ...parsed,
+        registrations: [
+          ...(parsed.registrations ?? []).filter((entry) => entry.agentRegistry !== agentRegistry),
+          registration,
+        ],
+      };
+      const local = locals.find((entry) =>
+        entry.card.registrations?.some(
+          (candidate) =>
+            candidate.agentRegistry === agentRegistry && candidate.agentId === registration.agentId,
+        ),
+      );
+      const id = local?.id ?? uuidv4();
+      await writeAgentCard(userId, id, next);
+      return { pulled: { id, onchainAgentId: agent.id, name: next.name, created: !local } };
+    }),
+  );
+
+  return {
+    address: wallet.address,
+    agentRegistry,
+    pulled: results.map((entry) => entry.pulled).filter((entry) => entry !== undefined),
+    skipped: results.map((entry) => entry.skipped).filter((entry) => entry !== undefined),
+  };
+}
+
+async function readOwnedAgent(onchainAgentId: string, address: string) {
+  const agent = await requestJson(
+    api.v1.agents[":agentId"].$get({
+      param: { agentId: requireOnchainAgentId(onchainAgentId) },
+    }),
+    acpAgentNotFound(onchainAgentId),
+  );
+  if (agent.owner.toLowerCase() !== address.toLowerCase())
+    throw new CliError(
+      "AGENT_PULL_FAILED",
+      `Onchain agent #${onchainAgentId} is owned by ${agent.owner}, not this wallet.`,
+    );
+
+  return agent;
 }
 
 const service = zodCommand({
@@ -639,8 +964,13 @@ export const agent = zodCommand({
   description: "Manage local ERC-8004 agent cards and sync them onchain",
 })
   .addCommand(list)
+  .addCommand(discover)
   .addCommand(create)
   .addCommand(profile)
   .addCommand(update)
+  .addCommand(activate)
+  .addCommand(deactivate)
   .addCommand(service)
-  .addCommand(sync);
+  .addCommand(job)
+  .addCommand(push)
+  .addCommand(pull);

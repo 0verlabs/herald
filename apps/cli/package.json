@@ -29,6 +29,7 @@
     "cross-keychain": "catalog:",
     "ethers": "catalog:",
     "flat-cache": "catalog:",
+    "hono": "catalog:",
     "picocolors": "catalog:",
     "uqr": "catalog:",
     "uuid": "catalog:",
@@ -37,6 +38,7 @@
     "zod-commander": "catalog:"
   },
   "devDependencies": {
+    "@hrld/api": "workspace:*",
     "@hrld/core": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:",

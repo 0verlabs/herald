@@ -1,23 +1,15 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { EvmChain } from "@hrld/core";
-import type { Address } from "viem";
 import { z } from "zod";
 import { CliError } from "../utils/errors.ts";
 import { jsonStringSchema } from "../utils/json.ts";
 
-// ERC-8004 identity registries the CLI syncs agent cards to; addresses match
-// apps/api/src/config/contracts.ts for the same chains.
-export const identityRegistryByChain = {
-  "0g": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
-} as const satisfies Record<EvmChain, Address>;
-
 export const AGENT_CARD_TYPE = "https://eips.ethereum.org/EIPS/eip-8004#registration-v1";
 
 // Loose objects keep fields the flags don't cover (mcpTools, capabilities,
-// active, custom extensions) intact — --data/--file exist precisely to carry
-// them, and edits must not strip them.
+// custom extensions) intact — --data/--file exist precisely to carry them, and
+// edits must not strip them.
 export const agentServiceSchema = z.looseObject({
   name: z.string().min(1),
   endpoint: z.string().min(1),
@@ -36,6 +28,10 @@ export const agentCardSchema = z.looseObject({
   name: z.string().min(1),
   description: z.string(),
   image: z.string().optional(),
+  // Agents are active on create; `hrld agent deactivate` takes one offline
+  // without deleting its card. Cards written before this field existed read
+  // back as active.
+  active: z.boolean().prefault(true),
   services: z.array(agentServiceSchema).prefault([]),
   registrations: z.array(registrationSchema).optional(),
   updatedAt: z.number().optional(),
@@ -130,4 +126,26 @@ export async function writeAgentCard(
 // external hosting, at the cost of gas proportional to card size.
 export function toAgentUri(card: AgentCard): string {
   return `data:application/json;base64,${Buffer.from(JSON.stringify(card)).toString("base64")}`;
+}
+
+// The inverse of toAgentUri, for pulling onchain agents back into local cards.
+// Anything else (ipfs://, https://, malformed JSON) cannot become a local
+// card; the error is returned so bulk pulls can report it without try/catch.
+export function parseAgentUriCard(agentUri: string): AgentCard | CliError {
+  const base64 = agentUri.match(/^data:application\/json;base64,(.*)$/)?.[1];
+  if (base64 === undefined)
+    return new CliError("AGENT_PULL_FAILED", "The agent URI is not a base64 JSON data URI.");
+
+  const parsed = jsonStringSchema.safeParse(Buffer.from(base64, "base64").toString("utf8"));
+  if (!parsed.success || typeof parsed.data !== "object" || parsed.data === null)
+    return new CliError("AGENT_PULL_FAILED", "The agent URI does not contain a JSON object.");
+
+  const card = agentCardSchema.safeParse(normalizeCard(parsed.data as Record<string, unknown>));
+  if (!card.success)
+    return new CliError(
+      "AGENT_PULL_FAILED",
+      `The agent URI is not a valid agent card: ${z.prettifyError(card.error)}`,
+    );
+
+  return card.data;
 }

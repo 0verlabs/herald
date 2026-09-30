@@ -2,6 +2,11 @@
 # the deployed subgraph errors at the store level when the field is null. All
 # queries filter on registration_not: null, and single-agent queries use the
 # list field with an id filter so agents without a registration return [].
+# Herald agents keep their whole card onchain as a data: URI, so every query
+# also filters on agentURIKind: DATA — agents hosted elsewhere are invisible
+# to the API. The list and search filters are built in the handler instead of
+# inline here: a null variable inside a `where` object matches "field is null"
+# rather than being ignored, so an omitted $owner would filter out every agent.
 fragment AgentSummary on Agent {
   id: agentId
   owner {
@@ -16,13 +21,14 @@ fragment AgentSummary on Agent {
     key
     value
   }
+  agentURI
   feedbackCount: activeFeedbackCount
   createdAt
   createdAtTransaction
 }
 
 query GetAgent($id: Bytes!) {
-  agents(first: 1, where: { id: $id, registration_not: null }) {
+  agents(first: 1, where: { id: $id, registration_not: null, agentURIKind: DATA }) {
     ...AgentSummary
   }
 }
@@ -47,7 +53,7 @@ query SearchAgentProfiles(
 }
 
 query GetAgentServices($id: Bytes!) {
-  agents(first: 1, where: { id: $id, registration_not: null }) {
+  agents(first: 1, where: { id: $id, registration_not: null, agentURIKind: DATA }) {
     registration {
       ... on AgentRegistration {
         services(orderBy: position, orderDirection: asc) {
@@ -72,7 +78,7 @@ query GetAgentServices($id: Bytes!) {
 }
 
 query GetAgentFeedbacks($id: Bytes!, $first: Int, $skip: Int) {
-  agents(first: 1, where: { id: $id, registration_not: null }) {
+  agents(first: 1, where: { id: $id, registration_not: null, agentURIKind: DATA }) {
     feedback(
       first: $first
       skip: $skip

@@ -2,12 +2,12 @@ import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { problemDetailsResponse } from "hono-problem-details/openapi";
 import { problemDetails } from "hono-problem-details";
 
+import { EVM_CHAIN_IDS, identityRegistryByChain } from "@hrld/core";
+
 import { AgentSummaryFragment } from "../lib/subgraphs/__generated/erc-8004";
 import { Env } from "../env";
 import { agentEntityId } from "../utils/agent";
 import { parseTimestamp } from "../utils/timestamp";
-import { CHAIN_IDS } from "../config/chain";
-import { ERC8004 } from "../config/contracts";
 import {
   getAgentOutputSchema,
   getAgentParamsSchema,
@@ -26,6 +26,7 @@ const toAgentSummary = (agent: AgentSummaryFragment) => ({
   description: agent.profile?.description ?? "",
   image: agent.profile?.image ?? null,
   metadata: Object.fromEntries(agent.metadata.map(({ key, value }) => [key, value])),
+  agentURI: agent.agentURI,
   feedbackCount: Number(agent.feedbackCount),
   owner: agent.owner?.address ?? "0x",
   createdAt: parseTimestamp(agent.createdAt),
@@ -117,7 +118,7 @@ const notFound = (agentId: string) =>
   });
 
 const entityId = (agentId: string) =>
-  agentEntityId(CHAIN_IDS.zeroG, ERC8004[CHAIN_IDS.zeroG].identityRegistry, agentId);
+  agentEntityId(EVM_CHAIN_IDS["0g"], identityRegistryByChain["0g"], agentId);
 
 const attributeValue = (attribute: { value: string; valueType: string }): unknown => {
   if (attribute.valueType === "NUMBER") return Number(attribute.value);
@@ -132,20 +133,31 @@ const attributeValue = (attribute: { value: string; valueType: string }): unknow
   return attribute.value;
 };
 
+// agentProfileSearch takes tsquery syntax, where a bare space is a syntax
+// error. Quote each term and AND them together so plain text queries work.
+const toFulltextQuery = (text: string) =>
+  text
+    .split(/\s+/)
+    .map((term) => term.replaceAll("'", ""))
+    .filter(Boolean)
+    .map((term) => `'${term}'`)
+    .join(" & ");
+
 export const agentHandlers = new OpenAPIHono<Env>()
   .openapi(searchAgentsRoute, async (c) => {
     const query = c.req.valid("query");
     const owner = query.owner?.toLowerCase();
 
     // agentProfileSearch requires a non-empty fulltext query, so fall back to
-    // listing agents with a registration when q is absent.
-    const agents = query.q
+    // listing agents when q is absent or all punctuation.
+    const text = query.q && /\w/.test(query.q) ? toFulltextQuery(query.q) : "";
+    const agents = text
       ? (
           await c.var.erc8004.SearchAgentProfiles({
-            text: query.q,
+            text,
             first: query.limit,
             skip: query.skip,
-            where: owner ? { agent_: { owner } } : undefined,
+            where: { agent_: { agentURIKind: "DATA", ...(owner ? { owner } : {}) } },
           })
         ).agentProfileSearch.map((profile) => profile.agent)
       : (
@@ -154,6 +166,7 @@ export const agentHandlers = new OpenAPIHono<Env>()
             skip: query.skip,
             where: {
               registration_not: null,
+              agentURIKind: "DATA",
               ...(owner ? { owner } : {}),
             },
           })
