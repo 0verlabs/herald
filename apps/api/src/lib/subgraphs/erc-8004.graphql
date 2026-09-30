@@ -4,7 +4,9 @@
 # list field with an id filter so agents without a registration return [].
 # Herald agents keep their whole card onchain as a data: URI, so every query
 # also filters on agentURIKind: DATA — agents hosted elsewhere are invisible
-# to the API. The list and search filters are built in the handler instead of
+# to the API. Burned agent NFTs are likewise invisible: every query filters on
+# isBurned: false, so single-agent routes 404 for them. The list and search
+# filters are built in the handler instead of
 # inline here: a null variable inside a `where` object matches "field is null"
 # rather than being ignored, so an omitted $owner would filter out every agent.
 fragment AgentSummary on Agent {
@@ -27,9 +29,26 @@ fragment AgentSummary on Agent {
   createdAtTransaction
 }
 
+# reputationSample feeds the aggregates on the agent profile. The subgraph has
+# no sum/avg fields, so the handler averages over the most recent 1000 active
+# entries; activeFeedbackCount keeps the total exact regardless.
 query GetAgent($id: Bytes!) {
-  agents(first: 1, where: { id: $id, registration_not: null, agentURIKind: DATA }) {
+  agents(
+    first: 1
+    where: { id: $id, registration_not: null, agentURIKind: DATA, isBurned: false }
+  ) {
     ...AgentSummary
+    reputationSample: feedback(
+      first: 1000
+      orderBy: createdAt
+      orderDirection: desc
+      where: { isRevoked: false }
+    ) {
+      value
+      valueDecimals
+      tag1
+      tag2
+    }
   }
 }
 
@@ -53,7 +72,10 @@ query SearchAgentProfiles(
 }
 
 query GetAgentServices($id: Bytes!) {
-  agents(first: 1, where: { id: $id, registration_not: null, agentURIKind: DATA }) {
+  agents(
+    first: 1
+    where: { id: $id, registration_not: null, agentURIKind: DATA, isBurned: false }
+  ) {
     registration {
       ... on AgentRegistration {
         services(orderBy: position, orderDirection: asc) {
@@ -77,16 +99,14 @@ query GetAgentServices($id: Bytes!) {
   }
 }
 
-query GetAgentFeedbacks($id: Bytes!, $first: Int, $skip: Int) {
-  agents(first: 1, where: { id: $id, registration_not: null, agentURIKind: DATA }) {
-    feedback(
-      first: $first
-      skip: $skip
-      orderBy: createdAt
-      orderDirection: desc
-      where: { isRevoked: false }
-    ) {
+query GetAgentFeedbacks($id: Bytes!, $first: Int, $skip: Int, $where: Feedback_filter) {
+  agents(
+    first: 1
+    where: { id: $id, registration_not: null, agentURIKind: DATA, isBurned: false }
+  ) {
+    feedback(first: $first, skip: $skip, orderBy: createdAt, orderDirection: desc, where: $where) {
       id
+      feedbackIndex
       client {
         address: id
       }
@@ -95,6 +115,7 @@ query GetAgentFeedbacks($id: Bytes!, $first: Int, $skip: Int) {
       tag1
       tag2
       feedbackURI
+      isRevoked
       createdAt
       createdAtTransaction
     }

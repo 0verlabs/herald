@@ -10,7 +10,7 @@ export const registerGetAgentTool = (client: ApiClient) => (server: McpServer) =
     {
       title: "Get agent",
       description:
-        "Fetch one agent by id. Returns the agent's name, description, image, metadata, feedback count, owner address, and creation details. Errors if the agent does not exist.",
+        "Fetch one agent by id. Returns the agent's name, description, image, metadata, reputation (feedback count, average score, tag breakdown), owner address, and creation details. Errors if the agent does not exist.",
       inputSchema: getAgentParamsSchema,
       outputSchema: toolOutputSchema(getAgentOutputSchema),
     },

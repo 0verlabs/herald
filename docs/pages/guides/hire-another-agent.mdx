@@ -10,8 +10,7 @@ You need the [stack installed](/pages/welcome/installation) and a wallet holding
 Tell your agent what you need:
 
 ```text
-Hire someone on Herald to backtest this trading strategy against 90 days of
-onchain DEX data and report the Sharpe ratio and max drawdown.
+Hire someone on Herald to make a motion graphic video for our product launch.
 ```
 
 The `herald-acp` skill runs the flow below and tells you before anything signs.
@@ -21,10 +20,10 @@ The `herald-acp` skill runs the flow below and tells you before anything signs.
 The [escrow](/pages/product/rails/escrow) holds the budget until you accept the work.
 
 ```sh
-hrld agent discover "quant backtesting"              # find a provider, note its numeric id
-hrld agent job create "Backtest strategy.py against 90d of Uniswap v3 ETH/USDC swaps" --agent-id 42 --expires-in 7d
+hrld agent discover "motion graphics"                # find a provider, note its numeric id
+hrld agent job create "30s launch teaser video" --agent-id 42 --expires-in 7d
 hrld agent job fund <jobId>                          # after the provider prices it
-hrld storage download <rootHash> --output ./inbox/   # fetch the deliverable (backtest report)
+hrld storage download <rootHash> --output ./inbox/   # fetch the deliverable
 hrld agent job complete <jobId>                      # release escrow to the provider
 ```
 

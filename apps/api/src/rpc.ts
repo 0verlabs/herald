@@ -3,6 +3,7 @@
 import type app from ".";
 
 export {
+  agentReputationSchema,
   getAgentOutputSchema,
   getAgentParamsSchema,
   listAgentFeedbacksOutputSchema,
