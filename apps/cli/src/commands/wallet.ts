@@ -8,13 +8,16 @@ import {
   formatEther,
   type Hex,
   http,
-  parseEther,
-  parseUnits,
 } from "viem";
 import { z } from "zod";
 import { zodCommand } from "zod-commander";
 import { openSession, requireWallet } from "../lib/session.ts";
-import { formatTokenAmount, readTokenMetadata } from "../lib/token.ts";
+import {
+  formatTokenAmount,
+  parseTokenAmount,
+  readTokenMetadata,
+  tokenLabel,
+} from "../lib/token.ts";
 import { toWalletAccount } from "../lib/viem.ts";
 import { activeChain, chainDisplayName, networkDisplayName } from "../utils/chain.ts";
 import { CliError } from "../utils/errors.ts";
@@ -318,10 +321,6 @@ const transfer = zodCommand({
   },
 });
 
-function tokenLabel(token: string, symbol: string | null): string {
-  return symbol ? `${symbol} ${pc.dim(`(${token})`)}` : token;
-}
-
 async function transferTokens(
   chain: EvmChain,
   to: string,
@@ -343,7 +342,7 @@ async function transferTokens(
       "Pass --as-unit with the amount in raw base units.",
     );
 
-  const wei = parseTokenAmount(amount, asUnit, metadata?.decimals ?? 18);
+  const wei = parseTokenAmount(amount, asUnit, metadata?.decimals ?? 18, "AMOUNT_INVALID");
   const held = token
     ? await client.readContract({
         address: token as Hex,
@@ -385,18 +384,6 @@ async function transferTokens(
   };
 }
 
-function parseTokenAmount(amount: string, asUnit: boolean, decimals: number): bigint {
-  if (asUnit) {
-    if (!/^\d+$/.test(amount))
-      throw new CliError("AMOUNT_INVALID", `${amount} is not an integer amount of base units.`);
-    return BigInt(amount);
-  }
-
-  if (!/^\d+(\.\d+)?$/.test(amount))
-    throw new CliError("AMOUNT_INVALID", `${amount} is not a token amount, e.g. 1.5 or 20.`);
-  return parseUnits(amount, decimals);
-}
-
 const evmWrap = zodCommand({
   name: "wrap",
   description: "Wrap native tokens into the wrapped native token (W0G)",
@@ -404,12 +391,14 @@ const evmWrap = zodCommand({
     amount: z.string().describe("Amount in native units, e.g. 1.5"),
   },
   opts: {
-    unit: z.boolean().prefault(false).describe("Treat <amount> as raw wei"),
+    "as-unit": z.boolean().prefault(false).describe("Treat <amount> as raw wei"),
   },
   action: async (args, opts) => {
     const json = isJson(evmWrap);
+    // commander camelCases --as-unit; zod-commander's opts type keeps the literal key.
+    const asUnit = (opts as { asUnit?: boolean }).asUnit === true;
 
-    const result = await convertNative(activeChain, "wrap", args.amount, opts.unit).catch(
+    const result = await convertNative(activeChain, "wrap", args.amount, asUnit).catch(
       (error: Error) => error,
     );
     if (result instanceof Error) return err(result)(json);
@@ -425,12 +414,14 @@ const evmUnwrap = zodCommand({
     amount: z.string().describe("Amount in native units, e.g. 1.5"),
   },
   opts: {
-    unit: z.boolean().prefault(false).describe("Treat <amount> as raw wei"),
+    "as-unit": z.boolean().prefault(false).describe("Treat <amount> as raw wei"),
   },
   action: async (args, opts) => {
     const json = isJson(evmUnwrap);
+    // commander camelCases --as-unit; zod-commander's opts type keeps the literal key.
+    const asUnit = (opts as { asUnit?: boolean }).asUnit === true;
 
-    const result = await convertNative(activeChain, "unwrap", args.amount, opts.unit).catch(
+    const result = await convertNative(activeChain, "unwrap", args.amount, asUnit).catch(
       (error: Error) => error,
     );
     if (result instanceof Error) return err(result)(json);
@@ -443,9 +434,9 @@ async function convertNative(
   chain: EvmChain,
   direction: "wrap" | "unwrap",
   amount: string,
-  unit: boolean,
+  asUnit: boolean,
 ) {
-  const wei = parseWeiAmount(amount, unit);
+  const wei = parseTokenAmount(amount, asUnit, 18, "AMOUNT_INVALID");
   const session = await openSession();
   const wallet = requireWallet(session, chain);
   const token = WRAPPED_NATIVE_TOKEN[chain];
@@ -499,18 +490,6 @@ async function convertNative(
     formatted: formatEther(wei),
     hash,
   };
-}
-
-function parseWeiAmount(amount: string, unit: boolean): bigint {
-  if (unit) {
-    if (!/^\d+$/.test(amount))
-      throw new CliError("AMOUNT_INVALID", `${amount} is not an integer amount of wei.`);
-    return BigInt(amount);
-  }
-
-  if (!/^\d+(\.\d+)?$/.test(amount))
-    throw new CliError("AMOUNT_INVALID", `${amount} is not a token amount, e.g. 1.5 or 20.`);
-  return parseEther(amount);
 }
 
 function wrapOutput(verb: string, result: Awaited<ReturnType<typeof convertNative>>): string {

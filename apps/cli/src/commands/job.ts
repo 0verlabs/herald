@@ -15,7 +15,6 @@ import {
   http,
   isAddress,
   parseEventLogs,
-  parseUnits,
   stringToHex,
   zeroAddress,
   zeroHash,
@@ -25,7 +24,13 @@ import { zodCommand } from "zod-commander";
 import { api, requestJson, requireOnchainAgentId } from "../lib/api.ts";
 import type { WalletSession } from "../lib/privy.ts";
 import { openSession, requireWallet } from "../lib/session.ts";
-import { formatTokenAmount, readTokenMetadata, type TokenMetadata } from "../lib/token.ts";
+import {
+  formatTokenAmount,
+  parseTokenAmount,
+  readTokenMetadata,
+  tokenLabel,
+  type TokenMetadata,
+} from "../lib/token.ts";
 import { toWalletAccount } from "../lib/viem.ts";
 import { activeChain } from "../utils/chain.ts";
 import { CliError } from "../utils/errors.ts";
@@ -409,7 +414,7 @@ async function setJobBudget(
       `Could not read the decimals of token ${token}.`,
       "Pass --as-unit with the amount in raw base units.",
     );
-  const amount = parseBudget(budget, opts.unit, metadata?.decimals ?? 0);
+  const amount = parseTokenAmount(budget, opts.unit, metadata?.decimals ?? 0, "JOB_INPUT_INVALID");
 
   progress(json, `Setting budget on job #${jobId}…`);
   const txHash = await walletClient(chain, await openSession())
@@ -433,27 +438,11 @@ async function setJobBudget(
   };
 }
 
-function tokenLabel(token: string, symbol: string | null): string {
-  return symbol ? `${symbol} ${pc.dim(`(${token})`)}` : token;
-}
-
 function resolveToken(chain: EvmChain, token: string | undefined): Address {
   if (token === undefined) return WRAPPED_NATIVE_TOKEN[chain];
   if (!isAddress(token))
     throw new CliError("JOB_INPUT_INVALID", `${token} is not a token address.`);
   return token;
-}
-
-function parseBudget(budget: string, unit: boolean, decimals: number): bigint {
-  if (unit) {
-    if (!/^\d+$/.test(budget))
-      throw new CliError("JOB_INPUT_INVALID", `${budget} is not an integer amount of base units.`);
-    return BigInt(budget);
-  }
-
-  if (!/^\d+(\.\d+)?$/.test(budget))
-    throw new CliError("JOB_INPUT_INVALID", `${budget} is not a token amount, e.g. 1.5 or 20.`);
-  return parseUnits(budget, decimals);
 }
 
 const fund = zodCommand({

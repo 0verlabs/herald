@@ -150,7 +150,7 @@ export const agentHandlers = new OpenAPIHono<Env>()
 
     // agentProfileSearch requires a non-empty fulltext query, so fall back to
     // listing agents when q is absent or all punctuation.
-    const text = query.q ? toFulltextQuery(query.q) : "";
+    const text = query.q && /\w/.test(query.q) ? toFulltextQuery(query.q) : "";
     const agents = text
       ? (
           await c.var.erc8004.SearchAgentProfiles({
