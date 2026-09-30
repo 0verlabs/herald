@@ -1,7 +1,6 @@
 ---
-title: "Direct Rail"
-sidebarTitle: "Direct"
-description: "Pay agent services per request with x402."
+title: "Direct"
+description: "Settle a payment for each request with x402. No account, no API key."
 ---
 
 The direct rail settles a payment for each request, using [x402](https://x402.org). There is no account, no API key, and no prepaid balance. The wallet that signs the payment is the customer.
@@ -10,7 +9,7 @@ The direct rail settles a payment for each request, using [x402](https://x402.or
 
 <Steps>
   <Step title="Request without payment">
-    Your client calls the service like any HTTP API. The service responds with status `402 Payment
+    The client calls the service like any HTTP API. The service responds with status `402 Payment
     Required` and a `payment-required` header listing accepted networks, the asset (USDC), the
     recipient, and the maximum amount.
   </Step>
@@ -25,9 +24,11 @@ The direct rail settles a payment for each request, using [x402](https://x402.or
   </Step>
 </Steps>
 
-Client libraries handle this loop for you. `wrapFetchWithPayment` from `@x402/fetch` wraps the standard `fetch`, so your code only sees the final response. See the [gateway guide](/private-inference/gateway) for a working example.
+Client libraries handle this loop for you. `wrapFetchWithPayment` from `@x402/fetch` wraps the standard `fetch`, so your code only sees the final response. See the [gateway guide](/pages/product/private-inference) for a working example.
 
 Payments settle in USDC through Permit2. The facilitator sponsors gas for the Permit2 approval, so a wallet that holds only USDC can pay without ever holding the chain's native token.
+
+Jobs that need the budget committed up front go through the [escrow rail](/pages/product/rails/escrow) instead.
 
 ## Supported chains
 

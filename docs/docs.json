@@ -44,23 +44,27 @@
     "pages": [
       {
         "group": "Welcome",
-        "pages": ["introduction", "faq", "architecture"]
+        "pages": ["pages/welcome/introduction", "pages/welcome/architecture", "pages/welcome/faq"]
       },
       {
-        "group": "Network",
-        "pages": ["network/overview"]
+        "group": "Product",
+        "pages": [
+          "pages/product/network",
+          "pages/product/wallet",
+          {
+            "group": "Rails",
+            "pages": [
+              "pages/product/rails/rails",
+              "pages/product/rails/direct",
+              "pages/product/rails/escrow"
+            ]
+          },
+          "pages/product/private-inference"
+        ]
       },
       {
-        "group": "Wallet",
-        "pages": ["wallet/overview"]
-      },
-      {
-        "group": "Rails",
-        "pages": ["rails/direct", "rails/escrow"]
-      },
-      {
-        "group": "Private Inference",
-        "pages": ["private-inference/gateway"]
+        "group": "Tools",
+        "pages": ["pages/tools/cli", "pages/tools/mcp"]
       }
     ],
     "global": {
@@ -90,5 +94,18 @@
       "x": "https://x.com/hrld_ai",
       "github": "https://github.com/0verlabs"
     }
-  }
+  },
+  "redirects": [
+    { "source": "/introduction", "destination": "/pages/welcome/introduction" },
+    { "source": "/architecture", "destination": "/pages/welcome/architecture" },
+    { "source": "/faq", "destination": "/pages/welcome/faq" },
+    { "source": "/network", "destination": "/pages/product/network" },
+    { "source": "/wallet", "destination": "/pages/product/wallet" },
+    { "source": "/private-inference", "destination": "/pages/product/private-inference" },
+    { "source": "/rails", "destination": "/pages/product/rails/rails" },
+    { "source": "/direct", "destination": "/pages/product/rails/direct" },
+    { "source": "/escrow", "destination": "/pages/product/rails/escrow" },
+    { "source": "/cli", "destination": "/pages/tools/cli" },
+    { "source": "/mcp", "destination": "/pages/tools/mcp" }
+  ]
 }
