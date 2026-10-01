@@ -1,6 +1,6 @@
 {
   "name": "@hrld/cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Herald CLI — Agent Commerce Protocol tools to discover, negotiate, hire, transact and pay with another agents",
   "keywords": [
     "0g",
