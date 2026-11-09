@@ -1,0 +1,55 @@
+// Herald dashboard (TanStack Start).
+//
+// The top level is the local development config (`vp dev`). `testnet` and
+// `mainnet` are the deployed environments, selected at build time with
+// CLOUDFLARE_ENV. Bindings are not inherited, so each environment declares
+// its own. D1 is shared with the facilitator: same database per environment.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "herald-web",
+  "main": "@tanstack/react-start/server-entry",
+  "compatibility_date": "2026-11-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "vars": { "HERALD_ENV": "testnet" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "herald-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../../packages/db/migrations",
+      "migrations_pattern": "../../packages/db/migrations/*/migration.sql",
+    },
+  ],
+  "kv_namespaces": [{ "binding": "SESSIONS", "id": "00000000000000000000000000000000" }],
+  "env": {
+    "testnet": {
+      "name": "herald-web-testnet",
+      "vars": { "HERALD_ENV": "testnet" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "herald-testnet",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "../../packages/db/migrations",
+          "migrations_pattern": "../../packages/db/migrations/*/migration.sql",
+        },
+      ],
+      "kv_namespaces": [{ "binding": "SESSIONS", "id": "00000000000000000000000000000000" }],
+    },
+    "mainnet": {
+      "name": "herald-web-mainnet",
+      "vars": { "HERALD_ENV": "mainnet" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "herald-mainnet",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "../../packages/db/migrations",
+          "migrations_pattern": "../../packages/db/migrations/*/migration.sql",
+        },
+      ],
+      "kv_namespaces": [{ "binding": "SESSIONS", "id": "00000000000000000000000000000000" }],
+    },
+  },
+}

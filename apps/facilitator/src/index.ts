@@ -1,0 +1,15 @@
+import { EnvironmentSchema } from "@herald/core";
+import { Hono } from "hono";
+
+const app = new Hono<{ Bindings: Env }>();
+
+app.get("/health", async (c) => {
+  await c.env.DB.prepare("select 1").first();
+  return c.json({
+    status: "ok",
+    service: "facilitator",
+    environment: EnvironmentSchema.parse(c.env.HERALD_ENV),
+  });
+});
+
+export default app;

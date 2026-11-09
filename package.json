@@ -1,0 +1,30 @@
+{
+  "name": "herald",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "postinstall": "vp run -r types",
+    "ready": "vp check && vp test && vp run -r build",
+    "dev": "vp run -r --parallel dev",
+    "db:generate": "vp run --filter @herald/db generate",
+    "db:migrate:local": "vp run --filter @herald/facilitator db:migrate:local",
+    "deploy:testnet": "vp run --filter @herald/facilitator deploy:testnet && vp run --filter @herald/web deploy:testnet",
+    "deploy:mainnet": "vp run --filter @herald/facilitator deploy:mainnet && vp run --filter @herald/web deploy:mainnet"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.18.0",
+      "onFail": "download"
+    }
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  }
+}

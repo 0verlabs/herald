@@ -1,0 +1,52 @@
+// Herald's x402 facilitator.
+//
+// The top level is the local development config (`wrangler dev`, tests).
+// `testnet` and `mainnet` are the deployed environments; bindings are not
+// inherited, so each environment declares its own. No secrets live here: gas
+// wallet keys and the 1Click JWT are set with `wrangler secret put --env <env>`.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "herald-facilitator",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "vars": { "HERALD_ENV": "testnet" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "herald-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../../packages/db/migrations",
+      "migrations_pattern": "../../packages/db/migrations/*/migration.sql",
+    },
+  ],
+  "env": {
+    "testnet": {
+      "name": "herald-facilitator-testnet",
+      "vars": { "HERALD_ENV": "testnet" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "herald-testnet",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "../../packages/db/migrations",
+          "migrations_pattern": "../../packages/db/migrations/*/migration.sql",
+        },
+      ],
+    },
+    "mainnet": {
+      "name": "herald-facilitator-mainnet",
+      "vars": { "HERALD_ENV": "mainnet" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "herald-mainnet",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "../../packages/db/migrations",
+          "migrations_pattern": "../../packages/db/migrations/*/migration.sql",
+        },
+      ],
+    },
+  },
+}

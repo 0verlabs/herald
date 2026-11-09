@@ -1,0 +1,29 @@
+{
+  "name": "@herald/facilitator",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Herald's x402 facilitator Worker (Hono).",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787 --persist-to ../../.wrangler/state",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "types": "wrangler types",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local --persist-to ../../.wrangler/state",
+    "db:migrate:testnet": "wrangler d1 migrations apply DB --env testnet --remote",
+    "db:migrate:mainnet": "wrangler d1 migrations apply DB --env mainnet --remote",
+    "deploy:testnet": "wrangler deploy --env testnet",
+    "deploy:mainnet": "wrangler deploy --env mainnet"
+  },
+  "dependencies": {
+    "@herald/core": "workspace:*",
+    "@herald/db": "workspace:*",
+    "hono": "catalog:"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:",
+    "wrangler": "catalog:"
+  }
+}

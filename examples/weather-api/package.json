@@ -1,0 +1,21 @@
+{
+  "name": "@herald/weather-api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Example Provider API that sells weather data over x402 through Herald.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8788",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "types": "wrangler types",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "hono": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vite-plus": "catalog:",
+    "wrangler": "catalog:"
+  }
+}

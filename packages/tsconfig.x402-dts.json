@@ -1,0 +1,15 @@
+{
+  // Used only by `vp pack` in packages/x402 to emit its declarations.
+  //
+  // @herald/core is bundled into the published types, so its sources must be
+  // in the tsgo program. rolldown-plugin-dts runs tsgo with `--rootDir` set to
+  // this file's directory; any source outside it gets its .d.ts written next
+  // to the source instead of into the plugin's temp dir. Living in packages/
+  // keeps both x402 and core under that root.
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "declaration": true
+  },
+  "include": ["x402/src", "core/src"],
+  "exclude": ["core/src/**/*.test.ts"]
+}
