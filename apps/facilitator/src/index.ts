@@ -1,7 +1,7 @@
 import { EnvironmentSchema } from "@herald/core";
 import { Hono } from "hono";
 
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: CloudflareBindings }>();
 
 app.get("/health", async (c) => {
   await c.env.DB.prepare("select 1").first();

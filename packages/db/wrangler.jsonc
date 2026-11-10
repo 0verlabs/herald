@@ -2,7 +2,7 @@
 // binding shaped like the apps' and lets `wrangler types` generate the
 // runtime types this package compiles against.
 {
-  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "$schema": "node_modules/wrangler/config-schema.json",
   "name": "herald-db-test",
   "compatibility_date": "2026-11-09",
   "compatibility_flags": ["nodejs_compat"],

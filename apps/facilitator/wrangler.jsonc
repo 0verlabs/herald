@@ -5,7 +5,7 @@
 // inherited, so each environment declares its own. No secrets live here: gas
 // wallet keys and the 1Click JWT are set with `wrangler secret put --env <env>`.
 {
-  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "$schema": "node_modules/wrangler/config-schema.json",
   "name": "herald-facilitator",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-09",

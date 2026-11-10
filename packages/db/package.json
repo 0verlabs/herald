@@ -10,7 +10,7 @@
   },
   "scripts": {
     "generate": "drizzle-kit generate",
-    "types": "wrangler types"
+    "types": "wrangler types --env-interface CloudflareBindings"
   },
   "dependencies": {
     "drizzle-orm": "catalog:"

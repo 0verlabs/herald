@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "wrangler dev --port 8787 --persist-to ../../.wrangler/state",
     "build": "wrangler deploy --dry-run --outdir dist",
-    "types": "wrangler types",
+    "types": "wrangler types --env-interface CloudflareBindings",
     "db:migrate:local": "wrangler d1 migrations apply DB --local --persist-to ../../.wrangler/state",
     "db:migrate:testnet": "wrangler d1 migrations apply DB --env testnet --remote",
     "db:migrate:mainnet": "wrangler d1 migrations apply DB --env mainnet --remote",

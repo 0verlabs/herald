@@ -8,7 +8,7 @@
     "dev": "vp dev",
     "build": "vp build",
     "preview": "vp preview",
-    "types": "wrangler types",
+    "types": "wrangler types --env-interface CloudflareBindings",
     "deploy:testnet": "CLOUDFLARE_ENV=testnet vp build && wrangler deploy",
     "deploy:mainnet": "CLOUDFLARE_ENV=mainnet vp build && wrangler deploy"
   },

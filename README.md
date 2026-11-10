@@ -35,7 +35,7 @@ vp -C apps/web dev              # dashboard on http://localhost:3000 (GET /api/h
 
 `vp run dev` starts every app at once. Both Workers keep local D1 and KV state in `.wrangler/state` at the repo root, so they share one local database, as they share one database per environment when deployed.
 
-After changing a `wrangler.jsonc`, run `vp run -r types` to regenerate binding types. After changing `packages/db/src/schema.ts`, run `vp run db:generate` to write a new migration.
+After changing a `wrangler.jsonc`, run `vp run -r types` to regenerate binding types (`wrangler types --env-interface CloudflareBindings`). Hono apps type their bindings as `new Hono<{ Bindings: CloudflareBindings }>()`; `env` from `cloudflare:workers` is typed through `Cloudflare.Env`, which Wrangler declares with the same bindings. After changing `packages/db/src/schema.ts`, run `vp run db:generate` to write a new migration.
 
 ### Deploy
 

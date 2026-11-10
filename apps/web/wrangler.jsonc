@@ -5,7 +5,7 @@
 // CLOUDFLARE_ENV. Bindings are not inherited, so each environment declares
 // its own. D1 is shared with the facilitator: same database per environment.
 {
-  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "$schema": "node_modules/wrangler/config-schema.json",
   "name": "herald-web",
   "main": "@tanstack/react-start/server-entry",
   "compatibility_date": "2026-11-09",
