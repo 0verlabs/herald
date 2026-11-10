@@ -1,5 +1,6 @@
 import { accepts, facilitatorUrls } from "@hrld/x402";
 import { HTTPFacilitatorClient } from "@x402/core/server";
+import type { SupportedResponse } from "@x402/core/types";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
 import { ExactSvmScheme } from "@x402/svm/exact/server";
@@ -10,10 +11,26 @@ import { Hono } from "hono";
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();
 
-// Built per request from the Worker's bindings. `routes` decides which
-// requests need payment; every other route passes straight through.
+// paymentMiddleware() fetches the facilitator's `/supported` each time it is
+// built, and it is built per request below. The list rarely changes, so the
+// first successful response is kept for the life of the isolate.
+//
+// The middleware itself can't be built once and shared: Workers don't let a
+// later request wait on a fetch started by an earlier one, so a cold `/health`
+// would leave the next `/weather` hanging.
+let supported: SupportedResponse | undefined;
+
+class CachedFacilitatorClient extends HTTPFacilitatorClient {
+  override async getSupported(): Promise<SupportedResponse> {
+    supported ??= await super.getSupported();
+    return supported;
+  }
+}
+
+// `routes` decides which requests need payment; every other route passes
+// straight through.
 app.use("*", (c, next) => {
-  const facilitator = new HTTPFacilitatorClient({
+  const facilitator = new CachedFacilitatorClient({
     url: c.env.HERALD_FACILITATOR_URL || facilitatorUrls.testnet,
     // `/supported` is public; verify and settle need the Herald API key.
     createAuthHeaders: async () => {
