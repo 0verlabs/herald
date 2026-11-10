@@ -10,9 +10,13 @@
 // NEAR_RPC_URL (a secret: a private QuickNode endpoint whose URL carries the
 // API key) is the NEAR network of the Herald environment. Sign-in checks
 // there that the signing key is a full-access key of the Provider Account.
-// Set it with `CLOUDFLARE_ENV=<env> wrangler secret put NEAR_RPC_URL`, and
+// <CHAIN>_RPC_URL (secrets too, the same private endpoints the facilitator
+// uses) are the JSON-RPC endpoints of each chain Herald lists in the
+// environment: BASE, SOLANA and ARBITRUM, plus POLYGON and AVALANCHE on
+// mainnet. Overview reads the Receiving Addresses' live USDC balances there.
+// Set them with `CLOUDFLARE_ENV=<env> wrangler secret put <NAME>`, and
 // locally in `.dev.vars` (see `.dev.vars.example`). `secrets` is not
-// inherited, so each environment declares it.
+// inherited, so each environment declares them.
 // SESSIONS holds dashboard sessions. SIGN_IN_RATE_LIMITER allows 20 sign-in
 // requests (challenges and signatures) per minute per client IP.
 //
@@ -28,7 +32,9 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   "vars": { "HERALD_ENV": "testnet" },
-  "secrets": { "required": ["NEAR_RPC_URL"] },
+  "secrets": {
+    "required": ["NEAR_RPC_URL", "BASE_RPC_URL", "SOLANA_RPC_URL", "ARBITRUM_RPC_URL"],
+  },
   "durable_objects": {
     "bindings": [
       {
@@ -59,7 +65,9 @@
     "testnet": {
       "name": "herald-web-testnet",
       "vars": { "HERALD_ENV": "testnet" },
-      "secrets": { "required": ["NEAR_RPC_URL"] },
+      "secrets": {
+        "required": ["NEAR_RPC_URL", "BASE_RPC_URL", "SOLANA_RPC_URL", "ARBITRUM_RPC_URL"],
+      },
       "durable_objects": {
         "bindings": [
           {
@@ -90,7 +98,16 @@
     "production": {
       "name": "herald-web-mainnet",
       "vars": { "HERALD_ENV": "mainnet" },
-      "secrets": { "required": ["NEAR_RPC_URL"] },
+      "secrets": {
+        "required": [
+          "NEAR_RPC_URL",
+          "BASE_RPC_URL",
+          "SOLANA_RPC_URL",
+          "ARBITRUM_RPC_URL",
+          "POLYGON_RPC_URL",
+          "AVALANCHE_RPC_URL",
+        ],
+      },
       "durable_objects": {
         "bindings": [
           {
