@@ -1,7 +1,7 @@
 import { providers } from "@herald/db/schema";
 import { eq } from "drizzle-orm";
 import { networkRegistry, type Caip2, type Network } from "../networks.ts";
-import { postRpc } from "../rpc.ts";
+import { callJsonRpc } from "../rpc.ts";
 import { ProviderSchema, type HeraldEnv } from "../schemas.ts";
 import type { Db } from "./db.ts";
 
@@ -134,27 +134,14 @@ export function rpcUsdcBalanceReader(
 
 type TokenInfo = { tokenAmount?: { amount?: unknown } };
 
-async function jsonRpc(
+function jsonRpc(
   fetchFn: typeof fetch,
   url: string,
   label: string,
   method: string,
   params: unknown[],
 ): Promise<unknown> {
-  const response = await postRpc(
-    fetchFn,
-    url,
-    { jsonrpc: "2.0", id: 1, method, params },
-    `${label} RPC ${method}`,
-    // `getProviderBalances` stops waiting at its own timeout; this also
-    // cancels the request itself.
-    AbortSignal.timeout(BALANCE_READ_TIMEOUT_MS),
-  );
-  const body = (await response.json()) as { result?: unknown; error?: { message?: unknown } };
-  if (body.error !== undefined) {
-    const reason =
-      typeof body.error?.message === "string" ? body.error.message : JSON.stringify(body.error);
-    throw new Error(`${label} RPC refused ${method}: ${reason}`);
-  }
-  return body.result;
+  // `getProviderBalances` stops waiting at its own timeout; this also
+  // cancels the request itself.
+  return callJsonRpc(fetchFn, url, label, method, params, BALANCE_READ_TIMEOUT_MS);
 }

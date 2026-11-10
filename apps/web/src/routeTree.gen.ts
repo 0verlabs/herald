@@ -16,6 +16,7 @@ import { Route as DashboardApiKeysRouteImport } from './routes/_dashboard/api-ke
 import { Route as DashboardIntegrationRouteImport } from './routes/_dashboard/integration'
 import { Route as DashboardOverviewRouteImport } from './routes/_dashboard/overview'
 import { Route as DashboardPaymentsRouteImport } from './routes/_dashboard/payments'
+import { Route as DashboardSweepRouteImport } from './routes/_dashboard/sweep'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 
 const IndexRoute = IndexRouteImport.update({
@@ -52,6 +53,11 @@ const DashboardPaymentsRoute = DashboardPaymentsRouteImport.update({
   path: '/payments',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardSweepRoute = DashboardSweepRouteImport.update({
+  id: '/sweep',
+  path: '/sweep',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/integration': typeof DashboardIntegrationRoute
   '/overview': typeof DashboardOverviewRoute
   '/payments': typeof DashboardPaymentsRoute
+  '/sweep': typeof DashboardSweepRoute
   '/api/health': typeof ApiHealthRoute
 }
 export interface FileRoutesByTo {
@@ -74,6 +81,7 @@ export interface FileRoutesByTo {
   '/integration': typeof DashboardIntegrationRoute
   '/overview': typeof DashboardOverviewRoute
   '/payments': typeof DashboardPaymentsRoute
+  '/sweep': typeof DashboardSweepRoute
   '/api/health': typeof ApiHealthRoute
 }
 export interface FileRoutesById {
@@ -85,6 +93,7 @@ export interface FileRoutesById {
   '/_dashboard/integration': typeof DashboardIntegrationRoute
   '/_dashboard/overview': typeof DashboardOverviewRoute
   '/_dashboard/payments': typeof DashboardPaymentsRoute
+  '/_dashboard/sweep': typeof DashboardSweepRoute
   '/api/health': typeof ApiHealthRoute
 }
 export interface FileRouteTypes {
@@ -96,6 +105,7 @@ export interface FileRouteTypes {
     | '/integration'
     | '/overview'
     | '/payments'
+    | '/sweep'
     | '/api/health'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -105,6 +115,7 @@ export interface FileRouteTypes {
     | '/integration'
     | '/overview'
     | '/payments'
+    | '/sweep'
     | '/api/health'
   id:
     | '__root__'
@@ -115,6 +126,7 @@ export interface FileRouteTypes {
     | '/_dashboard/integration'
     | '/_dashboard/overview'
     | '/_dashboard/payments'
+    | '/_dashboard/sweep'
     | '/api/health'
   fileRoutesById: FileRoutesById
 }
@@ -176,6 +188,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardPaymentsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/_dashboard/sweep': {
+      id: '/_dashboard/sweep'
+      path: '/sweep'
+      fullPath: '/sweep'
+      preLoaderRoute: typeof DashboardSweepRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/api/health': {
       id: '/api/health'
       path: '/api/health'
@@ -191,6 +210,7 @@ interface DashboardRouteChildren {
   DashboardIntegrationRoute: typeof DashboardIntegrationRoute
   DashboardOverviewRoute: typeof DashboardOverviewRoute
   DashboardPaymentsRoute: typeof DashboardPaymentsRoute
+  DashboardSweepRoute: typeof DashboardSweepRoute
 }
 
 const DashboardRouteChildren: DashboardRouteChildren = {
@@ -198,6 +218,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardIntegrationRoute: DashboardIntegrationRoute,
   DashboardOverviewRoute: DashboardOverviewRoute,
   DashboardPaymentsRoute: DashboardPaymentsRoute,
+  DashboardSweepRoute: DashboardSweepRoute,
 }
 
 const DashboardRouteWithChildren = DashboardRoute._addFileChildren(

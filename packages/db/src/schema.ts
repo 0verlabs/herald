@@ -1,4 +1,11 @@
-import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  index,
+  integer,
+  primaryKey,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 
 // Each table mirrors a Zod schema in @herald/core, which is the source of
 // truth for domain types. Change both together; core parses every row it
@@ -72,4 +79,70 @@ export const payments = sqliteTable(
     settledAt: integer("settled_at", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => [uniqueIndex("payments_network_tx_hash_unique").on(table.network, table.txHash)],
+);
+
+/**
+ * Mirrors `SweepMinimumSchema`: the smallest amount of an asset a Provider
+ * may Sweep from a network, in base units. Seeded from
+ * `docs/research/stack-and-minimums.md`; admins edit it.
+ */
+export const sweepMinimums = sqliteTable(
+  "sweep_minimums",
+  {
+    network: text().notNull(),
+    asset: text().notNull(),
+    /** Base units of `asset`, as a decimal string. */
+    minimum: text().notNull(),
+    note: text().notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [primaryKey({ columns: [table.network, table.asset] })],
+);
+
+/**
+ * Mirrors `SweepSchema`: one row per Sweep a Provider planned. An EVM Sweep
+ * is an EIP-3009 `transferWithAuthorization` from the Receiving Address;
+ * `payload_hash` is its EIP-712 hash, which the Provider's NEAR wallet asks
+ * the MPC signer to sign in the NEAR transaction `near_tx_hash`.
+ */
+export const sweeps = sqliteTable(
+  "sweeps",
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    providerId: integer("provider_id")
+      .notNull()
+      .references(() => providers.id),
+    sourceNetwork: text("source_network").notNull(),
+    asset: text().notNull(),
+    /** Base units of `asset`, as a decimal string. */
+    amount: text().notNull(),
+    destinationKind: text("destination_kind", { enum: ["same_chain"] }).notNull(),
+    destinationNetwork: text("destination_network").notNull(),
+    destinationAddress: text("destination_address").notNull(),
+    /** The EIP-3009 authorization nonce, 32 bytes as 0x-prefixed hex. */
+    authorizationNonce: text("authorization_nonce").notNull(),
+    /** Unix seconds; the authorization is valid strictly between the two. */
+    validAfter: integer("valid_after").notNull(),
+    validBefore: integer("valid_before").notNull(),
+    payloadHash: text("payload_hash").notNull(),
+    nearTxHash: text("near_tx_hash").unique(),
+    sourceTxHash: text("source_tx_hash"),
+    status: text({
+      enum: ["planned", "awaiting_signature", "submitted", "confirmed", "failed"],
+    })
+      .notNull()
+      .default("planned"),
+    error: text(),
+    createdAt: createdAt(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    submittedAt: integer("submitted_at", { mode: "timestamp_ms" }),
+  },
+  (table) => [
+    index("sweeps_provider_created").on(table.providerId, table.createdAt),
+    index("sweeps_provider_submitted").on(table.providerId, table.submittedAt),
+  ],
 );

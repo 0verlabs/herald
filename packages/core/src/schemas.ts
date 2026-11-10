@@ -106,3 +106,79 @@ export const PaymentSchema = z.object({
   settledAt: z.date(),
 });
 export type Payment = z.infer<typeof PaymentSchema>;
+
+/**
+ * The smallest amount of an asset a Provider may Sweep from a network, in
+ * base units, with a note on where the figure comes from. Herald blocks
+ * Sweeps below it so a Provider doesn't lose funds to fees or 1Click
+ * minimums. `packages/db` keeps the `sweep_minimums` table in line with
+ * this schema.
+ */
+export const SweepMinimumSchema = z.object({
+  network: Caip2Schema,
+  asset: z.string().min(1),
+  minimum: z.string().regex(/^\d+$/),
+  note: z.string(),
+  updatedAt: z.date(),
+});
+export type SweepMinimum = z.infer<typeof SweepMinimumSchema>;
+
+/**
+ * Where a Sweep sends funds. `same_chain`: any address on the source
+ * network.
+ */
+export const SweepDestinationKindSchema = z.enum(["same_chain"]);
+export type SweepDestinationKind = z.infer<typeof SweepDestinationKindSchema>;
+
+/**
+ * Where a Sweep stands:
+ *
+ * - `planned`: Herald built the payload; the Provider hasn't signed it yet.
+ * - `awaiting_signature`: the Provider's wallet sent the NEAR transaction
+ *   asking the MPC signer to sign it; Herald waits for the signature.
+ * - `submitted`: Herald submitted the signed transfer through the chain
+ *   queue.
+ * - `confirmed`: the transfer landed on-chain.
+ * - `failed`: it didn't, and won't; `error` says why.
+ */
+export const SweepStatusSchema = z.enum([
+  "planned",
+  "awaiting_signature",
+  "submitted",
+  "confirmed",
+  "failed",
+]);
+export type SweepStatus = z.infer<typeof SweepStatusSchema>;
+
+const Hex32Schema = z.string().regex(/^0x[0-9a-f]{64}$/, "Expected 32 bytes of lowercase hex");
+
+/**
+ * A Sweep: moving `amount` (base units of `asset`) out of a Provider's
+ * Receiving Address on `sourceNetwork`. On EVM it is an EIP-3009
+ * `transferWithAuthorization` with `authorizationNonce`, valid strictly
+ * between `validAfter` and `validBefore` (Unix seconds), whose EIP-712 hash
+ * is `payloadHash`. `packages/db` keeps the `sweeps` table in line with this
+ * schema.
+ */
+export const SweepSchema = z.object({
+  id: z.number().int().positive(),
+  providerId: z.number().int().positive(),
+  sourceNetwork: Caip2Schema,
+  asset: z.string().min(1),
+  amount: z.string().regex(/^\d+$/),
+  destinationKind: SweepDestinationKindSchema,
+  destinationNetwork: Caip2Schema,
+  destinationAddress: z.string().min(1),
+  authorizationNonce: Hex32Schema,
+  validAfter: z.number().int().nonnegative(),
+  validBefore: z.number().int().positive(),
+  payloadHash: Hex32Schema,
+  nearTxHash: z.string().nullable(),
+  sourceTxHash: z.string().nullable(),
+  status: SweepStatusSchema,
+  error: z.string().nullable(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+  submittedAt: z.date().nullable(),
+});
+export type Sweep = z.infer<typeof SweepSchema>;

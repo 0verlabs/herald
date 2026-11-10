@@ -56,6 +56,14 @@ function DashboardLayout() {
               variant="ghost"
               size="sm"
               nativeButton={false}
+              render={<Link to="/sweep" activeProps={{ "aria-current": "page" }} />}
+            >
+              Sweep
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              nativeButton={false}
               render={<Link to="/integration" activeProps={{ "aria-current": "page" }} />}
             >
               Integration
