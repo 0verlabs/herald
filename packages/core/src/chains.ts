@@ -39,7 +39,7 @@ export type Chain =
     };
 
 // Domains were read from each contract's `name()` / `version()` on
-// 2026-11-10; the opt-in live test in chains.test.ts re-checks them. Testnet
+// 2026-11-10; the opt-in live test in live.test.ts re-checks them. Testnet
 // USDC can differ from mainnet: Base Sepolia's is named "USDC".
 const USD_COIN_V2 = { name: "USD Coin", version: "2" };
 

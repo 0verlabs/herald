@@ -8,7 +8,7 @@ import {
 } from "./index.ts";
 
 // Checks the pinned data against live chains. Opt-in, since it needs the
-// network: `HERALD_LIVE_CHECKS=1 vp run test:live` in packages/core.
+// network: `vp run test:live` in packages/core sets HERALD_LIVE_CHECKS.
 const enabled = Boolean(
   (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env
     .HERALD_LIVE_CHECKS,

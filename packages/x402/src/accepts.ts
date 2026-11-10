@@ -6,6 +6,7 @@ import {
   NetworkSchema,
   PriceSchema,
   priceToBaseUnits,
+  type CaipNetwork,
   type ChainName,
   type Network,
 } from "@herald/core";
@@ -42,7 +43,7 @@ export type AcceptsOptions = {
 
 export type PaymentOption = {
   scheme: "exact";
-  network: `${string}:${string}`;
+  network: CaipNetwork;
   payTo: string;
   price: { asset: string; amount: string; extra?: { name: string; version: string } };
   maxTimeoutSeconds: number;
