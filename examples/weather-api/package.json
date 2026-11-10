@@ -8,18 +8,22 @@
     "dev": "wrangler dev --port 8788",
     "build": "wrangler deploy --dry-run --outdir dist",
     "types": "wrangler types --env-interface CloudflareBindings --strict-vars=false",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "buy": "node scripts/buy.ts"
   },
   "dependencies": {
     "@hrld/x402": "workspace:*",
     "@solana/kit": "catalog:",
     "@x402/core": "catalog:",
     "@x402/evm": "catalog:",
+    "@x402/fetch": "catalog:",
     "@x402/hono": "catalog:",
     "@x402/svm": "catalog:",
-    "hono": "catalog:"
+    "hono": "catalog:",
+    "viem": "catalog:"
   },
   "devDependencies": {
+    "@types/node": "catalog:",
     "typescript": "catalog:",
     "vite-plus": "catalog:",
     "wrangler": "catalog:"

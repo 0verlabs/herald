@@ -21,6 +21,7 @@ catalog:
   "@types/node": ^24.0.0
   "@x402/core": ~2.30.0
   "@x402/evm": ~2.30.0
+  "@x402/fetch": ~2.30.0
   "@x402/hono": ~2.30.0
   "@x402/svm": ~2.30.0
   drizzle-kit: 1.0.0-rc.5

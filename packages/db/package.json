@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./schema": "./src/schema.ts",
     "./testing": "./testing.ts"
   },
   "scripts": {
@@ -17,7 +18,6 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "catalog:",
-    "@herald/core": "workspace:*",
     "@types/node": "catalog:",
     "drizzle-kit": "catalog:",
     "typescript": "catalog:",

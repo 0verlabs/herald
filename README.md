@@ -36,6 +36,44 @@ vp -C apps/web dev              # dashboard on http://localhost:3000 (GET /api/h
 
 `vp run dev` starts every app at once. Both Workers keep local D1 and KV state in `.wrangler/state` at the repo root, so they share one local database, as they share one database per environment when deployed.
 
+The facilitator needs its gas wallet secrets locally: copy `apps/facilitator/.dev.vars.example` to `.dev.vars` and fill in throwaway testnet keys.
+
+### Facilitator
+
+`apps/facilitator` serves the x402 v2 facilitator API on the stock `@x402/core` facilitator and `exact` mechanisms:
+
+| Endpoint         | Auth                         | What it does                                                                                                                                                                          |
+| ---------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /supported` | none                         | Lists every network Herald has in its environment, Solana with Herald's fee payer.                                                                                                    |
+| `POST /verify`   | `Authorization: Bearer hk_…` | Verifies a payment into the key's Provider's own Receiving Address. 120 requests per minute per key.                                                                                  |
+| `POST /settle`   | `Authorization: Bearer hk_…` | Settles it with Herald paying gas, and records the payment. 60 requests per minute per key, counted before the body is checked. Refused if the MPC root keys don't match `v1.signer`. |
+
+Refusals come back as `{ "error": "…", "message": "…" }` with 400, 401 (missing, unknown, revoked or wrong-environment key), 403 (`payTo` isn't the Provider's), 429 or 503. EVM transactions go through one `EvmChainQueue` Durable Object per network, which owns the gas wallet's nonce and never submits the same EIP-3009 authorization twice. It also keeps settlements whose receipt didn't arrive within `SETTLE_RECEIPT_TIMEOUT_MS` (30 s), so the stock resource server's single `settlement_pending` retry, on any isolate, waits for the same transaction instead of failing. Solana is listed but not yet settled (#6).
+
+Secrets per environment: `EVM_GAS_KEY` (0x hex private key, one gas wallet for every EVM chain) and `SOLANA_GAS_KEY` (base58 64-byte secret key). RPC endpoints are the `RPC_URLS` var in `apps/facilitator/wrangler.jsonc`.
+
+To get a Provider and an API key without the dashboard:
+
+```bash
+vp -C apps/facilitator run seed alice.testnet                # local D1
+vp -C apps/facilitator run seed alice.testnet --env testnet  # herald-testnet D1
+```
+
+It prints the Provider's Receiving Addresses and an `hk_test_` key, once.
+
+### Pay the example API
+
+```bash
+vp -C apps/facilitator run seed <provider-account>   # put the key in examples/weather-api/.dev.vars
+vp -C apps/facilitator run dev                        # facilitator on :8787
+vp -C examples/weather-api run dev                    # weather API on :8788 (HERALD_FACILITATOR_URL=http://localhost:8787)
+curl -i http://localhost:8788/weather                 # 402 with a PAYMENT-REQUIRED header
+BUYER_PRIVATE_KEY=0x… vp -C examples/weather-api run buy                           # pays on Base Sepolia
+BUYER_PRIVATE_KEY=0x… vp -C examples/weather-api run buy --network eip155:421614   # pays on Arbitrum Sepolia
+```
+
+Set `PROVIDER_ACCOUNT` in `examples/weather-api/wrangler.jsonc` to the seeded account. The Buyer needs testnet USDC ([Circle faucet](https://faucet.circle.com)) and no ETH; the facilitator's EVM gas wallet needs Sepolia ETH on each chain. If both dev servers fail to start together, give them different `--inspector-port` values.
+
 After changing a `wrangler.jsonc`, run `vp run -r types` to regenerate binding types (`wrangler types --env-interface CloudflareBindings`). Hono apps type their bindings as `new Hono<{ Bindings: CloudflareBindings }>()`; `env` from `cloudflare:workers` is typed through `Cloudflare.Env`, which Wrangler declares with the same bindings. After changing `packages/db/src/schema.ts`, run `vp run db:generate` to write a new migration.
 
 ### Deploy
