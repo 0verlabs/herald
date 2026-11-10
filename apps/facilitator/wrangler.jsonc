@@ -1,0 +1,54 @@
+// Herald's x402 facilitator.
+//
+// The top level is the local development config (`wrangler dev`, tests).
+// `testnet` and `production` are the deployed environments, picked with
+// CLOUDFLARE_ENV. The `NETWORK` var tells the code which chains it serves
+// (`testnet` or `mainnet`). Bindings and vars are not inherited, so each
+// environment declares its own. No secrets live here: set
+// them with `CLOUDFLARE_ENV=<env> wrangler secret put <NAME>`.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "herald-facilitator",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "vars": { "NETWORK": "testnet" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "herald-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../../packages/db/migrations",
+      "migrations_pattern": "../../packages/db/migrations/*/migration.sql",
+    },
+  ],
+  "env": {
+    "testnet": {
+      "name": "herald-facilitator-testnet",
+      "vars": { "NETWORK": "testnet" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "herald-testnet",
+          "database_id": "2498f5b7-647d-4322-ba87-64acf452bca0",
+          "migrations_dir": "../../packages/db/migrations",
+          "migrations_pattern": "../../packages/db/migrations/*/migration.sql",
+        },
+      ],
+    },
+    "production": {
+      "name": "herald-facilitator-mainnet",
+      "vars": { "NETWORK": "mainnet" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "herald-mainnet",
+          "database_id": "40572b28-f964-40ff-a8ef-3676a0f1629a",
+          "migrations_dir": "../../packages/db/migrations",
+          "migrations_pattern": "../../packages/db/migrations/*/migration.sql",
+        },
+      ],
+    },
+  },
+}

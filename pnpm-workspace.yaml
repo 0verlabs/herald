@@ -1,0 +1,61 @@
+packages:
+  - apps/*
+  - packages/*
+  - examples/*
+
+catalogMode: prefer
+
+# Wrangler and Miniflare need these install scripts (the workerd binary and
+# esbuild's native binary).
+allowBuilds:
+  esbuild: true
+  workerd: true
+
+catalog:
+  "@cloudflare/vite-plugin": ^1.68.0
+  "@cloudflare/vitest-plugin": ^1.6.1
+  "@types/node": ^24.0.0
+  drizzle-kit: 1.0.0-rc.5
+  drizzle-orm: 1.0.0-rc.5
+  hono: ^4.13.17
+  typescript: ^7.0.2
+  vite: npm:@voidzero-dev/vite-plus-core@1.5.1
+  vite-plus: 1.5.1
+  wrangler: ^4.159.0
+  zod: ^4.6.7
+
+# Vite+ ships Vite as `@voidzero-dev/vite-plus-core`, aliased to `vite`. The
+# alias reports the wrapper's version (1.5.x), not Vite's (8.x), so Vite
+# plugins that peer on `vite@^8` (TanStack Start, @cloudflare/vite-plugin,
+# Tailwind) fail pnpm's peer check. Workaround for Vite+ issue #2806: force
+# every `vite` to the catalog alias and allow any `vite` peer version.
+# Remove once Vite+ versions the core package on Vite's major.
+overrides:
+  vite@*: "catalog:"
+peerDependencyRules:
+  allowAny:
+    - vite
+  allowedVersions:
+    vite: "*"
+minimumReleaseAgeExclude:
+  - "@voidzero-dev/vite-plus-core@1.5.1"
+  - "@voidzero-dev/vite-plus-darwin-arm64@1.5.1"
+  - "@voidzero-dev/vite-plus-darwin-x64@1.5.1"
+  - "@voidzero-dev/vite-plus-linux-arm64-gnu@1.5.1"
+  - "@voidzero-dev/vite-plus-linux-arm64-musl@1.5.1"
+  - "@voidzero-dev/vite-plus-linux-x64-gnu@1.5.1"
+  - "@voidzero-dev/vite-plus-linux-x64-musl@1.5.1"
+  - "@voidzero-dev/vite-plus-win32-arm64-msvc@1.5.1"
+  - "@voidzero-dev/vite-plus-win32-x64-msvc@1.5.1"
+  - vite-plus@1.5.1
+  - "@cloudflare/vitest-plugin@1.6.1"
+  - "@cloudflare/workerd-darwin-64@1.20261109.1"
+  - "@cloudflare/workerd-darwin-arm64@1.20261109.1"
+  - "@cloudflare/workerd-linux-64@1.20261109.1"
+  - "@cloudflare/workerd-linux-arm64@1.20261109.1"
+  - "@cloudflare/workerd-windows-64@1.20261109.1"
+  - miniflare@5.20261109.0-beta
+  - workerd@1.20261109.1
+  - wrangler@4.159.0
+  - "@cloudflare/vite-plugin@1.68.0"
+  - "@vitejs/plugin-react@6.3.0"

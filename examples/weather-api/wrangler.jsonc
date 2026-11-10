@@ -1,0 +1,10 @@
+// Example Provider API. It runs against Herald's testnet only, so it has no
+// Wrangler environments.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "herald-weather-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+}

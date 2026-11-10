@@ -1,0 +1,32 @@
+{
+  "name": "herald",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "postinstall": "vp run -r types",
+    "ready": "vp check && vp test && vp run -r build",
+    "dev": "vp run -r --parallel dev",
+    "db:generate": "vp run --filter @herald/db generate",
+    "db:migrate:local": "vp run --filter @herald/facilitator db:migrate:local",
+    "db:migrate:testnet": "CLOUDFLARE_ENV=testnet vp run --filter @herald/facilitator db:migrate:remote",
+    "db:migrate:production": "CLOUDFLARE_ENV=production vp run --filter @herald/facilitator db:migrate:remote",
+    "deploy:testnet": "CLOUDFLARE_ENV=testnet vp run --filter @herald/facilitator deploy && CLOUDFLARE_ENV=testnet vp run --filter @herald/web deploy",
+    "deploy:production": "CLOUDFLARE_ENV=production vp run --filter @herald/facilitator deploy && CLOUDFLARE_ENV=production vp run --filter @herald/web deploy"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.18.0",
+      "onFail": "download"
+    }
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  }
+}

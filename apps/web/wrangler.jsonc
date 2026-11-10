@@ -1,0 +1,57 @@
+// Herald dashboard (TanStack Start).
+//
+// The top level is the local development config (`vp dev`). `testnet` and
+// `production` are the deployed environments, picked at build time with
+// CLOUDFLARE_ENV. The `NETWORK` var tells the code which chains it serves
+// (`testnet` or `mainnet`). Bindings and vars are not inherited, so each
+// environment declares its own. D1 is
+// shared with the facilitator: same database per environment.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "herald-web",
+  "main": "@tanstack/react-start/server-entry",
+  "compatibility_date": "2026-11-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "vars": { "NETWORK": "testnet" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "herald-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../../packages/db/migrations",
+      "migrations_pattern": "../../packages/db/migrations/*/migration.sql",
+    },
+  ],
+  "kv_namespaces": [{ "binding": "SESSIONS", "id": "00000000000000000000000000000000" }],
+  "env": {
+    "testnet": {
+      "name": "herald-web-testnet",
+      "vars": { "NETWORK": "testnet" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "herald-testnet",
+          "database_id": "2498f5b7-647d-4322-ba87-64acf452bca0",
+          "migrations_dir": "../../packages/db/migrations",
+          "migrations_pattern": "../../packages/db/migrations/*/migration.sql",
+        },
+      ],
+      "kv_namespaces": [{ "binding": "SESSIONS", "id": "2fafa42fee0c42a3891c9c665817324a" }],
+    },
+    "production": {
+      "name": "herald-web-mainnet",
+      "vars": { "NETWORK": "mainnet" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "herald-mainnet",
+          "database_id": "40572b28-f964-40ff-a8ef-3676a0f1629a",
+          "migrations_dir": "../../packages/db/migrations",
+          "migrations_pattern": "../../packages/db/migrations/*/migration.sql",
+        },
+      ],
+      "kv_namespaces": [{ "binding": "SESSIONS", "id": "3ea666d940fe4fe685da650003bc1de7" }],
+    },
+  },
+}

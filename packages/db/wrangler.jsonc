@@ -1,0 +1,17 @@
+// Test-only Worker config. It is never deployed: it gives the Vitest pool a D1
+// binding shaped like the apps' and lets `wrangler types` generate the
+// runtime types this package compiles against.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "herald-db-test",
+  "compatibility_date": "2026-11-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "herald-db-test",
+      "migrations_dir": "migrations",
+      "migrations_pattern": "migrations/*/migration.sql",
+    },
+  ],
+}
