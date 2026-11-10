@@ -6,6 +6,11 @@
 // (`testnet` or `mainnet`). Bindings and vars are not inherited, so each
 // environment declares its own. D1 is
 // shared with the facilitator: same database per environment.
+//
+// NEAR_RPC_URL is the NEAR network of the Herald environment. Sign-in checks
+// there that the signing key is a full-access key of the Provider Account.
+// SESSIONS holds dashboard sessions. SIGN_IN_RATE_LIMITER allows 20 sign-in
+// requests (challenges and signatures) per minute per client IP.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "herald-web",
@@ -13,7 +18,7 @@
   "compatibility_date": "2026-11-09",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
-  "vars": { "HERALD_ENV": "testnet" },
+  "vars": { "HERALD_ENV": "testnet", "NEAR_RPC_URL": "https://rpc.testnet.fastnear.com" },
   "d1_databases": [
     {
       "binding": "DB",
@@ -24,10 +29,17 @@
     },
   ],
   "kv_namespaces": [{ "binding": "SESSIONS", "id": "00000000000000000000000000000000" }],
+  "ratelimits": [
+    {
+      "name": "SIGN_IN_RATE_LIMITER",
+      "namespace_id": "4020",
+      "simple": { "limit": 20, "period": 60 },
+    },
+  ],
   "env": {
     "testnet": {
       "name": "herald-web-testnet",
-      "vars": { "HERALD_ENV": "testnet" },
+      "vars": { "HERALD_ENV": "testnet", "NEAR_RPC_URL": "https://rpc.testnet.fastnear.com" },
       "d1_databases": [
         {
           "binding": "DB",
@@ -38,10 +50,17 @@
         },
       ],
       "kv_namespaces": [{ "binding": "SESSIONS", "id": "2fafa42fee0c42a3891c9c665817324a" }],
+      "ratelimits": [
+        {
+          "name": "SIGN_IN_RATE_LIMITER",
+          "namespace_id": "4021",
+          "simple": { "limit": 20, "period": 60 },
+        },
+      ],
     },
     "production": {
       "name": "herald-web-mainnet",
-      "vars": { "HERALD_ENV": "mainnet" },
+      "vars": { "HERALD_ENV": "mainnet", "NEAR_RPC_URL": "https://rpc.mainnet.fastnear.com" },
       "d1_databases": [
         {
           "binding": "DB",
@@ -52,6 +71,13 @@
         },
       ],
       "kv_namespaces": [{ "binding": "SESSIONS", "id": "3ea666d940fe4fe685da650003bc1de7" }],
+      "ratelimits": [
+        {
+          "name": "SIGN_IN_RATE_LIMITER",
+          "namespace_id": "4022",
+          "simple": { "limit": 20, "period": 60 },
+        },
+      ],
     },
   },
 }

@@ -37,7 +37,12 @@ export default defineConfig({
     // apps/web is left out: its Vite config loads @cloudflare/vite-plugin,
     // which breaks Vitest startup (workers-sdk issue #15969). The dashboard
     // UI is not covered by automated tests (see #1, Testing Decisions).
-    projects: ["packages/*/vite.config.ts", "apps/facilitator/vite.config.ts"],
+    projects: [
+      "packages/*/vite.config.ts",
+      // Core's D1- and KV-backed business functions, in the Workers pool.
+      "packages/core/vite.workers.config.ts",
+      "apps/facilitator/vite.config.ts",
+    ],
   },
   run: {
     // Never cache package.json scripts: a cached `deploy` replays its old

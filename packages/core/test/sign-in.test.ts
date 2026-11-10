@@ -1,0 +1,239 @@
+import { createDb } from "@herald/db";
+import { env } from "cloudflare:workers";
+import { afterEach, describe, expect, test, vi } from "vite-plus/test";
+import {
+  createSignInChallenge,
+  nearRpcAccessKeyReader,
+  signIn,
+  type NearAccessKeyReader,
+} from "../src/server/index.ts";
+import { fakeNearAccounts, nearKey, walletSignature } from "./support/near.ts";
+
+const recipient = "dashboard.herald.test";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+/** One Provider Account with one access key of the given permission. */
+function account(accountId: string, permission: "full_access" | "limited" = "full_access") {
+  const key = nearKey();
+  return { accountId, key, readAccessKey: fakeNearAccounts({ [accountId]: [[key, permission]] }) };
+}
+
+async function signInWith(readAccessKey: NearAccessKeyReader, signature: unknown) {
+  const db = createDb(env.DB);
+  return signIn({ db, readAccessKey }, { env: "testnet", recipient, signature });
+}
+
+async function challenge() {
+  return createSignInChallenge(createDb(env.DB), { env: "testnet", recipient });
+}
+
+describe("signIn", () => {
+  test("signs a Provider in with a full-access key and registers its Receiving Addresses", async () => {
+    const db = createDb(env.DB);
+    const key = nearKey();
+    const readAccessKey = fakeNearAccounts({ "herald-test.near": [[key, "full_access"]] });
+    const challenge = await createSignInChallenge(db, { env: "mainnet", recipient });
+    const signature = await walletSignature({ accountId: "herald-test.near", challenge, key });
+
+    const result = await signIn({ db, readAccessKey }, { env: "mainnet", recipient, signature });
+
+    expect(result).toMatchObject({
+      ok: true,
+      provider: {
+        accountId: "herald-test.near",
+        // Recorded from v1.signer (see #1).
+        evmAddress: "0xf437261ba00ac4f34effb54d54df13a81b220e13",
+        solanaAddress: "H396yYAeSpsgC6pQ7Qd681g9MSTT7oYZ4bCqGHGdbNiq",
+      },
+    });
+  });
+
+  test("signing in again returns the Provider registered the first time", async () => {
+    const { accountId, key, readAccessKey } = account("returning.testnet");
+    const first = await signInWith(
+      readAccessKey,
+      await walletSignature({ accountId, challenge: await challenge(), key }),
+    );
+
+    const second = await signInWith(
+      readAccessKey,
+      await walletSignature({ accountId, challenge: await challenge(), key }),
+    );
+
+    expect(first.ok && second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+    expect(second.provider).toEqual(first.provider);
+  });
+
+  test("rejects a signature made with another key than the one presented", async () => {
+    const { accountId, key, readAccessKey } = account("wrong-key.testnet");
+    const signature = await walletSignature({
+      accountId,
+      challenge: await challenge(),
+      key: nearKey(),
+      presentedKey: key,
+    });
+
+    expect(await signInWith(readAccessKey, signature)).toMatchObject({
+      ok: false,
+      reason: "bad_signature",
+    });
+  });
+
+  test("rejects a signature for another recipient", async () => {
+    const { accountId, key, readAccessKey } = account("phished.testnet");
+    const signature = await walletSignature({
+      accountId,
+      challenge: await challenge(),
+      key,
+      recipient: "evil.example",
+    });
+
+    expect(await signInWith(readAccessKey, signature)).toMatchObject({
+      ok: false,
+      reason: "bad_signature",
+    });
+  });
+
+  test("rejects a key that isn't on the claimed account", async () => {
+    const { readAccessKey } = account("victim.testnet");
+    const signature = await walletSignature({
+      accountId: "victim.testnet",
+      challenge: await challenge(),
+      key: nearKey(),
+    });
+
+    expect(await signInWith(readAccessKey, signature)).toMatchObject({
+      ok: false,
+      reason: "unknown_key",
+    });
+  });
+
+  test("rejects a function-call key", async () => {
+    const { accountId, key, readAccessKey } = account("limited-key.testnet", "limited");
+    const signature = await walletSignature({ accountId, challenge: await challenge(), key });
+
+    expect(await signInWith(readAccessKey, signature)).toMatchObject({
+      ok: false,
+      reason: "not_full_access",
+    });
+  });
+
+  test("rejects a replayed signature, since each nonce works once", async () => {
+    const { accountId, key, readAccessKey } = account("replayed.testnet");
+    const signature = await walletSignature({ accountId, challenge: await challenge(), key });
+    expect(await signInWith(readAccessKey, signature)).toMatchObject({ ok: true });
+
+    expect(await signInWith(readAccessKey, signature)).toMatchObject({
+      ok: false,
+      reason: "unknown_nonce",
+    });
+  });
+
+  test("rejects a nonce Herald didn't issue", async () => {
+    const { accountId, key, readAccessKey } = account("made-up-nonce.testnet");
+    const madeUp = { ...(await challenge()), nonce: btoa("x".repeat(32)) };
+    const signature = await walletSignature({ accountId, challenge: madeUp, key });
+
+    expect(await signInWith(readAccessKey, signature)).toMatchObject({
+      ok: false,
+      reason: "unknown_nonce",
+    });
+  });
+
+  test("rejects an expired challenge", async () => {
+    const { accountId, key, readAccessKey } = account("slow-signer.testnet");
+    const issued = await challenge();
+    const signature = await walletSignature({ accountId, challenge: issued, key });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(issued.expiresAt.getTime() + 1);
+
+    expect(await signInWith(readAccessKey, signature)).toMatchObject({
+      ok: false,
+      reason: "unknown_nonce",
+    });
+  });
+
+  test("reports NEAR RPC being unreachable as a rejection", async () => {
+    const { accountId, key } = account("rpc-down.testnet");
+    const signature = await walletSignature({ accountId, challenge: await challenge(), key });
+    const unreachable: NearAccessKeyReader = async () => {
+      throw new Error("NEAR RPC answered 503");
+    };
+
+    expect(await signInWith(unreachable, signature)).toMatchObject({
+      ok: false,
+      reason: "near_rpc_failed",
+    });
+  });
+
+  test("rejects a malformed request", async () => {
+    const { readAccessKey } = account("malformed.testnet");
+
+    expect(
+      await signInWith(readAccessKey, { accountId: "Not An Account", publicKey: "x" }),
+    ).toMatchObject({ ok: false, reason: "invalid_request" });
+  });
+});
+
+describe("nearRpcAccessKeyReader", () => {
+  // Replies as rpc.testnet.fastnear.com sent them on 2026-11-10.
+  const block = {
+    block_hash: "4ParAnwAXGgrUPiALdKyWKT6rck7qwpwCP8YMYikFUhc",
+    block_height: 277049685,
+  };
+  const replies = {
+    fullAccess: { result: { ...block, nonce: 0, permission: "FullAccess" } },
+    functionCall: {
+      result: {
+        ...block,
+        nonce: 3,
+        permission: {
+          FunctionCall: { allowance: null, receiver_id: "app.testnet", method_names: [] },
+        },
+      },
+    },
+    missing: {
+      result: {
+        ...block,
+        error:
+          "access key ed25519:AtH7GEjv2qmBVoT8qoRhWXizXM5CC12DC6tiqY9iNoRm does not exist while viewing",
+        logs: [],
+      },
+    },
+    unknownAccount: {
+      error: { name: "HANDLER_ERROR", cause: { name: "UNKNOWN_ACCOUNT", info: {} } },
+    },
+  };
+  const request = {
+    accountId: "alice.testnet",
+    publicKey: "ed25519:AtH7GEjv2qmBVoT8qoRhWXizXM5CC12DC6tiqY9iNoRm",
+  };
+
+  function rpcAnswering(reply: object, status = 200) {
+    const fetchFn: typeof fetch = async () =>
+      Response.json({ jsonrpc: "2.0", id: "herald", ...reply }, { status });
+    return nearRpcAccessKeyReader("https://rpc.test", fetchFn);
+  }
+
+  test.each([
+    ["a full-access key", replies.fullAccess, "full_access"],
+    ["a function-call key", replies.functionCall, "limited"],
+    ["a key the account doesn't have", replies.missing, null],
+    ["an account that doesn't exist", replies.unknownAccount, null],
+  ])("reads %s", async (_case, reply, expected) => {
+    expect(await rpcAnswering(reply)(request)).toBe(expected);
+  });
+
+  test("throws when the RPC fails", async () => {
+    await expect(rpcAnswering({}, 503)(request)).rejects.toThrow("503");
+    await expect(
+      rpcAnswering({ error: { name: "INTERNAL_ERROR", cause: { name: "TIMEOUT_ERROR" } } })(
+        request,
+      ),
+    ).rejects.toThrow("TIMEOUT_ERROR");
+  });
+});

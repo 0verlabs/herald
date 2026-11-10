@@ -21,7 +21,7 @@ Requirements: Node.js 22.18 or later and the [Vite+](https://viteplus.dev) CLI (
 vp install              # install dependencies; also generates worker-configuration.d.ts per Worker
 vp check                # format, lint and type check the whole workspace
 vp check --fix          # same, fixing formatting and autofixable lint issues
-vp test                 # run every test (Workers tests run in the Cloudflare Vitest pool)
+vp test                 # run every test (Workers tests run in the Cloudflare Vitest pool; core's are in packages/core/vite.workers.config.ts)
 vp run ready            # check, test and build everything
 vp -C packages/core run test:live  # check the network registry and MPC root keys against live chains
 ```
@@ -60,6 +60,19 @@ vp -C apps/facilitator run seed alice.testnet --env testnet  # herald-testnet D1
 ```
 
 It prints the Provider's Receiving Addresses and an `hk_test_` key, once.
+
+### Dashboard
+
+`apps/web` is the Provider dashboard. Open it (`vp -C apps/web dev`, then http://localhost:3000), click **Connect NEAR wallet**, pick a wallet and sign the message it shows. Use a `.testnet` account on the testnet deployment and locally. Signing sends no transaction. You land on Overview, which shows your Provider Account, your EVM Receiving Address (one address for every EVM chain Herald lists) and your Solana Receiving Address, each with a copy button. Signed-out visitors to a dashboard page are sent to sign-in.
+
+Sign-in uses NEP-413 through `@hot-labs/near-connect`:
+
+1. The server issues a single-use nonce, valid for 5 minutes, kept in D1 (`sign_in_nonces`).
+2. The wallet signs Herald's message, the nonce and the dashboard's host as recipient.
+3. The server checks the ed25519 signature and asks NEAR RPC (`NEAR_RPC_URL`) whether the key is a full-access key of the account. Function-call keys are refused.
+4. The first sign-in registers the Provider and stores its Receiving Addresses. A session goes into the `SESSIONS` KV namespace for 7 days, keyed by the SHA-256 of a random token held in an HTTP-only cookie. Signing out deletes it.
+
+`SIGN_IN_RATE_LIMITER` allows 20 sign-in requests per minute per client IP. The logic lives in `packages/core/src/server` (`sign-in.ts`, `sessions.ts`); `apps/web/src/server/auth.ts` wires it to TanStack Start server functions.
 
 ### Pay the example API
 
@@ -104,6 +117,7 @@ Secrets (gas wallet keys, the 1Click JWT) never go in the repo. Set them per env
 | `vite.config.ts` (root, `test.projects`)   | `apps/web` is not a test project.                                                                                  | [workers-sdk #15969](https://github.com/cloudflare/workers-sdk/issues/15969): Vitest fails to start when the config loads `@cloudflare/vite-plugin`.     |
 | `apps/facilitator`, `examples/weather-api` | Run and deploy with Wrangler directly, not through Vite. The facilitator's `vite.config.ts` only configures tests. | Keeps `@cloudflare/vite-plugin` out of every Vitest config (same issue).                                                                                 |
 | `packages/*`, `apps/facilitator`           | Workers tests use `@cloudflare/vitest-plugin`, not `@cloudflare/vitest-pool-workers`.                              | The pool-workers package only supports Vitest 4; Vite+ ships Vitest 5. The renamed plugin supports both.                                                 |
+| `packages/core`                            | Two test configs: `vite.config.ts` (Node.js) and `vite.workers.config.ts` (Workers pool, D1 and KV).               | The opt-in live checks read the host's environment variables, which the Workers pool doesn't see.                                                        |
 | `packages/tsconfig.x402-dts.json`          | The `@hrld/x402` declaration build uses a tsconfig in `packages/`, not in `packages/x402`.                         | tsgo writes declarations for files outside `--rootDir` next to their sources, which would litter `packages/core/src`.                                    |
 
 [Vite+ #1671](https://github.com/voidzero-dev/vite-plus/issues/1671) (React duplicated in SSR) and [#2481](https://github.com/voidzero-dev/vite-plus/issues/2481) (dev server wedges after a restart) did not show up while setting up `apps/web` on vite-plus 1.5.1. If the dashboard dev server stops answering after a config change, restart `vp dev`.

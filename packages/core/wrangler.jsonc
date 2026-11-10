@@ -1,0 +1,19 @@
+// Test-only Worker config. It is never deployed: it gives the Vitest pool in
+// vite.workers.config.ts real D1 and KV bindings shaped like the apps', for
+// the business functions in src/server, and lets `wrangler types` generate
+// the runtime types the tests compile against.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "herald-core-test",
+  "compatibility_date": "2026-11-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "herald-core-test",
+      "migrations_dir": "../db/migrations",
+      "migrations_pattern": "../db/migrations/*/migration.sql",
+    },
+  ],
+  "kv_namespaces": [{ "binding": "SESSIONS", "id": "00000000000000000000000000000000" }],
+}
