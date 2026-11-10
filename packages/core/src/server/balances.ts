@@ -1,6 +1,7 @@
 import { providers } from "@herald/db/schema";
 import { eq } from "drizzle-orm";
 import { networkRegistry, type Caip2, type Network } from "../networks.ts";
+import { postRpc } from "../rpc.ts";
 import { ProviderSchema, type HeraldEnv } from "../schemas.ts";
 import type { Db } from "./db.ts";
 
@@ -140,22 +141,15 @@ async function jsonRpc(
   method: string,
   params: unknown[],
 ): Promise<unknown> {
-  let response: Response;
-  try {
-    response = await fetchFn(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-      // `getProviderBalances` stops waiting at its own timeout; this also
-      // cancels the request itself.
-      signal: AbortSignal.timeout(BALANCE_READ_TIMEOUT_MS),
-    });
-  } catch (error) {
-    // Only the error's name: a runtime's message could repeat the URL.
-    const name = error instanceof Error ? error.name : "Error";
-    throw new Error(`${label} RPC request for ${method} failed (${name})`);
-  }
-  if (!response.ok) throw new Error(`${label} RPC answered ${response.status} to ${method}`);
+  const response = await postRpc(
+    fetchFn,
+    url,
+    { jsonrpc: "2.0", id: 1, method, params },
+    `${label} RPC ${method}`,
+    // `getProviderBalances` stops waiting at its own timeout; this also
+    // cancels the request itself.
+    AbortSignal.timeout(BALANCE_READ_TIMEOUT_MS),
+  );
   const body = (await response.json()) as { result?: unknown; error?: { message?: unknown } };
   if (body.error !== undefined) {
     const reason =

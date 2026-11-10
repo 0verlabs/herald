@@ -5,6 +5,7 @@ import { concatBytes } from "@noble/hashes/utils.js";
 import { base58, base64 } from "@scure/base";
 import { and, eq, gt, lte } from "drizzle-orm";
 import { z } from "zod";
+import { postRpc } from "../rpc.ts";
 import { NearAccountIdSchema, type HeraldEnv, type Provider } from "../schemas.ts";
 import type { Db } from "./db.ts";
 import {
@@ -135,10 +136,11 @@ export async function signIn(
   try {
     permission = await deps.readAccessKey({ accountId, publicKey });
   } catch (error) {
-    return reject(
-      "near_rpc_failed",
-      `Herald couldn't check your key with NEAR (${String(error)}). Try again.`,
+    // Logged, not shown: the reader's error is for Herald, not the Provider.
+    console.warn(
+      JSON.stringify({ event: "near_access_key_check_failed", accountId, error: String(error) }),
     );
+    return reject("near_rpc_failed", "Herald couldn't check your key with NEAR. Try again.");
   }
   if (permission === null) {
     return reject("unknown_key", `${publicKey} is not an access key of ${accountId}.`);
@@ -221,17 +223,17 @@ function borshString(value: string): Uint8Array {
 
 /**
  * A `NearAccessKeyReader` that calls `view_access_key` over NEAR JSON-RPC, at
- * final finality.
+ * final finality. Its errors never name `rpcUrl`, which may carry an API key.
  */
 export function nearRpcAccessKeyReader(
   rpcUrl: string,
   fetchFn: typeof fetch = fetch,
 ): NearAccessKeyReader {
   return async ({ accountId, publicKey }) => {
-    const response = await fetchFn(rpcUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
+    const response = await postRpc(
+      fetchFn,
+      rpcUrl,
+      {
         jsonrpc: "2.0",
         id: "herald",
         method: "query",
@@ -241,11 +243,9 @@ export function nearRpcAccessKeyReader(
           account_id: accountId,
           public_key: publicKey,
         },
-      }),
-    });
-    if (!response.ok) {
-      throw new Error(`NEAR RPC ${rpcUrl} answered ${response.status} for view_access_key`);
-    }
+      },
+      "NEAR RPC view_access_key",
+    );
     const body = (await response.json()) as {
       result?: { permission?: unknown; error?: string };
       error?: { cause?: { name?: string } };

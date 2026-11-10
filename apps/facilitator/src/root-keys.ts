@@ -24,9 +24,8 @@ export function createRootKeyGuard() {
     try {
       check = await checkMpcRootKeys(env, nearRpcMpcRootKeyReader(nearRpcUrl));
     } catch (error) {
-      console.error(
-        JSON.stringify({ event: "root_key_check_failed", error: String(error), nearRpcUrl }),
-      );
+      // Never log `nearRpcUrl`: the URL carries the endpoint's API key.
+      console.error(JSON.stringify({ event: "root_key_check_failed", error: String(error) }));
       return {
         ok: false,
         error: "root_key_check_failed",

@@ -182,17 +182,18 @@ describe("signIn", () => {
     });
   });
 
-  test("reports NEAR RPC being unreachable as a rejection", async () => {
+  test("reports NEAR RPC being unreachable as a rejection, without repeating the RPC's error", async () => {
     const { accountId, key } = account("rpc-down.testnet");
     const signature = await walletSignature({ accountId, challenge: await challenge(), key });
+    // The endpoint's URL carries its API key, and an error may name it.
     const unreachable: NearAccessKeyReader = async () => {
-      throw new Error("NEAR RPC answered 503");
+      throw new Error("fetch to https://near.example/api-key-1234 failed");
     };
 
-    expect(await signInWith(unreachable, signature)).toMatchObject({
-      ok: false,
-      reason: "near_rpc_failed",
-    });
+    const result = await signInWith(unreachable, signature);
+
+    expect(result).toMatchObject({ ok: false, reason: "near_rpc_failed" });
+    expect(result.ok ? "" : result.message).not.toContain("api-key-1234");
   });
 
   test("rejects a malformed request", async () => {
@@ -366,6 +367,26 @@ describe("nearRpcAccessKeyReader", () => {
     ["an account that doesn't exist", replies.unknownAccount, null],
   ])("reads %s", async (_case, reply, expected) => {
     expect(await rpcAnswering(reply)(request)).toBe(expected);
+  });
+
+  test.each([
+    [
+      "answers 503",
+      async () => new Response("down at https://near.example/api-key-1234", { status: 503 }),
+    ],
+    [
+      "can't be reached",
+      async () => {
+        throw new TypeError("fetch failed: https://near.example/api-key-1234");
+      },
+    ],
+  ])("never names the endpoint in its error when the RPC %s", async (_case, fetchFn) => {
+    const read = nearRpcAccessKeyReader("https://near.example/api-key-1234", fetchFn);
+
+    const error: unknown = await read(request).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).not.toContain("api-key-1234");
   });
 
   test("throws when the RPC fails", async () => {

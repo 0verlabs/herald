@@ -1,4 +1,5 @@
 import { mpcSigners, receivingAddressPaths } from "./receiving-addresses.ts";
+import { postRpc } from "./rpc.ts";
 import type { HeraldEnv } from "./schemas.ts";
 
 /**
@@ -49,17 +50,18 @@ export async function checkMpcRootKeys(
 
 /**
  * An `MpcRootKeyReader` that calls the contract's `public_key` view over
- * NEAR JSON-RPC, at final finality.
+ * NEAR JSON-RPC, at final finality. Its errors never name `rpcUrl`, which
+ * may carry an API key.
  */
 export function nearRpcMpcRootKeyReader(
   rpcUrl: string,
   fetchFn: typeof fetch = fetch,
 ): MpcRootKeyReader {
   return async ({ contractId, domainId }) => {
-    const response = await fetchFn(rpcUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
+    const response = await postRpc(
+      fetchFn,
+      rpcUrl,
+      {
         jsonrpc: "2.0",
         id: "herald",
         method: "query",
@@ -70,11 +72,9 @@ export function nearRpcMpcRootKeyReader(
           method_name: "public_key",
           args_base64: btoa(JSON.stringify({ domain_id: domainId })),
         },
-      }),
-    });
-    if (!response.ok) {
-      throw new Error(`NEAR RPC ${rpcUrl} answered ${response.status} for ${contractId}`);
-    }
+      },
+      `NEAR RPC ${contractId}.public_key(${domainId})`,
+    );
     const body = (await response.json()) as {
       result?: { result?: number[]; error?: string };
       error?: unknown;
