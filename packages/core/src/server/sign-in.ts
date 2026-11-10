@@ -7,7 +7,11 @@ import { and, eq, gt, lte } from "drizzle-orm";
 import { z } from "zod";
 import { NearAccountIdSchema, type HeraldEnv, type Provider } from "../schemas.ts";
 import type { Db } from "./db.ts";
-import { registerProvider } from "./providers.ts";
+import {
+  ensureSolanaTokenAccountQueued,
+  registerProvider,
+  type SolanaTokenAccountQueue,
+} from "./providers.ts";
 
 /** How long a sign-in challenge can be signed and sent back. */
 export const SIGN_IN_CHALLENGE_TTL_MS = 5 * 60 * 1000;
@@ -88,7 +92,9 @@ export async function createSignInChallenge(
 
 /**
  * Signs a Provider in from its wallet's signature over a sign-in challenge,
- * and registers the Provider Account the first time. The signature must
+ * and registers the Provider Account the first time, handing its Solana
+ * USDC token account to the Solana chain queue until one call succeeds (see
+ * `ensureSolanaTokenAccountQueued`). The signature must
  * cover Herald's message for `env`, `recipient` and a nonce Herald issued
  * and nobody has used yet. The key must be a full-access key of the account,
  * which `readAccessKey` checks over NEAR RPC; if that check fails, the
@@ -96,7 +102,11 @@ export async function createSignInChallenge(
  * outcome, so a rejected attempt needs a new challenge.
  */
 export async function signIn(
-  deps: { db: Db; readAccessKey: NearAccessKeyReader },
+  deps: {
+    db: Db;
+    readAccessKey: NearAccessKeyReader;
+    queueSolanaTokenAccount: SolanaTokenAccountQueue;
+  },
   input: { env: HeraldEnv; recipient: string; signature: unknown },
 ): Promise<SignInResult> {
   const parsed = SignInSignatureSchema.safeParse(input.signature);
@@ -140,7 +150,11 @@ export async function signIn(
     );
   }
 
-  return { ok: true, provider: await registerProvider(deps.db, { accountId, env: input.env }) };
+  const provider = await registerProvider(deps.db, { accountId, env: input.env });
+  return {
+    ok: true,
+    provider: await ensureSolanaTokenAccountQueued(deps, { provider, env: input.env }),
+  };
 }
 
 function reject(reason: SignInRejection, message: string): SignInResult {

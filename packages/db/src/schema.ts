@@ -15,6 +15,11 @@ export const providers = sqliteTable("providers", {
   accountId: text("account_id").notNull().unique(),
   evmAddress: text("evm_address").notNull(),
   solanaAddress: text("solana_address").notNull(),
+  solanaTokenAccountStatus: text("solana_token_account_status", {
+    enum: ["not_queued", "queued", "created", "failed"],
+  })
+    .notNull()
+    .default("not_queued"),
   createdAt: createdAt(),
 });
 

@@ -6,4 +6,9 @@
 EVM_GAS_KEY=0x0000000000000000000000000000000000000000000000000000000000000000
 
 # Solana fee payer: a base58 64-byte secret key (as Phantom exports it).
+# Fund it with devnet SOL: it pays settlement fees and token account rent.
 SOLANA_GAS_KEY=replace_me
+
+# Solana Devnet JSON-RPC endpoint from an RPC vendor (Helius, QuickNode, …).
+# api.devnet.solana.com refuses requests from Workers, local ones included.
+SOLANA_RPC_URL=https://devnet.helius-rpc.com/?api-key=replace_me

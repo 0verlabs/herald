@@ -1,5 +1,4 @@
 import type { Caip2 } from "@herald/core";
-import { PENDING_SETTLEMENT_TTL_MS } from "@x402/core/facilitator";
 import { eip3009ABI } from "@x402/evm";
 import { DurableObject } from "cloudflare:workers";
 import {
@@ -15,6 +14,7 @@ import {
   type PublicClient,
 } from "viem";
 import { evmChain, evmGasAccount, rpcUrl } from "./chains.ts";
+import { PendingSettlements } from "./pending-settlements.ts";
 
 export type TransferWithAuthorizationSubmission = {
   network: Caip2;
@@ -50,6 +50,7 @@ export class EvmChainQueue extends DurableObject<CloudflareBindings> {
   // Tail of the submission queue. Each submission starts after the previous
   // one has been broadcast or has failed.
   #tail: Promise<unknown> = Promise.resolve();
+  readonly #pending: PendingSettlements;
 
   constructor(ctx: DurableObjectState, env: CloudflareBindings) {
     super(ctx, env);
@@ -60,13 +61,9 @@ export class EvmChainQueue extends DurableObject<CloudflareBindings> {
         nonce INTEGER NOT NULL,
         submitted_at INTEGER NOT NULL
       );
-      CREATE INDEX IF NOT EXISTS submissions_nonce ON submissions (nonce);
-      CREATE TABLE IF NOT EXISTS pending_settlements (
-        settlement_key TEXT PRIMARY KEY,
-        tx_hash TEXT NOT NULL,
-        stored_at INTEGER NOT NULL
-      )`,
+      CREATE INDEX IF NOT EXISTS submissions_nonce ON submissions (nonce)`,
     );
+    this.#pending = new PendingSettlements(ctx.storage.sql);
   }
 
   /**
@@ -84,35 +81,17 @@ export class EvmChainQueue extends DurableObject<CloudflareBindings> {
 
   /** `PendingSettlementStore.get` for the stock mechanism. */
   getPendingSettlement(settlementKey: string): string | undefined {
-    this.ctx.storage.sql.exec(
-      "DELETE FROM pending_settlements WHERE stored_at < ?",
-      Date.now() - PENDING_SETTLEMENT_TTL_MS,
-    );
-    const [row] = this.ctx.storage.sql
-      .exec<{ tx_hash: string }>(
-        "SELECT tx_hash FROM pending_settlements WHERE settlement_key = ?",
-        settlementKey,
-      )
-      .toArray();
-    return row?.tx_hash;
+    return this.#pending.get(settlementKey);
   }
 
   /** `PendingSettlementStore.set` for the stock mechanism. */
   setPendingSettlement(settlementKey: string, txHash: string): void {
-    this.ctx.storage.sql.exec(
-      "INSERT OR REPLACE INTO pending_settlements (settlement_key, tx_hash, stored_at) VALUES (?, ?, ?)",
-      settlementKey,
-      txHash,
-      Date.now(),
-    );
+    this.#pending.set(settlementKey, txHash);
   }
 
   /** `PendingSettlementStore.delete` for the stock mechanism. */
   deletePendingSettlement(settlementKey: string): void {
-    this.ctx.storage.sql.exec(
-      "DELETE FROM pending_settlements WHERE settlement_key = ?",
-      settlementKey,
-    );
+    this.#pending.delete(settlementKey);
   }
 
   async #submit({

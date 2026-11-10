@@ -4,8 +4,11 @@ import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import {
   createSignInChallenge,
   nearRpcAccessKeyReader,
+  setSolanaTokenAccountStatus,
   signIn,
   type NearAccessKeyReader,
+  type SolanaTokenAccountJob,
+  type SolanaTokenAccountQueue,
 } from "../src/server/index.ts";
 import { fakeNearAccounts, nearKey, walletSignature } from "./support/near.ts";
 
@@ -21,9 +24,27 @@ function account(accountId: string, permission: "full_access" | "limited" = "ful
   return { accountId, key, readAccessKey: fakeNearAccounts({ [accountId]: [[key, permission]] }) };
 }
 
-async function signInWith(readAccessKey: NearAccessKeyReader, signature: unknown) {
+/** A fake Solana chain queue that records the token accounts it's asked to create. */
+function fakeSolanaChainQueue() {
+  const jobs: SolanaTokenAccountJob[] = [];
+  const queueSolanaTokenAccount: SolanaTokenAccountQueue = async (job) => {
+    jobs.push(job);
+  };
+  return { jobs, queueSolanaTokenAccount };
+}
+
+async function signInWith(
+  readAccessKey: NearAccessKeyReader,
+  signature: unknown,
+  {
+    queueSolanaTokenAccount,
+  }: { queueSolanaTokenAccount: SolanaTokenAccountQueue } = fakeSolanaChainQueue(),
+) {
   const db = createDb(env.DB);
-  return signIn({ db, readAccessKey }, { env: "testnet", recipient, signature });
+  return signIn(
+    { db, readAccessKey, queueSolanaTokenAccount },
+    { env: "testnet", recipient, signature },
+  );
 }
 
 async function challenge() {
@@ -37,8 +58,12 @@ describe("signIn", () => {
     const readAccessKey = fakeNearAccounts({ "herald-test.near": [[key, "full_access"]] });
     const challenge = await createSignInChallenge(db, { env: "mainnet", recipient });
     const signature = await walletSignature({ accountId: "herald-test.near", challenge, key });
+    const { queueSolanaTokenAccount } = fakeSolanaChainQueue();
 
-    const result = await signIn({ db, readAccessKey }, { env: "mainnet", recipient, signature });
+    const result = await signIn(
+      { db, readAccessKey, queueSolanaTokenAccount },
+      { env: "mainnet", recipient, signature },
+    );
 
     expect(result).toMatchObject({
       ok: true,
@@ -176,6 +201,121 @@ describe("signIn", () => {
     expect(
       await signInWith(readAccessKey, { accountId: "Not An Account", publicKey: "x" }),
     ).toMatchObject({ ok: false, reason: "invalid_request" });
+  });
+});
+
+describe("the Provider's Solana USDC token account", () => {
+  test("the first sign-in queues its creation on the Herald environment's Solana network", async () => {
+    const { accountId, key, readAccessKey } = account("token-account.testnet");
+    const queue = fakeSolanaChainQueue();
+
+    const result = await signInWith(
+      readAccessKey,
+      await walletSignature({ accountId, challenge: await challenge(), key }),
+      queue,
+    );
+
+    if (!result.ok) throw new Error(result.message);
+    expect(result.provider.solanaTokenAccountStatus).toBe("queued");
+    expect(queue.jobs).toEqual([
+      {
+        network: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+        providerId: result.provider.id,
+        owner: result.provider.solanaAddress,
+      },
+    ]);
+  });
+
+  test("is handed to the chain queue again at each sign-in until it's created", async () => {
+    // The chain queue creates it at most once (see the facilitator's
+    // solana-token-accounts tests); handing it over again recovers a job
+    // the queue never received, which D1 still shows as queued.
+    const { accountId, key, readAccessKey } = account("token-account-again.testnet");
+    const queue = fakeSolanaChainQueue();
+    const signInAgain = async () =>
+      signInWith(
+        readAccessKey,
+        await walletSignature({ accountId, challenge: await challenge(), key }),
+        queue,
+      );
+
+    await signInAgain();
+    const second = await signInAgain();
+
+    expect(second).toMatchObject({ ok: true, provider: { solanaTokenAccountStatus: "queued" } });
+    expect(queue.jobs).toHaveLength(2);
+    expect(queue.jobs[1]).toEqual(queue.jobs[0]);
+  });
+
+  test("when the chain queue can't be reached, sign-in still succeeds and the next sign-in queues it", async () => {
+    const { accountId, key, readAccessKey } = account("token-account-retry.testnet");
+    const unreachable: SolanaTokenAccountQueue = async () => {
+      throw new Error("Durable Object unreachable");
+    };
+    const queue = fakeSolanaChainQueue();
+
+    const first = await signInWith(
+      readAccessKey,
+      await walletSignature({ accountId, challenge: await challenge(), key }),
+      { queueSolanaTokenAccount: unreachable },
+    );
+    const second = await signInWith(
+      readAccessKey,
+      await walletSignature({ accountId, challenge: await challenge(), key }),
+      queue,
+    );
+
+    expect(first).toMatchObject({ ok: true, provider: { solanaTokenAccountStatus: "not_queued" } });
+    expect(second).toMatchObject({ ok: true, provider: { solanaTokenAccountStatus: "queued" } });
+    expect(queue.jobs).toHaveLength(1);
+  });
+
+  test("a token account the chain queue gave up on is queued again at the next sign-in", async () => {
+    const { accountId, key, readAccessKey } = account("token-account-failed.testnet");
+    const queue = fakeSolanaChainQueue();
+    const first = await signInWith(
+      readAccessKey,
+      await walletSignature({ accountId, challenge: await challenge(), key }),
+      queue,
+    );
+    if (!first.ok) throw new Error(first.message);
+    await setSolanaTokenAccountStatus(createDb(env.DB), {
+      providerId: first.provider.id,
+      status: "failed",
+    });
+
+    const second = await signInWith(
+      readAccessKey,
+      await walletSignature({ accountId, challenge: await challenge(), key }),
+      queue,
+    );
+
+    expect(second).toMatchObject({ ok: true, provider: { solanaTokenAccountStatus: "queued" } });
+    expect(queue.jobs).toHaveLength(2);
+  });
+
+  test("a created token account isn't queued again", async () => {
+    const { accountId, key, readAccessKey } = account("token-account-created.testnet");
+    const queue = fakeSolanaChainQueue();
+    const first = await signInWith(
+      readAccessKey,
+      await walletSignature({ accountId, challenge: await challenge(), key }),
+      queue,
+    );
+    if (!first.ok) throw new Error(first.message);
+    await setSolanaTokenAccountStatus(createDb(env.DB), {
+      providerId: first.provider.id,
+      status: "created",
+    });
+
+    const second = await signInWith(
+      readAccessKey,
+      await walletSignature({ accountId, challenge: await challenge(), key }),
+      queue,
+    );
+
+    expect(second).toMatchObject({ ok: true, provider: { solanaTokenAccountStatus: "created" } });
+    expect(queue.jobs).toHaveLength(1);
   });
 });
 

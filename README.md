@@ -48,9 +48,11 @@ The facilitator needs its gas wallet secrets locally: copy `apps/facilitator/.de
 | `POST /verify`   | `Authorization: Bearer hk_…` | Verifies a payment into the key's Provider's own Receiving Address. 120 requests per minute per key.                                                                                  |
 | `POST /settle`   | `Authorization: Bearer hk_…` | Settles it with Herald paying gas, and records the payment. 60 requests per minute per key, counted before the body is checked. Refused if the MPC root keys don't match `v1.signer`. |
 
-Refusals come back as `{ "error": "…", "message": "…" }` with 400, 401 (missing, unknown, revoked or wrong-environment key), 403 (`payTo` isn't the Provider's), 429 or 503. EVM transactions go through one `EvmChainQueue` Durable Object per network, which owns the gas wallet's nonce and never submits the same EIP-3009 authorization twice. It also keeps settlements whose receipt didn't arrive within `SETTLE_RECEIPT_TIMEOUT_MS` (30 s), so the stock resource server's single `settlement_pending` retry, on any isolate, waits for the same transaction instead of failing. Solana is listed but not yet settled (#6).
+Refusals come back as `{ "error": "…", "message": "…" }` with 400, 401 (missing, unknown, revoked or wrong-environment key), 403 (`payTo` isn't the Provider's), 429 or 503. EVM transactions go through one `EvmChainQueue` Durable Object per network, which owns the gas wallet's nonce and never submits the same EIP-3009 authorization twice. It also keeps settlements whose receipt didn't arrive within `SETTLE_RECEIPT_TIMEOUT_MS` (30 s), so the stock resource server's single `settlement_pending` retry, on any isolate, waits for the same transaction instead of failing.
 
-Secrets per environment: `EVM_GAS_KEY` (0x hex private key, one gas wallet for every EVM chain) and `SOLANA_GAS_KEY` (base58 64-byte secret key). RPC endpoints are the `RPC_URLS` var in `apps/facilitator/wrangler.jsonc`.
+Solana payments settle with the stock `@x402/svm` `exact` mechanism. The Buyer signs a USDC transfer with Herald's gas wallet as fee payer, and one `SolanaChainQueue` Durable Object per network adds the fee payer's signature and sends it. It signs only as fee payer, never a transaction whose instructions use the gas wallet's account, and never sends the same transaction signature twice. A payment only lands in a Receiving Address that has a USDC token account, so the same queue creates one per Provider when it registers (paying the rent) and records the result on the Provider (`solana_token_account_status`: `not_queued`, `queued`, `created` or `failed`). The web Worker queues it through a cross-Worker Durable Object binding. Until it exists, `/verify` and `/settle` answer `invalid_exact_svm_recipient_ata_missing` and nothing is sent.
+
+Secrets per environment: `EVM_GAS_KEY` (0x hex private key, one gas wallet for every EVM chain), `SOLANA_GAS_KEY` (base58 64-byte secret key, funded with SOL for fees and token account rent) and `SOLANA_RPC_URL` (the Solana network's JSON-RPC endpoint). EVM endpoints are the `RPC_URLS` var in `apps/facilitator/wrangler.jsonc`. Solana's is a secret because `api.devnet.solana.com` and `api.mainnet-beta.solana.com` refuse requests from Workers (they block on the `CF-Worker` header, locally too), so it has to be an RPC vendor's URL (Helius, QuickNode, …), which usually carries an API key.
 
 To get a Provider and an API key without the dashboard:
 
@@ -59,7 +61,7 @@ vp -C apps/facilitator run seed alice.testnet                # local D1
 vp -C apps/facilitator run seed alice.testnet --env testnet  # herald-testnet D1
 ```
 
-It prints the Provider's Receiving Addresses and an `hk_test_` key, once.
+It prints the Provider's Receiving Addresses and an `hk_test_` key, once. Locally it also queues the Provider's Solana USDC token account, so run the facilitator first. On testnet the token account is queued at the Provider's first dashboard sign-in.
 
 ### Dashboard
 
@@ -72,7 +74,7 @@ Sign-in uses NEP-413 through `@hot-labs/near-connect`:
 1. The server issues a single-use nonce, valid for 5 minutes, kept in D1 (`sign_in_nonces`).
 2. The wallet signs Herald's message, the nonce and the dashboard's host as recipient.
 3. The server checks the ed25519 signature and asks NEAR RPC (`NEAR_RPC_URL`) whether the key is a full-access key of the account. Function-call keys are refused.
-4. The first sign-in registers the Provider and stores its Receiving Addresses. A session goes into the `SESSIONS` KV namespace for 7 days, keyed by the SHA-256 of a random token held in an HTTP-only cookie. Signing out deletes it.
+4. The first sign-in registers the Provider, stores its Receiving Addresses and queues its Solana USDC token account with the facilitator's `SolanaChainQueue` (the `SOLANA_CHAIN_QUEUE` binding, `script_name` the facilitator Worker). If the queue can't be reached, sign-in still succeeds and the next sign-in tries again. Overview shows the token account's status. Locally, run the facilitator alongside the dashboard. A session goes into the `SESSIONS` KV namespace for 7 days, keyed by the SHA-256 of a random token held in an HTTP-only cookie. Signing out deletes it.
 
 `SIGN_IN_RATE_LIMITER` allows 20 sign-in requests per minute per client IP. The logic lives in `packages/core/src/server` (`sign-in.ts`, `sessions.ts`); `apps/web/src/server/auth.ts` wires it to TanStack Start server functions.
 
@@ -85,9 +87,10 @@ vp -C examples/weather-api run dev                    # weather API on :8788 (HE
 curl -i http://localhost:8788/weather                 # 402 with a PAYMENT-REQUIRED header
 BUYER_PRIVATE_KEY=0x… vp -C examples/weather-api run buy                           # pays on Base Sepolia
 BUYER_PRIVATE_KEY=0x… vp -C examples/weather-api run buy --network eip155:421614   # pays on Arbitrum Sepolia
+BUYER_SOLANA_KEY=… vp -C examples/weather-api run buy --network solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1  # pays on Solana Devnet
 ```
 
-Set `PROVIDER_ACCOUNT` in `examples/weather-api/wrangler.jsonc` to the seeded account. The Buyer needs testnet USDC ([Circle faucet](https://faucet.circle.com)) and no ETH; the facilitator's EVM gas wallet needs Sepolia ETH on each chain. If both dev servers fail to start together, give them different `--inspector-port` values.
+Set `PROVIDER_ACCOUNT` in `examples/weather-api/wrangler.jsonc` to the seeded account. The Buyer needs testnet USDC ([Circle faucet](https://faucet.circle.com)) and no ETH or SOL; the facilitator's EVM gas wallet needs Sepolia ETH on each chain, and its Solana gas wallet devnet SOL. `BUYER_SOLANA_KEY` is a base58 64-byte secret key. Set `SOLANA_RPC_URL` in `apps/facilitator/.dev.vars` to a devnet endpoint from an RPC vendor. If both dev servers fail to start together, give them different `--inspector-port` values.
 
 After changing a `wrangler.jsonc`, run `vp run -r types` to regenerate binding types (`wrangler types --env-interface CloudflareBindings`). Hono apps type their bindings as `new Hono<{ Bindings: CloudflareBindings }>()`; `env` from `cloudflare:workers` is typed through `Cloudflare.Env`, which Wrangler declares with the same bindings. After changing `packages/db/src/schema.ts`, run `vp run db:generate` to write a new migration.
 

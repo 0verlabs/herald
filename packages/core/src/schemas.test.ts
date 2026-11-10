@@ -57,17 +57,28 @@ describe("Receiving Address schemas", () => {
 });
 
 describe("ProviderSchema", () => {
-  test("parses a Provider with its Receiving Addresses", () => {
-    const createdAt = new Date("2026-11-10T00:00:00Z");
-    expect(
-      ProviderSchema.parse({
-        id: 1,
-        accountId: "herald-test.near",
-        evmAddress,
-        solanaAddress,
-        createdAt,
-      }),
-    ).toEqual({ id: 1, accountId: "herald-test.near", evmAddress, solanaAddress, createdAt });
+  test("parses a Provider with its Receiving Addresses and token account status", () => {
+    const provider = {
+      id: 1,
+      accountId: "herald-test.near",
+      evmAddress,
+      solanaAddress,
+      solanaTokenAccountStatus: "queued",
+      createdAt: new Date("2026-11-10T00:00:00Z"),
+    };
+    expect(ProviderSchema.parse(provider)).toEqual(provider);
+  });
+
+  test("rejects an unknown token account status", () => {
+    const result = ProviderSchema.safeParse({
+      id: 1,
+      accountId: "herald-test.near",
+      evmAddress,
+      solanaAddress,
+      solanaTokenAccountStatus: "pending",
+      createdAt: new Date(),
+    });
+    expect(result.success).toBe(false);
   });
 
   test("rejects a Provider with an invalid account id", () => {

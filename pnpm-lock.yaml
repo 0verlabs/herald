@@ -182,6 +182,9 @@ catalogs:
     '@scure/base':
       specifier: ^2.4.0
       version: 2.4.0
+    '@solana-program/token':
+      specifier: ^0.16.1
+      version: 0.16.1
     '@solana/kit':
       specifier: ^8.6.0
       version: 8.6.0
@@ -262,6 +265,9 @@ importers:
       '@scure/base':
         specifier: 'catalog:'
         version: 2.4.0
+      '@solana-program/token':
+        specifier: 'catalog:'
+        version: 0.16.1(@solana/kit@8.6.0(typescript@7.0.2))
       '@solana/kit':
         specifier: 'catalog:'
         version: 8.6.0(typescript@7.0.2)

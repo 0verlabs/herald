@@ -17,6 +17,7 @@
     "@herald/core": "workspace:*",
     "@herald/db": "workspace:*",
     "@scure/base": "catalog:",
+    "@solana-program/token": "catalog:",
     "@solana/kit": "catalog:",
     "@x402/core": "catalog:",
     "@x402/evm": "catalog:",
