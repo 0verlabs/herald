@@ -1,10 +1,9 @@
-import { mpcSigners, networkRegistry, type Caip2 } from "@herald/core";
+import { mpcSigners, networkRegistry, rpcUrlsFrom, type Caip2 } from "@herald/core";
 import { createExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { vi } from "vite-plus/test";
 import type { Address } from "viem";
 import { createApp } from "../../src/app.ts";
-import { rpcUrl } from "../../src/chains.ts";
 import { FakeEvmChain } from "./fake-evm-chain.ts";
 import { FakeSolanaChain } from "./fake-solana-chain.ts";
 
@@ -26,7 +25,7 @@ export type FakeNetwork = {
   nearRootKeys: Record<number, string>;
 };
 
-type RpcHandler = { handle(call: never): Promise<unknown> };
+type RpcHandler = { handle(call: never): Promise<unknown>; faults: { unreachable?: boolean } };
 
 /**
  * Replaces `fetch` for one test, inside the facilitator app and its chain
@@ -49,8 +48,11 @@ export function installFakeNetwork(): FakeNetwork {
   const handlersByUrl = new Map<string, RpcHandler>();
   const chains: Record<Caip2, FakeEvmChain> = {};
   let solana: FakeSolanaChain | undefined;
+  const rpcUrls = rpcUrlsFrom(env);
   for (const listed of networkRegistry.testnet) {
-    const url = new URL(rpcUrl(env, listed.caip2)).href;
+    const configured = rpcUrls[listed.caip2];
+    if (!configured) throw new Error(`No test RPC endpoint for ${listed.label}`);
+    const url = new URL(configured).href;
     if (listed.kind === "evm") {
       const chain = new FakeEvmChain(
         Number(listed.caip2.split(":")[1]),
@@ -77,6 +79,10 @@ export function installFakeNetwork(): FakeNetwork {
       return app.fetch(request, env, createExecutionContext());
     }
     const handler = handlersByUrl.get(request.url);
+    if (handler?.faults.unreachable) {
+      // As a runtime reports a refused connection, URL and all.
+      throw new TypeError(`fetch failed: connect ECONNREFUSED ${request.url}`);
+    }
     if (handler) {
       const body: unknown = await request.json();
       const replies = Array.isArray(body)

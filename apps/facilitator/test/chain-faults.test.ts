@@ -162,6 +162,38 @@ describe("a failing RPC endpoint", () => {
     expect(seen).not.toContain(endpoint);
   });
 
+  test("an unreachable EVM endpoint isn't named, though the runtime's error names it", async () => {
+    const fake = installFakeNetwork();
+    const chain = fake.chains[network];
+    if (!chain) throw new Error("no fake chain");
+    const { payload, requirements, client } = await paidRequest("unreachable-evm-rpc.testnet");
+    chain.faults.unreachable = true;
+
+    const seen = await seenByProvider(() => client.settle(payload, requirements));
+
+    expect(seen).not.toContain(endpoint);
+  });
+
+  test("an unreachable Solana endpoint isn't named, though the runtime's error names it", async () => {
+    const fake = installFakeNetwork();
+    const accountId = "unreachable-solana-rpc.testnet";
+    const { provider, secret } = await registeredProvider(accountId);
+    await fake.solana.createTokenAccount(provider.solanaAddress);
+    const { payload, requirements } = await buyerPayment({
+      providerAccount: accountId,
+      network: SOLANA_DEVNET,
+      apiKey: secret,
+    });
+    fake.solana.faults.unreachable = true;
+
+    const client = facilitatorClient(secret);
+    const verified = await seenByProvider(() => client.verify(payload, requirements));
+    const settled = await seenByProvider(() => client.settle(payload, requirements));
+
+    expect(verified).not.toContain("solana-devnet.rpc.test");
+    expect(settled).not.toContain("solana-devnet.rpc.test");
+  });
+
   test("a failing Solana endpoint doesn't name itself either", async () => {
     const fake = installFakeNetwork();
     const accountId = "failing-solana-rpc.testnet";

@@ -40,6 +40,8 @@ export type ChainFaults = {
   pendingCountLag?: number;
   /** Answer every call of these JSON-RPC methods with this node error. */
   rejectMethods?: { methods: string[]; message: string };
+  /** Refuse connections: every request fails before reaching the node. */
+  unreachable?: boolean;
 };
 
 const TRANSFER_TOPIC = toEventSelector("Transfer(address,address,uint256)");

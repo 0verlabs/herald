@@ -1,8 +1,12 @@
 import type { Caip2 } from "@herald/core";
 import type { MessagePartialSigner, TransactionPartialSigner } from "@solana/kit";
 import type { PendingSettlementStore } from "@x402/core/facilitator";
-import { toFacilitatorSvmSigner, type FacilitatorSvmSigner } from "@x402/svm";
-import { confirmSolanaTransaction, rpcUrl, solanaFeePayerAddress, solanaRpc } from "./chains.ts";
+import {
+  toFacilitatorSvmSigner,
+  type FacilitatorRpcClient,
+  type FacilitatorSvmSigner,
+} from "@x402/svm";
+import { confirmSolanaTransaction, solanaFeePayerAddress, solanaRpc } from "./chains.ts";
 
 /**
  * The signer the stock `@x402/svm` exact mechanism settles with. Reads and
@@ -28,7 +32,14 @@ export function facilitatorSvmSigner(
     signTransactions: signsInQueue,
     signMessages: signsInQueue,
   };
-  const reads = toFacilitatorSvmSigner(keyless, { defaultRpcUrl: rpcUrl(env, network) });
+  // Herald's client, not one the stock signer builds from the URL, so its
+  // errors never name the endpoint (see `solanaRpc`). It goes in a
+  // per-network map: the stock signer spots a single client with
+  // `"getBalance" in config`, which kit's Proxy-based client fails. The
+  // stock type adds a type-only cluster tag that kit sets only for URLs built
+  // with `devnet()` / `mainnet()`; the client itself is the same.
+  const rpc = solanaRpc(env, network);
+  const reads = toFacilitatorSvmSigner(keyless, { [network]: rpc as FacilitatorRpcClient });
   const confirmationTimeout = Number(env.SETTLE_RECEIPT_TIMEOUT_MS);
 
   return {
@@ -45,7 +56,7 @@ export function facilitatorSvmSigner(
       return sent.signature;
     },
     confirmTransaction: (signature, _network, options) =>
-      confirmSolanaTransaction(solanaRpc(env, network), signature, {
+      confirmSolanaTransaction(rpc, signature, {
         timeoutMs: confirmationTimeout,
         ...(options?.searchTransactionHistory && { searchTransactionHistory: true }),
       }),

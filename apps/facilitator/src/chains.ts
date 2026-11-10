@@ -1,6 +1,22 @@
-import { HeraldEnvSchema, type Caip2, type HeraldEnv } from "@herald/core";
+import {
+  fetchPrivateEndpoint,
+  findNetwork,
+  HeraldEnvSchema,
+  requestFailedError,
+  rpcUrlSecret,
+  type Caip2,
+  type HeraldEnv,
+} from "@herald/core";
 import { base58 } from "@scure/base";
-import { address, createSolanaRpc, type Address, type Signature } from "@solana/kit";
+import {
+  address,
+  createDefaultRpcTransport,
+  createSolanaRpcFromTransport,
+  isSolanaError,
+  type Address,
+  type RpcTransport,
+  type Signature,
+} from "@solana/kit";
 import { TransactionOnchainFailureError } from "@x402/svm";
 import {
   createPublicClient,
@@ -35,48 +51,33 @@ export function evmChain(network: Caip2): Chain {
 }
 
 /**
- * The secret holding each network's JSON-RPC endpoint, named after the chain.
- * Each Herald environment sets it to that environment's network: on testnet
- * `BASE_RPC_URL` is Base Sepolia and `SOLANA_RPC_URL` Solana Devnet.
+ * The JSON-RPC endpoint for a network, from its `<CHAIN>_RPC_URL` secret
+ * (see `rpcUrlSecret` in core). Every endpoint is a private one (its URL
+ * carries the API key), and Solana's public endpoints refuse requests from
+ * Workers anyway: they block on the `CF-Worker` header.
+ *
+ * Only `evmTransport` and `solanaRpc` should take the URL: they keep it out
+ * of the errors the chain libraries throw.
  */
-const rpcUrlSecrets: Partial<Record<Caip2, RpcUrlSecret>> = {
-  "eip155:8453": "BASE_RPC_URL",
-  "eip155:84532": "BASE_RPC_URL",
-  "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "SOLANA_RPC_URL",
-  "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "SOLANA_RPC_URL",
-  "eip155:42161": "ARBITRUM_RPC_URL",
-  "eip155:421614": "ARBITRUM_RPC_URL",
-  "eip155:137": "POLYGON_RPC_URL",
-  "eip155:43114": "AVALANCHE_RPC_URL",
-};
-
-type RpcUrlSecret =
-  | "BASE_RPC_URL"
-  | "SOLANA_RPC_URL"
-  | "ARBITRUM_RPC_URL"
-  | "POLYGON_RPC_URL"
-  | "AVALANCHE_RPC_URL";
-
-/**
- * The JSON-RPC endpoint for a network, from its `<CHAIN>_RPC_URL` secret.
- * Every endpoint is a private one (its URL carries the API key), and
- * Solana's public endpoints refuse requests from Workers anyway: they block
- * on the `CF-Worker` header.
- */
-export function rpcUrl(env: CloudflareBindings, network: Caip2): string {
-  const secret = rpcUrlSecrets[network];
+function rpcUrl(env: CloudflareBindings, network: Caip2): string {
+  const secret = rpcUrlSecret(network);
   if (!secret) throw new Error(`Herald has no RPC endpoint secret for ${network}`);
   const url = env[secret];
   if (!url) throw new Error(`The ${secret} secret is not set`);
   return url;
 }
 
+/** How errors name a network's endpoint: `"Base Sepolia RPC"`. */
+function rpcName(network: Caip2): string {
+  return `${findNetwork(network)?.label ?? network} RPC`;
+}
+
 /**
- * A viem HTTP transport to a network's RPC endpoint that never lets viem
- * see the endpoint's URL, which carries its API key. viem writes the URL
- * into its error messages, and the stock x402 mechanisms pass those on to
- * the Provider's server as `errorMessage`. So viem gets a placeholder URL
- * naming the network, and `fetchFn` sends each request to the real one.
+ * A viem HTTP transport to a network's RPC endpoint. viem writes the
+ * request URL into its error messages, and the stock x402 mechanisms pass
+ * those on to the Provider's server as `errorMessage`, so viem never gets
+ * the real URL: it gets a placeholder naming the network, and `fetchFn`
+ * sends each request to the real endpoint through `fetchPrivateEndpoint`.
  */
 export function evmTransport(
   env: CloudflareBindings,
@@ -86,15 +87,7 @@ export function evmTransport(
   const url = rpcUrl(env, network);
   return http(`https://rpc.herald.invalid/${network}`, {
     ...options,
-    fetchFn: async (_placeholder, init) => {
-      try {
-        return await fetch(url, init);
-      } catch (error) {
-        // A runtime's network error could name the URL; keep only its kind.
-        const name = error instanceof Error ? error.name : "Error";
-        throw new Error(`The ${network} RPC request failed (${name})`);
-      }
-    },
+    fetchFn: (_placeholder, init) => fetchPrivateEndpoint(fetch, url, init ?? {}, rpcName(network)),
   });
 }
 
@@ -138,9 +131,25 @@ export function solanaFeePayerAddress(env: CloudflareBindings): Address {
   return address(base58.encode(solanaGasKey(env).subarray(32)));
 }
 
-/** A Solana JSON-RPC client for a Solana network's endpoint (see `rpcUrl`). */
+/**
+ * A Solana JSON-RPC client for a Solana network's endpoint (see `rpcUrl`).
+ * `@solana/kit` offers no fetch hook, so its transport is wrapped instead.
+ * Kit's own errors (an HTTP status, a JSON-RPC error) carry no URL and pass
+ * through unchanged, since the chain queue reads their codes. Any other
+ * failure, such as the runtime refusing the connection, whose message can
+ * name the URL, becomes core's `requestFailedError`.
+ */
 export function solanaRpc(env: CloudflareBindings, network: Caip2) {
-  return createSolanaRpc(rpcUrl(env, network));
+  const transport = createDefaultRpcTransport({ url: rpcUrl(env, network) });
+  const withoutUrlInErrors: RpcTransport = async (config) => {
+    try {
+      return await transport(config);
+    } catch (error) {
+      if (isSolanaError(error)) throw error;
+      throw requestFailedError(rpcName(network), error);
+    }
+  };
+  return createSolanaRpcFromTransport(withoutUrlInErrors);
 }
 
 const CONFIRMATION_POLL_MS = 500;

@@ -140,6 +140,11 @@ export const networkRegistry: Readonly<Record<HeraldEnv, readonly Network[]>> = 
   testnet,
 };
 
+/** The network Herald lists under a CAIP-2 id, in either Herald environment. */
+export function findNetwork(caip2: string): Network | undefined {
+  return [...networkRegistry.mainnet, ...networkRegistry.testnet].find((n) => n.caip2 === caip2);
+}
+
 /** A block explorer's page for a transaction on `network`. */
 export function explorerTxUrl(network: Network, txHash: string): string {
   return network.txExplorer.replace("{txHash}", encodeURIComponent(txHash));
