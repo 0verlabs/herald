@@ -34,15 +34,29 @@ export const SolanaAddressSchema = z
 export type SolanaAddress = z.infer<typeof SolanaAddressSchema>;
 
 /**
+ * Where creating a Provider's USDC token account on Solana stands. A Solana
+ * payment can only land in a Receiving Address that has one, so Herald
+ * creates it, paying the rent, through its Solana chain queue:
+ *
+ * - `not_queued`: not handed to the chain queue yet, or handing it over failed.
+ * - `queued`: the chain queue has it and is creating it.
+ * - `created`: it exists on-chain.
+ * - `failed`: the chain queue gave up after retrying.
+ */
+export const SolanaTokenAccountStatusSchema = z.enum(["not_queued", "queued", "created", "failed"]);
+export type SolanaTokenAccountStatus = z.infer<typeof SolanaTokenAccountStatusSchema>;
+
+/**
  * A Provider, identified by its Provider Account, with the Receiving
- * Addresses derived from it. `packages/db` keeps the `providers` table in
- * line with this schema.
+ * Addresses derived from it and the state of its Solana USDC token account.
+ * `packages/db` keeps the `providers` table in line with this schema.
  */
 export const ProviderSchema = z.object({
   id: z.number().int().positive(),
   accountId: NearAccountIdSchema,
   evmAddress: EvmAddressSchema,
   solanaAddress: SolanaAddressSchema,
+  solanaTokenAccountStatus: SolanaTokenAccountStatusSchema,
   createdAt: z.date(),
 });
 export type Provider = z.infer<typeof ProviderSchema>;

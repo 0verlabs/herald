@@ -6,4 +6,13 @@
 EVM_GAS_KEY=0x0000000000000000000000000000000000000000000000000000000000000000
 
 # Solana fee payer: a base58 64-byte secret key (as Phantom exports it).
+# Fund it with devnet SOL: it pays settlement fees and token account rent.
 SOLANA_GAS_KEY=replace_me
+
+# Private JSON-RPC endpoints (QuickNode) for each testnet chain. The URL
+# carries the API key. api.devnet.solana.com refuses requests from Workers,
+# local ones included.
+BASE_RPC_URL=https://example.base-sepolia.quiknode.pro/replace_me/
+SOLANA_RPC_URL=https://example.solana-devnet.quiknode.pro/replace_me/
+ARBITRUM_RPC_URL=https://example.arbitrum-sepolia.quiknode.pro/replace_me/
+NEAR_RPC_URL=https://example.near-testnet.quiknode.pro/replace_me/

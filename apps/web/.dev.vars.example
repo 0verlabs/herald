@@ -1,0 +1,4 @@
+# Copy to .dev.vars for `vp dev`. Never commit .dev.vars.
+
+# NEAR testnet JSON-RPC endpoint (QuickNode), used to check sign-in keys.
+NEAR_RPC_URL=https://example.near-testnet.quiknode.pro/replace_me/

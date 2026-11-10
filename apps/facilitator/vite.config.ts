@@ -25,12 +25,23 @@ export default defineConfig(async () => ({
           TEST_MIGRATIONS: await readMigrations(),
           EVM_GAS_KEY: `0x${randomBytes(32).toString("hex")}`,
           SOLANA_GAS_KEY: testSolanaKey(),
+          // Answered by the fake chains and NEAR RPC in test/support/network.ts.
+          BASE_RPC_URL: "https://base-sepolia.rpc.test/",
+          SOLANA_RPC_URL: "https://solana-devnet.rpc.test/",
+          ARBITRUM_RPC_URL: "https://arbitrum-sepolia.rpc.test/",
+          NEAR_RPC_URL: "https://near-testnet.rpc.test/",
           // Short, so the settlement_pending tests don't wait 30 s.
           SETTLE_RECEIPT_TIMEOUT_MS: "1500",
         },
       },
     }),
   ],
+  // Resolve packages the way Wrangler bundles the Worker. With the default
+  // `browser` main field, Vite follows @solana/*'s package.json `browser`
+  // map to their browser builds, which refuse to sign or hash outside a
+  // browser secure context (workerd has no `isSecureContext`). Wrangler picks
+  // their `workerd` builds, which don't check.
+  resolve: { mainFields: ["module", "main"] },
   test: {
     include: ["test/**/*.test.ts"],
     setupFiles: ["./test/apply-migrations.ts"],

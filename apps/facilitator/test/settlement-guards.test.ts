@@ -3,7 +3,12 @@ import { createDb, payments } from "@herald/db";
 import { env } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
-import { FACILITATOR_URL, installFakeNetwork } from "./support/network.ts";
+import {
+  FACILITATOR_URL,
+  installFakeNetwork,
+  SOLANA_DEVNET,
+  type FakeNetwork,
+} from "./support/network.ts";
 import { buyerPayment, facilitatorClient, registeredProvider } from "./support/parties.ts";
 
 afterEach(() => {
@@ -69,6 +74,51 @@ describe("no double settlement", () => {
       .map((s) => s.nonce)
       .sort((a, b) => a - b);
     expect(higher).toBe(lower + 1);
+  });
+});
+
+describe("no double settlement on Solana", () => {
+  async function solanaPaidRequest(fake: FakeNetwork, accountId: string) {
+    const { provider, secret } = await registeredProvider(accountId);
+    await fake.solana.createTokenAccount(provider.solanaAddress);
+    const payment = await buyerPayment({
+      providerAccount: accountId,
+      network: SOLANA_DEVNET,
+      apiKey: secret,
+    });
+    return { provider, ...payment, client: facilitatorClient(secret) };
+  }
+
+  test("settling the same transaction again fails without sending it twice", async () => {
+    const fake = installFakeNetwork();
+    const { provider, payload, requirements, client } = await solanaPaidRequest(
+      fake,
+      "solana-settle-twice.testnet",
+    );
+
+    const first = await client.settle(payload, requirements);
+    const second = await client.settle(payload, requirements);
+
+    expect(first.success).toBe(true);
+    expect(second).toMatchObject({ success: false, transaction: "" });
+    expect(fake.solana.transfers).toHaveLength(1);
+    expect(await paymentRows(provider.id)).toHaveLength(1);
+  });
+
+  test("concurrent settlements of the same transaction produce one success", async () => {
+    const fake = installFakeNetwork();
+    const { provider, payload, requirements, client } = await solanaPaidRequest(
+      fake,
+      "solana-settle-race.testnet",
+    );
+
+    const results = await Promise.all(
+      Array.from({ length: 3 }, () => client.settle(payload, requirements)),
+    );
+
+    expect(results.filter((result) => result.success)).toHaveLength(1);
+    expect(fake.solana.transfers).toHaveLength(1);
+    expect(await paymentRows(provider.id)).toHaveLength(1);
   });
 });
 

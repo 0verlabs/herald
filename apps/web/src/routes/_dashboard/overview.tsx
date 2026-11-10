@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { CopyableValue } from "@/components/copyable-value";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardFooter,
@@ -49,13 +51,27 @@ function Overview() {
       />
       <ReceivingAddressCard
         title="Solana Receiving Address"
-        description="Your address on Solana. USDC arrives in its token account."
+        description="Your address on Solana. USDC arrives in its token account, which Herald creates for you."
         label="Solana Receiving Address"
         address={solana.address}
         networks={solana.networks}
+        status={<TokenAccountBadge status={solana.tokenAccountStatus} />}
       />
     </div>
   );
+}
+
+const tokenAccountBadges = {
+  created: { label: "Token account ready", variant: "secondary" },
+  queued: { label: "Creating token account", variant: "outline" },
+  not_queued: { label: "Token account not created yet", variant: "outline" },
+  failed: { label: "Token account creation failed", variant: "destructive" },
+} as const;
+
+/** Where Herald's creation of the Solana USDC token account stands. */
+function TokenAccountBadge(props: { status: keyof typeof tokenAccountBadges }) {
+  const { label, variant } = tokenAccountBadges[props.status];
+  return <Badge variant={variant}>{label}</Badge>;
 }
 
 function ReceivingAddressCard(props: {
@@ -64,12 +80,14 @@ function ReceivingAddressCard(props: {
   label: string;
   address: string;
   networks: string[];
+  status?: ReactNode;
 }) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>{props.title}</CardTitle>
         <CardDescription>{props.description}</CardDescription>
+        {props.status ? <CardAction>{props.status}</CardAction> : null}
       </CardHeader>
       <CardContent>
         <CopyableValue label={props.label} value={props.address} />

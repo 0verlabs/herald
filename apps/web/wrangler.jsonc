@@ -7,10 +7,19 @@
 // environment declares its own. D1 is
 // shared with the facilitator: same database per environment.
 //
-// NEAR_RPC_URL is the NEAR network of the Herald environment. Sign-in checks
+// NEAR_RPC_URL (a secret: a private QuickNode endpoint whose URL carries the
+// API key) is the NEAR network of the Herald environment. Sign-in checks
 // there that the signing key is a full-access key of the Provider Account.
+// Set it with `CLOUDFLARE_ENV=<env> wrangler secret put NEAR_RPC_URL`, and
+// locally in `.dev.vars` (see `.dev.vars.example`). `secrets` is not
+// inherited, so each environment declares it.
 // SESSIONS holds dashboard sessions. SIGN_IN_RATE_LIMITER allows 20 sign-in
 // requests (challenges and signatures) per minute per client IP.
+//
+// SOLANA_CHAIN_QUEUE is the facilitator's Solana chain queue (ADR-0006),
+// bound across Workers with `script_name`: the facilitator Worker of the same
+// environment. Registration queues each Provider's Solana USDC token account
+// there. Locally, run the facilitator with `wrangler dev` alongside.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "herald-web",
@@ -18,7 +27,17 @@
   "compatibility_date": "2026-11-09",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
-  "vars": { "HERALD_ENV": "testnet", "NEAR_RPC_URL": "https://rpc.testnet.fastnear.com" },
+  "vars": { "HERALD_ENV": "testnet" },
+  "secrets": { "required": ["NEAR_RPC_URL"] },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SOLANA_CHAIN_QUEUE",
+        "class_name": "SolanaChainQueue",
+        "script_name": "herald-facilitator",
+      },
+    ],
+  },
   "d1_databases": [
     {
       "binding": "DB",
@@ -39,7 +58,17 @@
   "env": {
     "testnet": {
       "name": "herald-web-testnet",
-      "vars": { "HERALD_ENV": "testnet", "NEAR_RPC_URL": "https://rpc.testnet.fastnear.com" },
+      "vars": { "HERALD_ENV": "testnet" },
+      "secrets": { "required": ["NEAR_RPC_URL"] },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "SOLANA_CHAIN_QUEUE",
+            "class_name": "SolanaChainQueue",
+            "script_name": "herald-facilitator-testnet",
+          },
+        ],
+      },
       "d1_databases": [
         {
           "binding": "DB",
@@ -60,7 +89,17 @@
     },
     "production": {
       "name": "herald-web-mainnet",
-      "vars": { "HERALD_ENV": "mainnet", "NEAR_RPC_URL": "https://rpc.mainnet.fastnear.com" },
+      "vars": { "HERALD_ENV": "mainnet" },
+      "secrets": { "required": ["NEAR_RPC_URL"] },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "SOLANA_CHAIN_QUEUE",
+            "class_name": "SolanaChainQueue",
+            "script_name": "herald-facilitator-mainnet",
+          },
+        ],
+      },
       "d1_databases": [
         {
           "binding": "DB",

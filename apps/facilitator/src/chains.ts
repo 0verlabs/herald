@@ -1,6 +1,7 @@
 import { HeraldEnvSchema, type Caip2, type HeraldEnv } from "@herald/core";
 import { base58 } from "@scure/base";
-import { address, type Address } from "@solana/kit";
+import { address, createSolanaRpc, type Address, type Signature } from "@solana/kit";
+import { TransactionOnchainFailureError } from "@x402/svm";
 import { createPublicClient, http, type Chain, type Hex, type PublicClient } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { arbitrum, arbitrumSepolia, avalanche, base, baseSepolia, polygon } from "viem/chains";
@@ -25,11 +26,40 @@ export function evmChain(network: Caip2): Chain {
   return chain;
 }
 
-/** The JSON-RPC endpoint for a network, from the `RPC_URLS` var. */
+/**
+ * The secret holding each network's JSON-RPC endpoint, named after the chain.
+ * Each Herald environment sets it to that environment's network: on testnet
+ * `BASE_RPC_URL` is Base Sepolia and `SOLANA_RPC_URL` Solana Devnet.
+ */
+const rpcUrlSecrets: Partial<Record<Caip2, RpcUrlSecret>> = {
+  "eip155:8453": "BASE_RPC_URL",
+  "eip155:84532": "BASE_RPC_URL",
+  "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "SOLANA_RPC_URL",
+  "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "SOLANA_RPC_URL",
+  "eip155:42161": "ARBITRUM_RPC_URL",
+  "eip155:421614": "ARBITRUM_RPC_URL",
+  "eip155:137": "POLYGON_RPC_URL",
+  "eip155:43114": "AVALANCHE_RPC_URL",
+};
+
+type RpcUrlSecret =
+  | "BASE_RPC_URL"
+  | "SOLANA_RPC_URL"
+  | "ARBITRUM_RPC_URL"
+  | "POLYGON_RPC_URL"
+  | "AVALANCHE_RPC_URL";
+
+/**
+ * The JSON-RPC endpoint for a network, from its `<CHAIN>_RPC_URL` secret.
+ * Every endpoint is a private one (its URL carries the API key), and
+ * Solana's public endpoints refuse requests from Workers anyway: they block
+ * on the `CF-Worker` header.
+ */
 export function rpcUrl(env: CloudflareBindings, network: Caip2): string {
-  const urls: Record<string, string | undefined> = env.RPC_URLS;
-  const url = urls[network];
-  if (!url) throw new Error(`RPC_URLS has no endpoint for ${network}`);
+  const secret = rpcUrlSecrets[network];
+  if (!secret) throw new Error(`Herald has no RPC endpoint secret for ${network}`);
+  const url = env[secret];
+  if (!url) throw new Error(`The ${secret} secret is not set`);
   return url;
 }
 
@@ -51,14 +81,68 @@ export function evmGasAccount(env: CloudflareBindings): PrivateKeyAccount {
 }
 
 /**
- * The address of Herald's Solana fee payer. `SOLANA_GAS_KEY` is a base58
- * 64-byte secret key (seed then public key, as `solana-keygen` writes it),
- * so the address is its second half.
+ * Herald's Solana gas wallet, the fee payer of every Solana network.
+ * `SOLANA_GAS_KEY` is a base58 64-byte secret key: the 32-byte seed, then the
+ * public key, as `solana-keygen` writes it.
  */
-export function solanaFeePayerAddress(env: CloudflareBindings): Address {
-  const key = env.SOLANA_GAS_KEY ? base58.decode(env.SOLANA_GAS_KEY) : undefined;
+export function solanaGasKey(env: CloudflareBindings): Uint8Array {
+  let key: Uint8Array | undefined;
+  try {
+    key = env.SOLANA_GAS_KEY ? base58.decode(env.SOLANA_GAS_KEY) : undefined;
+  } catch {
+    key = undefined;
+  }
   if (key?.length !== 64) {
     throw new Error("The SOLANA_GAS_KEY secret must be a base58 64-byte secret key");
   }
-  return address(base58.encode(key.subarray(32)));
+  return key;
+}
+
+/** The address of Herald's Solana fee payer: the public half of `SOLANA_GAS_KEY`. */
+export function solanaFeePayerAddress(env: CloudflareBindings): Address {
+  return address(base58.encode(solanaGasKey(env).subarray(32)));
+}
+
+/** A Solana JSON-RPC client for a Solana network's endpoint (see `rpcUrl`). */
+export function solanaRpc(env: CloudflareBindings, network: Caip2) {
+  return createSolanaRpc(rpcUrl(env, network));
+}
+
+const CONFIRMATION_POLL_MS = 500;
+// One status lookup; a hung endpoint must not outlast the confirmation wait.
+const STATUS_TIMEOUT_MS = 5_000;
+
+/**
+ * Waits up to `timeoutMs` for a Solana transaction to be confirmed. Throws
+ * the stock `TransactionOnchainFailureError` if it landed and failed, and a
+ * plain `Error` if it isn't confirmed in time (its outcome is then unknown).
+ */
+export async function confirmSolanaTransaction(
+  rpc: ReturnType<typeof solanaRpc>,
+  signature: string,
+  options: { timeoutMs: number; searchTransactionHistory?: boolean },
+): Promise<{ slot: bigint }> {
+  const deadline = Date.now() + options.timeoutMs;
+  let searchTransactionHistory = options.searchTransactionHistory === true;
+  for (;;) {
+    const {
+      value: [status],
+    } = await rpc
+      .getSignatureStatuses([signature as Signature], { searchTransactionHistory })
+      .send({ abortSignal: AbortSignal.timeout(STATUS_TIMEOUT_MS) });
+    searchTransactionHistory = false;
+    if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") {
+      if (status.err) {
+        const reason = JSON.stringify(status.err, (_, v: unknown) =>
+          typeof v === "bigint" ? v.toString() : v,
+        );
+        throw new TransactionOnchainFailureError(`Transaction failed onchain: ${reason}`);
+      }
+      return { slot: status.slot };
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`Transaction ${signature} wasn't confirmed within ${options.timeoutMs} ms`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, CONFIRMATION_POLL_MS));
+  }
 }

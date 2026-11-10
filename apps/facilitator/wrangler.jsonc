@@ -6,17 +6,24 @@
 // (`testnet` or `mainnet`). Bindings and vars are not inherited, so each
 // environment declares its own.
 //
-// RPC_URLS maps each CAIP-2 network Herald lists to a JSON-RPC endpoint.
-// NEAR_RPC_URL is used for the MPC root-key check before settling.
 // SETTLE_RECEIPT_TIMEOUT_MS bounds the receipt wait in /settle; past it the
 // answer is `settlement_pending` and the resource server retries once.
 //
 // Secrets (declared in `secrets.required` at the top level and in each
-// environment, since `secrets` is not inherited), never their values in this file: EVM_GAS_KEY (0x-prefixed hex private key of
-// the gas wallet shared by every EVM chain) and SOLANA_GAS_KEY (base58
-// 64-byte secret key of the Solana fee payer). Set them with
-// `CLOUDFLARE_ENV=<env> wrangler secret put <NAME>`, and locally in
-// `.dev.vars` (see `.dev.vars.example`).
+// environment, since `secrets` is not inherited), never their values in this
+// file. Set them with `CLOUDFLARE_ENV=<env> wrangler secret put <NAME>`, and
+// locally in `.dev.vars` (see `.dev.vars.example`):
+//
+// - EVM_GAS_KEY: 0x-prefixed hex private key of the gas wallet shared by
+//   every EVM chain.
+// - SOLANA_GAS_KEY: base58 64-byte secret key of the Solana fee payer.
+// - <CHAIN>_RPC_URL: the JSON-RPC endpoint of each chain Herald lists in the
+//   environment (BASE, SOLANA, ARBITRUM; POLYGON and AVALANCHE on mainnet
+//   only), for that environment's network: Base Sepolia and Solana Devnet on
+//   testnet. They are private QuickNode endpoints whose URL carries the API
+//   key. Solana's public endpoints refuse requests from Workers anyway.
+// - NEAR_RPC_URL: the NEAR endpoint for the MPC root-key check before
+//   settling (NEAR testnet or mainnet).
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "herald-facilitator",
@@ -24,20 +31,29 @@
   "compatibility_date": "2026-11-09",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
-  "secrets": { "required": ["EVM_GAS_KEY", "SOLANA_GAS_KEY"] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["EvmChainQueue"] }],
+  "secrets": {
+    "required": [
+      "EVM_GAS_KEY",
+      "SOLANA_GAS_KEY",
+      "BASE_RPC_URL",
+      "SOLANA_RPC_URL",
+      "ARBITRUM_RPC_URL",
+      "NEAR_RPC_URL",
+    ],
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["EvmChainQueue"] },
+    { "tag": "v2", "new_sqlite_classes": ["SolanaChainQueue"] },
+  ],
   "vars": {
     "HERALD_ENV": "testnet",
     "SETTLE_RECEIPT_TIMEOUT_MS": "30000",
-    "NEAR_RPC_URL": "https://rpc.testnet.fastnear.com",
-    "RPC_URLS": {
-      "eip155:84532": "https://sepolia.base.org",
-      "eip155:421614": "https://sepolia-rollup.arbitrum.io/rpc",
-      "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "https://api.devnet.solana.com",
-    },
   },
   "durable_objects": {
-    "bindings": [{ "name": "EVM_CHAIN_QUEUE", "class_name": "EvmChainQueue" }],
+    "bindings": [
+      { "name": "EVM_CHAIN_QUEUE", "class_name": "EvmChainQueue" },
+      { "name": "SOLANA_CHAIN_QUEUE", "class_name": "SolanaChainQueue" },
+    ],
   },
   // Per API key: 60 settle and 120 verify requests per minute.
   "ratelimits": [
@@ -64,19 +80,25 @@
   "env": {
     "testnet": {
       "name": "herald-facilitator-testnet",
-      "secrets": { "required": ["EVM_GAS_KEY", "SOLANA_GAS_KEY"] },
+      "secrets": {
+        "required": [
+          "EVM_GAS_KEY",
+          "SOLANA_GAS_KEY",
+          "BASE_RPC_URL",
+          "SOLANA_RPC_URL",
+          "ARBITRUM_RPC_URL",
+          "NEAR_RPC_URL",
+        ],
+      },
       "vars": {
         "HERALD_ENV": "testnet",
         "SETTLE_RECEIPT_TIMEOUT_MS": "30000",
-        "NEAR_RPC_URL": "https://rpc.testnet.fastnear.com",
-        "RPC_URLS": {
-          "eip155:84532": "https://sepolia.base.org",
-          "eip155:421614": "https://sepolia-rollup.arbitrum.io/rpc",
-          "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "https://api.devnet.solana.com",
-        },
       },
       "durable_objects": {
-        "bindings": [{ "name": "EVM_CHAIN_QUEUE", "class_name": "EvmChainQueue" }],
+        "bindings": [
+          { "name": "EVM_CHAIN_QUEUE", "class_name": "EvmChainQueue" },
+          { "name": "SOLANA_CHAIN_QUEUE", "class_name": "SolanaChainQueue" },
+        ],
       },
       "ratelimits": [
         {
@@ -105,21 +127,27 @@
     },
     "production": {
       "name": "herald-facilitator-mainnet",
-      "secrets": { "required": ["EVM_GAS_KEY", "SOLANA_GAS_KEY"] },
+      "secrets": {
+        "required": [
+          "EVM_GAS_KEY",
+          "SOLANA_GAS_KEY",
+          "BASE_RPC_URL",
+          "SOLANA_RPC_URL",
+          "ARBITRUM_RPC_URL",
+          "NEAR_RPC_URL",
+          "POLYGON_RPC_URL",
+          "AVALANCHE_RPC_URL",
+        ],
+      },
       "vars": {
         "HERALD_ENV": "mainnet",
         "SETTLE_RECEIPT_TIMEOUT_MS": "30000",
-        "NEAR_RPC_URL": "https://rpc.mainnet.fastnear.com",
-        "RPC_URLS": {
-          "eip155:8453": "https://mainnet.base.org",
-          "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "https://api.mainnet-beta.solana.com",
-          "eip155:42161": "https://arb1.arbitrum.io/rpc",
-          "eip155:137": "https://polygon-bor-rpc.publicnode.com",
-          "eip155:43114": "https://api.avax.network/ext/bc/C/rpc",
-        },
       },
       "durable_objects": {
-        "bindings": [{ "name": "EVM_CHAIN_QUEUE", "class_name": "EvmChainQueue" }],
+        "bindings": [
+          { "name": "EVM_CHAIN_QUEUE", "class_name": "EvmChainQueue" },
+          { "name": "SOLANA_CHAIN_QUEUE", "class_name": "SolanaChainQueue" },
+        ],
       },
       "ratelimits": [
         {

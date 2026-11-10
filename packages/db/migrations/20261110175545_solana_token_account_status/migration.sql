@@ -1,0 +1,1 @@
+ALTER TABLE `providers` ADD `solana_token_account_status` text DEFAULT 'not_queued' NOT NULL;

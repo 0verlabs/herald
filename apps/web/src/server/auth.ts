@@ -14,6 +14,7 @@ import { createMiddleware, createServerFn, createServerOnlyFn } from "@tanstack/
 import { deleteCookie, getCookie, getRequest, setCookie } from "@tanstack/react-start/server";
 import { env } from "cloudflare:workers";
 import { readHeraldEnv } from "./herald-env";
+import { solanaTokenAccountQueue } from "./solana-chain-queue";
 
 // Every `env`, cookie and request read stays inside a server function,
 // middleware `.server()` or `createServerOnlyFn`, which the client build
@@ -81,14 +82,20 @@ export const getSignInChallenge = createServerFn({ method: "POST" }).handler(asy
 
 /**
  * Signs the Provider in from its wallet's signature over a challenge,
- * registering it on first sign-in, and starts a session in a fresh cookie.
+ * registering it on first sign-in and queueing its Solana USDC token account
+ * with the facilitator's Solana chain queue, and starts a session in a fresh
+ * cookie.
  */
 export const signInWithSignature = createServerFn({ method: "POST" })
   .validator(SignInSignatureSchema)
   .handler(async ({ data }) => {
     if (!(await withinSignInRateLimit())) return { ok: false as const, message: TOO_MANY_ATTEMPTS };
     const result = await signIn(
-      { db: createDb(env.DB), readAccessKey: nearRpcAccessKeyReader(env.NEAR_RPC_URL) },
+      {
+        db: createDb(env.DB),
+        readAccessKey: nearRpcAccessKeyReader(env.NEAR_RPC_URL),
+        queueSolanaTokenAccount: solanaTokenAccountQueue(),
+      },
       { env: readHeraldEnv(), recipient: signInRecipient(), signature: data },
     );
     if (!result.ok) {

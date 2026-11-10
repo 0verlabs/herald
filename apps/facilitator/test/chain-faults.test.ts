@@ -2,7 +2,7 @@ import { createDb, payments } from "@herald/db";
 import { env } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
-import { installFakeNetwork } from "./support/network.ts";
+import { installFakeNetwork, SOLANA_DEVNET } from "./support/network.ts";
 import { buyerPayment, facilitatorClient, registeredProvider } from "./support/parties.ts";
 
 // The chain misbehaving the way real nodes do. SETTLE_RECEIPT_TIMEOUT_MS is
@@ -40,6 +40,29 @@ describe("a slow receipt", () => {
     expect(settled).toMatchObject({ success: true, transaction: chain.submissions[0]?.hash });
     expect(chain.submissions).toHaveLength(1);
     expect(await paymentRows(provider.id)).toMatchObject([{ txHash: chain.submissions[0]?.hash }]);
+  });
+});
+
+describe("a slow Solana confirmation", () => {
+  test("the resource server's retry finds the sent transaction, and the payment is recorded", async () => {
+    const fake = installFakeNetwork();
+    // Lands at once, but its status shows up only after the first wait.
+    fake.solana.faults.confirmationDelayMs = 2_000;
+    const accountId = "slow-solana-confirmation.testnet";
+    const { provider, secret } = await registeredProvider(accountId);
+    await fake.solana.createTokenAccount(provider.solanaAddress);
+    const { payload, requirements, server } = await buyerPayment({
+      providerAccount: accountId,
+      network: SOLANA_DEVNET,
+      apiKey: secret,
+    });
+
+    const settled = await server.settlePayment(payload, requirements);
+
+    const [transfer] = fake.solana.transfers;
+    expect(settled).toMatchObject({ success: true, transaction: transfer?.signature });
+    expect(fake.solana.transfers).toHaveLength(1);
+    expect(await paymentRows(provider.id)).toMatchObject([{ txHash: transfer?.signature }]);
   });
 });
 

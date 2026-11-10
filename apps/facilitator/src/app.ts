@@ -105,8 +105,9 @@ export function createApp() {
         network: paymentRequirements.network,
         asset: paymentRequirements.asset,
         amount: result.amount ?? paymentRequirements.amount,
-        // The stock EVM mechanism always reports the payer (the
-        // authorization's `from`); the payload is the fallback.
+        // The stock mechanisms report the payer: the authorization's `from`
+        // on EVM, the transfer's signing owner on Solana. The EVM payload
+        // is the fallback.
         buyerAddress: result.payer ?? payerOf(paymentPayload),
         txHash: result.transaction,
         resourceUrl: paymentPayload.resource?.url ?? null,
@@ -200,17 +201,6 @@ async function readPaymentRequest(c: Context<AppEnv>): Promise<PaymentRequest> {
   if (!check.ok) {
     const status = check.reason === "pay_to_mismatch" ? 403 : 400;
     return { ok: false, response: refuse(c, status, check.reason, check.message) };
-  }
-  if (check.network.kind === "solana") {
-    return {
-      ok: false,
-      response: refuse(
-        c,
-        400,
-        "unsupported_network",
-        "Herald's facilitator doesn't settle Solana payments yet.",
-      ),
-    };
   }
   // The stock schemas type `network` as a plain string; the stock facilitator
   // takes the CAIP-2 template type. checkReceivingAddress has matched it to a

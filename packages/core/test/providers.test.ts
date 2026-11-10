@@ -1,7 +1,11 @@
 import { createDb } from "@herald/db";
 import { env } from "cloudflare:workers";
 import { describe, expect, test } from "vite-plus/test";
-import { getProviderOverview, registerProvider } from "../src/server/index.ts";
+import {
+  getProviderOverview,
+  registerProvider,
+  setSolanaTokenAccountStatus,
+} from "../src/server/index.ts";
 
 describe("getProviderOverview", () => {
   test("lists each mainnet Receiving Address with the networks it receives on", async () => {
@@ -17,8 +21,22 @@ describe("getProviderOverview", () => {
       solana: {
         address: "H396yYAeSpsgC6pQ7Qd681g9MSTT7oYZ4bCqGHGdbNiq",
         networks: ["Solana"],
+        tokenAccountStatus: "not_queued",
       },
     });
+  });
+
+  test("reports where the Solana USDC token account stands", async () => {
+    const db = createDb(env.DB);
+    const provider = await registerProvider(db, {
+      accountId: "overview-token-account.testnet",
+      env: "testnet",
+    });
+    await setSolanaTokenAccountStatus(db, { providerId: provider.id, status: "created" });
+
+    expect(
+      await getProviderOverview(db, { providerId: provider.id, env: "testnet" }),
+    ).toMatchObject({ solana: { tokenAccountStatus: "created" } });
   });
 
   test("lists the testnet networks on testnet", async () => {
