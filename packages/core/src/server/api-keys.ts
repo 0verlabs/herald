@@ -1,7 +1,7 @@
 import { apiKeys, providers } from "@herald/db/schema";
 import { bytesToHex } from "@noble/curves/utils.js";
 import { base58 } from "@scure/base";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   apiKeyPrefixes,
   ApiKeySchema,
@@ -36,6 +36,19 @@ export async function issueApiKey(
     })
     .returning();
   return { apiKey: ApiKeySchema.parse(row), secret };
+}
+
+/**
+ * A Provider's API keys, newest first, revoked ones included. Only their
+ * display prefixes: the keys themselves are never stored.
+ */
+export async function listApiKeys(db: Db, input: { providerId: number }): Promise<ApiKey[]> {
+  const rows = await db
+    .select()
+    .from(apiKeys)
+    .where(eq(apiKeys.providerId, input.providerId))
+    .orderBy(desc(apiKeys.createdAt), desc(apiKeys.id));
+  return rows.map((row) => ApiKeySchema.parse(row));
 }
 
 /**

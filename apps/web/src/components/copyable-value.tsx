@@ -1,26 +1,15 @@
 import { CheckIcon, CopyIcon } from "lucide-react";
-import { useEffect, useState } from "react";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/input-group";
+import { useCopy } from "@/hooks/use-copy";
 
 /** A read-only value, such as an address, with a button that copies it. */
 export function CopyableValue({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!copied) return;
-    const timeout = setTimeout(() => setCopied(false), 2000);
-    return () => clearTimeout(timeout);
-  }, [copied]);
-
-  async function copy() {
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-  }
+  const { copied, copy } = useCopy(value);
 
   return (
     <InputGroup>

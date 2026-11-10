@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardRouteImport } from './routes/_dashboard'
 import { Route as SignInRouteImport } from './routes/sign-in'
+import { Route as DashboardApiKeysRouteImport } from './routes/_dashboard/api-keys'
+import { Route as DashboardIntegrationRouteImport } from './routes/_dashboard/integration'
 import { Route as DashboardOverviewRouteImport } from './routes/_dashboard/overview'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 
@@ -29,6 +31,16 @@ const SignInRoute = SignInRouteImport.update({
   path: '/sign-in',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardApiKeysRoute = DashboardApiKeysRouteImport.update({
+  id: '/api-keys',
+  path: '/api-keys',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardIntegrationRoute = DashboardIntegrationRouteImport.update({
+  id: '/integration',
+  path: '/integration',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardOverviewRoute = DashboardOverviewRouteImport.update({
   id: '/overview',
   path: '/overview',
@@ -43,12 +55,16 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
+  '/api-keys': typeof DashboardApiKeysRoute
+  '/integration': typeof DashboardIntegrationRoute
   '/overview': typeof DashboardOverviewRoute
   '/api/health': typeof ApiHealthRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
+  '/api-keys': typeof DashboardApiKeysRoute
+  '/integration': typeof DashboardIntegrationRoute
   '/overview': typeof DashboardOverviewRoute
   '/api/health': typeof ApiHealthRoute
 }
@@ -57,19 +73,35 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_dashboard': typeof DashboardRouteWithChildren
   '/sign-in': typeof SignInRoute
+  '/_dashboard/api-keys': typeof DashboardApiKeysRoute
+  '/_dashboard/integration': typeof DashboardIntegrationRoute
   '/_dashboard/overview': typeof DashboardOverviewRoute
   '/api/health': typeof ApiHealthRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/sign-in' | '/overview' | '/api/health'
+  fullPaths:
+    | '/'
+    | '/sign-in'
+    | '/api-keys'
+    | '/integration'
+    | '/overview'
+    | '/api/health'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/sign-in' | '/overview' | '/api/health'
+  to:
+    | '/'
+    | '/sign-in'
+    | '/api-keys'
+    | '/integration'
+    | '/overview'
+    | '/api/health'
   id:
     | '__root__'
     | '/'
     | '/_dashboard'
     | '/sign-in'
+    | '/_dashboard/api-keys'
+    | '/_dashboard/integration'
     | '/_dashboard/overview'
     | '/api/health'
   fileRoutesById: FileRoutesById
@@ -104,6 +136,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignInRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_dashboard/api-keys': {
+      id: '/_dashboard/api-keys'
+      path: '/api-keys'
+      fullPath: '/api-keys'
+      preLoaderRoute: typeof DashboardApiKeysRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/_dashboard/integration': {
+      id: '/_dashboard/integration'
+      path: '/integration'
+      fullPath: '/integration'
+      preLoaderRoute: typeof DashboardIntegrationRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/_dashboard/overview': {
       id: '/_dashboard/overview'
       path: '/overview'
@@ -122,10 +168,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface DashboardRouteChildren {
+  DashboardApiKeysRoute: typeof DashboardApiKeysRoute
+  DashboardIntegrationRoute: typeof DashboardIntegrationRoute
   DashboardOverviewRoute: typeof DashboardOverviewRoute
 }
 
 const DashboardRouteChildren: DashboardRouteChildren = {
+  DashboardApiKeysRoute: DashboardApiKeysRoute,
+  DashboardIntegrationRoute: DashboardIntegrationRoute,
   DashboardOverviewRoute: DashboardOverviewRoute,
 }
 

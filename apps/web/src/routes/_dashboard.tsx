@@ -44,6 +44,22 @@ function DashboardLayout() {
             >
               Overview
             </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              nativeButton={false}
+              render={<Link to="/integration" activeProps={{ "aria-current": "page" }} />}
+            >
+              Integration
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              nativeButton={false}
+              render={<Link to="/api-keys" activeProps={{ "aria-current": "page" }} />}
+            >
+              API keys
+            </Button>
           </nav>
           <div className="ml-auto flex min-w-0 items-center gap-3">
             <span className="truncate text-muted-foreground">{account.accountId}</span>
