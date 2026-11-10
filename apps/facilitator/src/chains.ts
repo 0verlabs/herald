@@ -2,7 +2,15 @@ import { HeraldEnvSchema, type Caip2, type HeraldEnv } from "@herald/core";
 import { base58 } from "@scure/base";
 import { address, createSolanaRpc, type Address, type Signature } from "@solana/kit";
 import { TransactionOnchainFailureError } from "@x402/svm";
-import { createPublicClient, http, type Chain, type Hex, type PublicClient } from "viem";
+import {
+  createPublicClient,
+  http,
+  type Chain,
+  type Hex,
+  type HttpTransport,
+  type HttpTransportConfig,
+  type PublicClient,
+} from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { arbitrum, arbitrumSepolia, avalanche, base, baseSepolia, polygon } from "viem/chains";
 
@@ -63,10 +71,37 @@ export function rpcUrl(env: CloudflareBindings, network: Caip2): string {
   return url;
 }
 
+/**
+ * A viem HTTP transport to a network's RPC endpoint that never lets viem
+ * see the endpoint's URL, which carries its API key. viem writes the URL
+ * into its error messages, and the stock x402 mechanisms pass those on to
+ * the Provider's server as `errorMessage`. So viem gets a placeholder URL
+ * naming the network, and `fetchFn` sends each request to the real one.
+ */
+export function evmTransport(
+  env: CloudflareBindings,
+  network: Caip2,
+  options: Pick<HttpTransportConfig, "timeout" | "retryCount"> = {},
+): HttpTransport {
+  const url = rpcUrl(env, network);
+  return http(`https://rpc.herald.invalid/${network}`, {
+    ...options,
+    fetchFn: async (_placeholder, init) => {
+      try {
+        return await fetch(url, init);
+      } catch (error) {
+        // A runtime's network error could name the URL; keep only its kind.
+        const name = error instanceof Error ? error.name : "Error";
+        throw new Error(`The ${network} RPC request failed (${name})`);
+      }
+    },
+  });
+}
+
 export function evmPublicClient(env: CloudflareBindings, network: Caip2): PublicClient {
   return createPublicClient({
     chain: evmChain(network),
-    transport: http(rpcUrl(env, network)),
+    transport: evmTransport(env, network),
     pollingInterval: 1_000,
   });
 }

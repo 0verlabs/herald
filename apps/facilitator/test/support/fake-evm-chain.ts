@@ -38,6 +38,8 @@ export type ChainFaults = {
   loseNextBroadcastResponse?: boolean;
   /** Report a pending transaction count this many below the real one. */
   pendingCountLag?: number;
+  /** Answer every call of these JSON-RPC methods with this node error. */
+  rejectMethods?: { methods: string[]; message: string };
 };
 
 const TRANSFER_TOPIC = toEventSelector("Transfer(address,address,uint256)");
@@ -97,6 +99,8 @@ export class FakeEvmChain {
   }
 
   async #call({ method, params = [] }: JsonRpcRequest): Promise<unknown> {
+    const rejected = this.faults.rejectMethods;
+    if (rejected?.methods.includes(method)) throw new RpcError(-32000, rejected.message);
     switch (method) {
       case "eth_chainId":
         return numberToHex(this.chainId);
