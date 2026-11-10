@@ -37,3 +37,13 @@ _Avoid_: Accept, payment method, rail
 **Price**:
 The USD amount the Provider sets for a request. It is the same for every Payment Option.
 _Avoid_: Listed price, charged price
+
+### Integration
+
+**Herald environment**:
+Either Herald testnet or Herald mainnet, two separate Herald deployments that each have their own chains, Providers and API keys.
+_Avoid_: Network, mode, stage
+
+**API key**:
+The credential a Provider's server presents to Herald's facilitator. Each key belongs to one Provider and works in one Herald environment only.
+_Avoid_: Token, secret, access key

@@ -65,6 +65,8 @@ It prints the Provider's Receiving Addresses and an `hk_test_` key, once.
 
 `apps/web` is the Provider dashboard. Open it (`vp -C apps/web dev`, then http://localhost:3000), click **Connect NEAR wallet**, pick a wallet and sign the message it shows. Use a `.testnet` account on the testnet deployment and locally. Signing sends no transaction. You land on Overview, which shows your Provider Account, your EVM Receiving Address (one address for every EVM chain Herald lists) and your Solana Receiving Address, each with a copy button. Signed-out visitors to a dashboard page are sent to sign-in.
 
+**API keys** lists your keys with their prefix, environment, creation time, last settlement and revocation. **Create key** issues an `hk_test_` key on testnet (`hk_live_` on mainnet) and shows it once; Herald keeps only its SHA-256 hash. **Revoke** stops a key at once: the facilitator answers its next request with 401 `revoked_api_key`. **Integration** shows a Node.js server for Hono and for Express, ready to paste: the stock `HTTPFacilitatorClient` pointed at Herald's facilitator with the key from `HERALD_API_KEY`, and `accepts()` filled in with your Provider Account.
+
 Sign-in uses NEP-413 through `@hot-labs/near-connect`:
 
 1. The server issues a single-use nonce, valid for 5 minutes, kept in D1 (`sign_in_nonces`).
