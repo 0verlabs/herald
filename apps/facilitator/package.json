@@ -10,15 +10,25 @@
     "types": "wrangler types --env-interface CloudflareBindings",
     "db:migrate:local": "wrangler d1 migrations apply DB --local --persist-to ../../.wrangler/state",
     "db:migrate:remote": "test -n \"$CLOUDFLARE_ENV\" || { echo \"Set CLOUDFLARE_ENV to testnet or production\" >&2; exit 1; } && wrangler d1 migrations apply DB --remote",
-    "deploy": "test -n \"$CLOUDFLARE_ENV\" || { echo \"Set CLOUDFLARE_ENV to testnet or production\" >&2; exit 1; } && wrangler deploy"
+    "deploy": "test -n \"$CLOUDFLARE_ENV\" || { echo \"Set CLOUDFLARE_ENV to testnet or production\" >&2; exit 1; } && wrangler deploy",
+    "seed": "node scripts/seed.ts"
   },
   "dependencies": {
     "@herald/core": "workspace:*",
     "@herald/db": "workspace:*",
-    "hono": "catalog:"
+    "@scure/base": "catalog:",
+    "@solana/kit": "catalog:",
+    "@x402/core": "catalog:",
+    "@x402/evm": "catalog:",
+    "@x402/svm": "catalog:",
+    "drizzle-orm": "catalog:",
+    "hono": "catalog:",
+    "viem": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "catalog:",
+    "@hrld/x402": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vite-plus": "catalog:",

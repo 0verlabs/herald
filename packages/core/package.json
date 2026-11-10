@@ -5,15 +5,18 @@
   "description": "Herald business logic and the Zod schemas that define its domain types.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./server": "./src/server/index.ts"
   },
   "scripts": {
     "test:live": "HERALD_LIVE_CHECKS=1 vp test src/live.test.ts"
   },
   "dependencies": {
+    "@herald/db": "workspace:*",
     "@noble/curves": "catalog:",
     "@noble/hashes": "catalog:",
     "@scure/base": "catalog:",
+    "drizzle-orm": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

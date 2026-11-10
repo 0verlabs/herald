@@ -191,6 +191,9 @@ catalogs:
     '@x402/evm':
       specifier: ~2.30.0
       version: 2.30.0
+    '@x402/fetch':
+      specifier: ~2.30.0
+      version: 2.30.0
     '@x402/hono':
       specifier: ~2.30.0
       version: 2.30.0
@@ -250,13 +253,40 @@ importers:
       '@herald/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@scure/base':
+        specifier: 'catalog:'
+        version: 2.4.0
+      '@solana/kit':
+        specifier: 'catalog:'
+        version: 8.6.0(typescript@7.0.2)
+      '@x402/core':
+        specifier: 'catalog:'
+        version: 2.30.0
+      '@x402/evm':
+        specifier: 'catalog:'
+        version: 2.30.0(typescript@7.0.2)
+      '@x402/svm':
+        specifier: 'catalog:'
+        version: 2.30.0(@solana/kit@8.6.0(typescript@7.0.2))(@solana/sysvars@8.6.0(typescript@7.0.2))(typescript@7.0.2)
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 1.0.0-rc.5(zod@4.6.7)
       hono:
         specifier: 'catalog:'
         version: 4.13.17
+      viem:
+        specifier: 'catalog:'
+        version: 2.57.17(typescript@7.0.2)(zod@4.6.7)
+      zod:
+        specifier: 'catalog:'
+        version: 4.6.7
     devDependencies:
       '@cloudflare/vitest-plugin':
         specifier: 'catalog:'
         version: 1.6.1(@types/node@24.19.2)(vitest@5.1.0)
+      '@hrld/x402':
+        specifier: workspace:*
+        version: link:../../packages/x402
       '@types/node':
         specifier: 'catalog:'
         version: 24.19.2
@@ -357,6 +387,9 @@ importers:
       '@x402/evm':
         specifier: 'catalog:'
         version: 2.30.0(typescript@7.0.2)
+      '@x402/fetch':
+        specifier: 'catalog:'
+        version: 2.30.0
       '@x402/hono':
         specifier: 'catalog:'
         version: 2.30.0(hono@4.13.17)(typescript@7.0.2)
@@ -366,7 +399,13 @@ importers:
       hono:
         specifier: 'catalog:'
         version: 4.13.17
+      viem:
+        specifier: 'catalog:'
+        version: 2.57.17(typescript@7.0.2)(zod@4.6.7)
     devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.19.2
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -379,6 +418,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@herald/db':
+        specifier: workspace:*
+        version: link:../db
       '@noble/curves':
         specifier: 'catalog:'
         version: 2.4.0
@@ -388,6 +430,9 @@ importers:
       '@scure/base':
         specifier: 'catalog:'
         version: 2.4.0
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 1.0.0-rc.5(zod@4.6.7)
       zod:
         specifier: 'catalog:'
         version: 4.6.7
@@ -408,9 +453,6 @@ importers:
       '@cloudflare/vitest-plugin':
         specifier: 'catalog:'
         version: 1.6.1(@types/node@24.19.2)(vitest@5.1.0)
-      '@herald/core':
-        specifier: workspace:*
-        version: link:../core
       '@types/node':
         specifier: 'catalog:'
         version: 24.19.2
@@ -2486,6 +2528,9 @@ packages:
 
   '@x402/extensions@2.30.0':
     resolution: {integrity: sha512-Lqu8hYkFAIhzarWa8V1272tyolFAW7WjHrxQ7we5P0fEZ8oMXOq1hna2X0FXQetZoOFzBDwSWBBMsrqE8ZzvcQ==}
+
+  '@x402/fetch@2.30.0':
+    resolution: {integrity: sha512-rEC8CHQN5ZFn2W9b1mZ8ZvRyEw9Zkc5LuuVXo1CBU9w3PCtQO3c7+ChS7Ht9MvF66JTicK3ja0KgUF+fpChvNA==}
 
   '@x402/hono@2.30.0':
     resolution: {integrity: sha512-ctdA345cQEp5zbCXzVlHrP3jp7Zl5ucQJ7595o6pELPZSBb/uUlCkthlOYWtx/Uv9brdLsoDIjySyXj5Uo2l5Q==}
@@ -5969,6 +6014,10 @@ snapshots:
       - mppx
       - typescript
       - utf-8-validate
+
+  '@x402/fetch@2.30.0':
+    dependencies:
+      '@x402/core': 2.30.0
 
   '@x402/hono@2.30.0(hono@4.13.17)(typescript@7.0.2)':
     dependencies:

@@ -1,0 +1,9 @@
+# Copy to .dev.vars for `wrangler dev`. Never commit .dev.vars.
+# Use throwaway testnet wallets only.
+
+# Gas wallet for every EVM chain: a 0x-prefixed 32-byte hex private key.
+# Fund it with Base Sepolia and Arbitrum Sepolia ETH to settle real payments.
+EVM_GAS_KEY=0x0000000000000000000000000000000000000000000000000000000000000000
+
+# Solana fee payer: a base58 64-byte secret key (as Phantom exports it).
+SOLANA_GAS_KEY=replace_me

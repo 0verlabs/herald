@@ -1,15 +1,5 @@
-import { HeraldEnvSchema } from "@herald/core";
-import { Hono } from "hono";
+import { createApp } from "./app.ts";
 
-const app = new Hono<{ Bindings: CloudflareBindings }>();
+export { EvmChainQueue } from "./evm-chain-queue.ts";
 
-app.get("/health", async (c) => {
-  await c.env.DB.prepare("select 1").first();
-  return c.json({
-    status: "ok",
-    service: "facilitator",
-    heraldEnv: HeraldEnvSchema.parse(c.env.HERALD_ENV),
-  });
-});
-
-export default app;
+export default createApp();

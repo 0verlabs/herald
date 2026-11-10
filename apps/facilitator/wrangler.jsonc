@@ -4,8 +4,16 @@
 // `testnet` and `production` are the deployed environments, picked with
 // CLOUDFLARE_ENV. The `HERALD_ENV` var tells the code which Herald environment it is
 // (`testnet` or `mainnet`). Bindings and vars are not inherited, so each
-// environment declares its own. No secrets live here: set
-// them with `CLOUDFLARE_ENV=<env> wrangler secret put <NAME>`.
+// environment declares its own.
+//
+// RPC_URLS maps each CAIP-2 network Herald lists to a JSON-RPC endpoint.
+// NEAR_RPC_URL is used for the MPC root-key check before settling.
+//
+// Secrets, never in this file: EVM_GAS_KEY (0x-prefixed hex private key of
+// the gas wallet shared by every EVM chain) and SOLANA_GAS_KEY (base58
+// 64-byte secret key of the Solana fee payer). Set them with
+// `CLOUDFLARE_ENV=<env> wrangler secret put <NAME>`, and locally in
+// `.dev.vars` (see `.dev.vars.example`).
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "herald-facilitator",
@@ -13,7 +21,28 @@
   "compatibility_date": "2026-11-09",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
-  "vars": { "HERALD_ENV": "testnet" },
+  "secrets": { "required": ["EVM_GAS_KEY", "SOLANA_GAS_KEY"] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["EvmChainQueue"] }],
+  "vars": {
+    "HERALD_ENV": "testnet",
+    "NEAR_RPC_URL": "https://rpc.testnet.fastnear.com",
+    "RPC_URLS": {
+      "eip155:84532": "https://sepolia.base.org",
+      "eip155:421614": "https://sepolia-rollup.arbitrum.io/rpc",
+      "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "https://api.devnet.solana.com",
+    },
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "EVM_CHAIN_QUEUE", "class_name": "EvmChainQueue" }],
+  },
+  // 60 settlements per minute per API key.
+  "ratelimits": [
+    {
+      "name": "SETTLE_RATE_LIMITER",
+      "namespace_id": "4000",
+      "simple": { "limit": 60, "period": 60 },
+    },
+  ],
   "d1_databases": [
     {
       "binding": "DB",
@@ -26,7 +55,25 @@
   "env": {
     "testnet": {
       "name": "herald-facilitator-testnet",
-      "vars": { "HERALD_ENV": "testnet" },
+      "vars": {
+        "HERALD_ENV": "testnet",
+        "NEAR_RPC_URL": "https://rpc.testnet.fastnear.com",
+        "RPC_URLS": {
+          "eip155:84532": "https://sepolia.base.org",
+          "eip155:421614": "https://sepolia-rollup.arbitrum.io/rpc",
+          "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "https://api.devnet.solana.com",
+        },
+      },
+      "durable_objects": {
+        "bindings": [{ "name": "EVM_CHAIN_QUEUE", "class_name": "EvmChainQueue" }],
+      },
+      "ratelimits": [
+        {
+          "name": "SETTLE_RATE_LIMITER",
+          "namespace_id": "4001",
+          "simple": { "limit": 60, "period": 60 },
+        },
+      ],
       "d1_databases": [
         {
           "binding": "DB",
@@ -34,12 +81,35 @@
           "database_id": "2498f5b7-647d-4322-ba87-64acf452bca0",
           "migrations_dir": "../../packages/db/migrations",
           "migrations_pattern": "../../packages/db/migrations/*/migration.sql",
+          // Lets the seed script (`scripts/seed.ts --env testnet`) write to
+          // the deployed database. Ignored by `wrangler deploy`.
+          "remote": true,
         },
       ],
     },
     "production": {
       "name": "herald-facilitator-mainnet",
-      "vars": { "HERALD_ENV": "mainnet" },
+      "vars": {
+        "HERALD_ENV": "mainnet",
+        "NEAR_RPC_URL": "https://rpc.mainnet.fastnear.com",
+        "RPC_URLS": {
+          "eip155:8453": "https://mainnet.base.org",
+          "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "https://api.mainnet-beta.solana.com",
+          "eip155:42161": "https://arb1.arbitrum.io/rpc",
+          "eip155:137": "https://polygon-bor-rpc.publicnode.com",
+          "eip155:43114": "https://api.avax.network/ext/bc/C/rpc",
+        },
+      },
+      "durable_objects": {
+        "bindings": [{ "name": "EVM_CHAIN_QUEUE", "class_name": "EvmChainQueue" }],
+      },
+      "ratelimits": [
+        {
+          "name": "SETTLE_RATE_LIMITER",
+          "namespace_id": "4002",
+          "simple": { "limit": 60, "period": 60 },
+        },
+      ],
       "d1_databases": [
         {
           "binding": "DB",

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Caip2Schema } from "./networks.ts";
 
 /**
  * Which Herald environment a deployment is: `testnet` serves the test
@@ -45,3 +46,49 @@ export const ProviderSchema = z.object({
   createdAt: z.date(),
 });
 export type Provider = z.infer<typeof ProviderSchema>;
+
+/** How a Herald API key starts in each Herald environment. */
+export const apiKeyPrefixes = {
+  testnet: "hk_test_",
+  mainnet: "hk_live_",
+} as const satisfies Record<HeraldEnv, string>;
+
+/**
+ * A Provider's Herald API key, without the key itself: Herald stores only
+ * its SHA-256 hash and `prefix`, the first characters, for display. A key
+ * works in one Herald environment only (`hk_test_…` on testnet, `hk_live_…`
+ * on mainnet). `packages/db` keeps the `api_keys` table in line with this
+ * schema.
+ */
+export const ApiKeySchema = z.object({
+  id: z.number().int().positive(),
+  providerId: z.number().int().positive(),
+  env: HeraldEnvSchema,
+  prefix: z
+    .string()
+    .refine((prefix) => Object.values(apiKeyPrefixes).some((p) => prefix.startsWith(p))),
+  createdAt: z.date(),
+  lastUsedAt: z.date().nullable(),
+  revokedAt: z.date().nullable(),
+});
+export type ApiKey = z.infer<typeof ApiKeySchema>;
+
+/**
+ * A Buyer payment Herald's facilitator settled into a Provider's Receiving
+ * Address. `amount` is in base units of `asset`. A transaction hash is unique
+ * per network. `packages/db` keeps the `payments` table in line with this
+ * schema.
+ */
+export const PaymentSchema = z.object({
+  id: z.number().int().positive(),
+  providerId: z.number().int().positive(),
+  apiKeyId: z.number().int().positive(),
+  network: Caip2Schema,
+  asset: z.string().min(1),
+  amount: z.string().regex(/^\d+$/),
+  buyerAddress: z.string().min(1),
+  txHash: z.string().min(1),
+  resourceUrl: z.string().nullable(),
+  settledAt: z.date(),
+});
+export type Payment = z.infer<typeof PaymentSchema>;
