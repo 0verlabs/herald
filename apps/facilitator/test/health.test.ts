@@ -9,7 +9,7 @@ describe("GET /health", () => {
     expect(await response.json()).toEqual({
       status: "ok",
       service: "facilitator",
-      environment: "testnet",
+      network: "testnet",
     });
   });
 

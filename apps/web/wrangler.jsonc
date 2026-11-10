@@ -1,9 +1,10 @@
 // Herald dashboard (TanStack Start).
 //
 // The top level is the local development config (`vp dev`). `testnet` and
-// `production` (mainnet) are the deployed environments, picked at build time
-// with CLOUDFLARE_ENV, which vite.config.ts also inlines into the bundle.
-// Bindings are not inherited, so each environment declares its own. D1 is
+// `production` are the deployed environments, picked at build time with
+// CLOUDFLARE_ENV. The `NETWORK` var tells the code which chains it serves
+// (`testnet` or `mainnet`). Bindings and vars are not inherited, so each
+// environment declares its own. D1 is
 // shared with the facilitator: same database per environment.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
@@ -12,6 +13,7 @@
   "compatibility_date": "2026-11-09",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  "vars": { "NETWORK": "testnet" },
   "d1_databases": [
     {
       "binding": "DB",
@@ -25,6 +27,7 @@
   "env": {
     "testnet": {
       "name": "herald-web-testnet",
+      "vars": { "NETWORK": "testnet" },
       "d1_databases": [
         {
           "binding": "DB",
@@ -38,6 +41,7 @@
     },
     "production": {
       "name": "herald-web-mainnet",
+      "vars": { "NETWORK": "mainnet" },
       "d1_databases": [
         {
           "binding": "DB",

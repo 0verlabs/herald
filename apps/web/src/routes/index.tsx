@@ -8,15 +8,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getEnvironment } from "@/server/environment";
+import { getNetwork } from "@/server/network";
 
 export const Route = createFileRoute("/")({
-  loader: () => getEnvironment(),
+  loader: () => getNetwork(),
   component: Home,
 });
 
 function Home() {
-  const environment = Route.useLoaderData();
+  const network = Route.useLoaderData();
 
   return (
     <main className="flex min-h-svh items-center justify-center p-6">
@@ -27,7 +27,7 @@ function Home() {
             Accept x402 payments on many chains into addresses controlled by one NEAR account.
           </CardDescription>
           <CardAction>
-            <Badge variant="secondary">{environment}</Badge>
+            <Badge variant="secondary">{network}</Badge>
           </CardAction>
         </CardHeader>
         <CardContent>

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import {
-  EnvironmentSchema,
+  NetworkSchema,
   EvmAddressSchema,
   NearAccountIdSchema,
   ProviderSchema,
@@ -11,11 +11,12 @@ import {
 const evmAddress = "0xf437261ba00ac4f34effb54d54df13a81b220e13";
 const solanaAddress = "H396yYAeSpsgC6pQ7Qd681g9MSTT7oYZ4bCqGHGdbNiq";
 
-describe("EnvironmentSchema", () => {
+describe("NetworkSchema", () => {
+  // Herald networks, not CAIP-2 chain ids.
   test("accepts testnet and mainnet only", () => {
-    expect(EnvironmentSchema.parse("testnet")).toBe("testnet");
-    expect(EnvironmentSchema.parse("mainnet")).toBe("mainnet");
-    expect(EnvironmentSchema.safeParse("devnet").success).toBe(false);
+    expect(NetworkSchema.parse("testnet")).toBe("testnet");
+    expect(NetworkSchema.parse("mainnet")).toBe("mainnet");
+    expect(NetworkSchema.safeParse("devnet").success).toBe(false);
   });
 });
 

@@ -39,12 +39,12 @@ After changing a `wrangler.jsonc`, run `vp run -r types` to regenerate binding t
 
 ### Deploy
 
-`CLOUDFLARE_ENV` picks the deployment. It selects the Wrangler environment and is inlined into each bundle, where `environmentFromCloudflareEnv()` in core maps it to the Herald environment: `production` is mainnet, `testnet` (or unset, in local dev and tests) is testnet. There is no separate Herald env variable.
+`CLOUDFLARE_ENV` picks the Wrangler environment to deploy. Each environment sets a `NETWORK` var (`testnet` or `mainnet`) that the code reads through `NetworkSchema` in core. Local dev and tests use the top-level config, where `NETWORK` is `testnet`.
 
-| `CLOUDFLARE_ENV` | Herald  | Facilitator                  | Web                  | D1               | KV (`SESSIONS`)           |
-| ---------------- | ------- | ---------------------------- | -------------------- | ---------------- | ------------------------- |
-| `testnet`        | testnet | `herald-facilitator-testnet` | `herald-web-testnet` | `herald-testnet` | `herald-sessions-testnet` |
-| `production`     | mainnet | `herald-facilitator-mainnet` | `herald-web-mainnet` | `herald-mainnet` | `herald-sessions-mainnet` |
+| `CLOUDFLARE_ENV` | `NETWORK` | Facilitator                  | Web                  | D1               | KV (`SESSIONS`)           |
+| ---------------- | --------- | ---------------------------- | -------------------- | ---------------- | ------------------------- |
+| `testnet`        | `testnet` | `herald-facilitator-testnet` | `herald-web-testnet` | `herald-testnet` | `herald-sessions-testnet` |
+| `production`     | `mainnet` | `herald-facilitator-mainnet` | `herald-web-mainnet` | `herald-mainnet` | `herald-sessions-mainnet` |
 
 The D1 databases and KV namespaces already exist; their IDs are in `apps/facilitator/wrangler.jsonc` and `apps/web/wrangler.jsonc` (IDs are not secrets). Sign in once with `npx wrangler login`, then:
 

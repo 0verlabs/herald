@@ -1,11 +1,13 @@
 import { z } from "zod";
 
 /**
- * Herald runs as two separate deployments. Each has its own D1 database, KV
- * namespace, gas wallets and URLs, and API keys only work in one of them.
+ * Which set of chains a Herald deployment serves. Herald runs as two separate
+ * deployments, each with its own D1 database, KV namespace, gas wallets and
+ * URLs, and API keys only work in one of them. Workers read it from the
+ * `NETWORK` var in their Wrangler config.
  */
-export const EnvironmentSchema = z.enum(["testnet", "mainnet"]);
-export type Environment = z.infer<typeof EnvironmentSchema>;
+export const NetworkSchema = z.enum(["testnet", "mainnet"]);
+export type Network = z.infer<typeof NetworkSchema>;
 
 /**
  * A NEAR account id, following nearcore's validation rules: 2 to 64

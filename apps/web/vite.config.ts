@@ -8,11 +8,6 @@ import { defineConfig } from "vite-plus";
 // with CLOUDFLARE_ENV. `wrangler deploy` then deploys the flattened config the
 // build writes, so it takes no `--env` flag.
 export default defineConfig({
-  // Herald reads its environment from CLOUDFLARE_ENV (production = mainnet),
-  // so the value the build ran with is inlined into the bundle.
-  define: {
-    "process.env.CLOUDFLARE_ENV": JSON.stringify(process.env.CLOUDFLARE_ENV ?? ""),
-  },
   resolve: { tsconfigPaths: true },
   server: { port: 3000 },
   plugins: [

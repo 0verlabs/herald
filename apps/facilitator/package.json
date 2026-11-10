@@ -10,7 +10,7 @@
     "types": "wrangler types --env-interface CloudflareBindings",
     "db:migrate:local": "wrangler d1 migrations apply DB --local --persist-to ../../.wrangler/state",
     "db:migrate:remote": "test -n \"$CLOUDFLARE_ENV\" || { echo \"Set CLOUDFLARE_ENV to testnet or production\" >&2; exit 1; } && wrangler d1 migrations apply DB --remote",
-    "deploy": "test -n \"$CLOUDFLARE_ENV\" || { echo \"Set CLOUDFLARE_ENV to testnet or production\" >&2; exit 1; } && wrangler deploy --define \"process.env.CLOUDFLARE_ENV:'$CLOUDFLARE_ENV'\""
+    "deploy": "test -n \"$CLOUDFLARE_ENV\" || { echo \"Set CLOUDFLARE_ENV to testnet or production\" >&2; exit 1; } && wrangler deploy"
   },
   "dependencies": {
     "@herald/core": "workspace:*",
