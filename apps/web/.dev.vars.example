@@ -2,3 +2,10 @@
 
 # NEAR testnet JSON-RPC endpoint (QuickNode), used to check sign-in keys.
 NEAR_RPC_URL=https://example.near-testnet.quiknode.pro/replace_me/
+
+# Private JSON-RPC endpoints (QuickNode) for each testnet chain, the same
+# ones the facilitator uses. Overview reads live USDC balances there.
+# api.devnet.solana.com refuses requests from Workers, local ones included.
+BASE_RPC_URL=https://example.base-sepolia.quiknode.pro/replace_me/
+SOLANA_RPC_URL=https://example.solana-devnet.quiknode.pro/replace_me/
+ARBITRUM_RPC_URL=https://example.arbitrum-sepolia.quiknode.pro/replace_me/

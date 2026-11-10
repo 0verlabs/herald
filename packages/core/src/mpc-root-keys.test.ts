@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { checkMpcRootKeys, type MpcRootKeyReader } from "./index.ts";
+import { checkMpcRootKeys, nearRpcMpcRootKeyReader, type MpcRootKeyReader } from "./index.ts";
 
 // Root keys as `public_key({ domain_id })` returned them on 2026-11-10.
 const live: Record<string, Record<number, string>> = {
@@ -52,5 +52,30 @@ describe("checkMpcRootKeys", () => {
     };
 
     await expect(checkMpcRootKeys("testnet", down)).rejects.toThrow("RPC unavailable");
+  });
+});
+
+describe("nearRpcMpcRootKeyReader", () => {
+  // The endpoint's URL carries its API key, and a runtime's error may name it.
+  test.each([
+    [
+      "answers 503",
+      async () => new Response("down at https://near.example/api-key-1234", { status: 503 }),
+    ],
+    [
+      "can't be reached",
+      async () => {
+        throw new TypeError("fetch failed: https://near.example/api-key-1234");
+      },
+    ],
+  ])("never names the endpoint in its error when the RPC %s", async (_case, fetchFn) => {
+    const read = nearRpcMpcRootKeyReader("https://near.example/api-key-1234", fetchFn);
+
+    const error: unknown = await read({ contractId: "v1.signer", domainId: 0 }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).not.toContain("api-key-1234");
   });
 });

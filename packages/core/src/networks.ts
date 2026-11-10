@@ -19,7 +19,9 @@ export type Caip2 = `${string}:${string}`;
  *
  * Every EVM network shares the Provider's EVM Receiving Address. `eip712` is
  * the USDC contract's EIP-712 domain, which EIP-3009 signatures (Buyer
- * payments and Sweeps) commit to.
+ * payments and Sweeps) commit to. `txExplorer` is a block explorer's page
+ * for a transaction, with `{txHash}` where the hash goes (see
+ * `explorerTxUrl`).
  */
 export type Network =
   | {
@@ -27,12 +29,14 @@ export type Network =
       caip2: Caip2;
       label: string;
       usdc: { address: string; decimals: number; eip712: { name: string; version: string } };
+      txExplorer: string;
     }
   | {
       kind: "solana";
       caip2: Caip2;
       label: string;
       usdc: { address: string; decimals: number };
+      txExplorer: string;
     };
 
 // Domains were read from each contract's `name()` / `version()` on
@@ -50,12 +54,14 @@ const mainnet: readonly Network[] = [
       decimals: USDC_DECIMALS,
       eip712: USD_COIN_V2,
     },
+    txExplorer: "https://basescan.org/tx/{txHash}",
   },
   {
     kind: "solana",
     caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
     label: "Solana",
     usdc: { address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", decimals: USDC_DECIMALS },
+    txExplorer: "https://explorer.solana.com/tx/{txHash}",
   },
   {
     kind: "evm",
@@ -66,6 +72,7 @@ const mainnet: readonly Network[] = [
       decimals: USDC_DECIMALS,
       eip712: USD_COIN_V2,
     },
+    txExplorer: "https://arbiscan.io/tx/{txHash}",
   },
   {
     kind: "evm",
@@ -76,6 +83,7 @@ const mainnet: readonly Network[] = [
       decimals: USDC_DECIMALS,
       eip712: USD_COIN_V2,
     },
+    txExplorer: "https://polygonscan.com/tx/{txHash}",
   },
   {
     kind: "evm",
@@ -86,6 +94,7 @@ const mainnet: readonly Network[] = [
       decimals: USDC_DECIMALS,
       eip712: USD_COIN_V2,
     },
+    txExplorer: "https://snowtrace.io/tx/{txHash}",
   },
 ];
 
@@ -100,12 +109,14 @@ const testnet: readonly Network[] = [
       decimals: USDC_DECIMALS,
       eip712: { name: "USDC", version: "2" },
     },
+    txExplorer: "https://sepolia.basescan.org/tx/{txHash}",
   },
   {
     kind: "solana",
     caip2: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
     label: "Solana Devnet",
     usdc: { address: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", decimals: USDC_DECIMALS },
+    txExplorer: "https://explorer.solana.com/tx/{txHash}?cluster=devnet",
   },
   {
     kind: "evm",
@@ -116,6 +127,7 @@ const testnet: readonly Network[] = [
       decimals: USDC_DECIMALS,
       eip712: USD_COIN_V2,
     },
+    txExplorer: "https://sepolia.arbiscan.io/tx/{txHash}",
   },
 ];
 
@@ -127,3 +139,13 @@ export const networkRegistry: Readonly<Record<HeraldEnv, readonly Network[]>> = 
   mainnet,
   testnet,
 };
+
+/** The network Herald lists under a CAIP-2 id, in either Herald environment. */
+export function findNetwork(caip2: string): Network | undefined {
+  return [...networkRegistry.mainnet, ...networkRegistry.testnet].find((n) => n.caip2 === caip2);
+}
+
+/** A block explorer's page for a transaction on `network`. */
+export function explorerTxUrl(network: Network, txHash: string): string {
+  return network.txExplorer.replace("{txHash}", encodeURIComponent(txHash));
+}

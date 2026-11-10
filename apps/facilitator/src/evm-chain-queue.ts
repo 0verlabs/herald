@@ -6,14 +6,13 @@ import {
   createPublicClient,
   createWalletClient,
   decodeFunctionData,
-  http,
   keccak256,
   TransactionNotFoundError,
   type Address,
   type Hex,
   type PublicClient,
 } from "viem";
-import { evmChain, evmGasAccount, rpcUrl } from "./chains.ts";
+import { evmChain, evmGasAccount, evmTransport } from "./chains.ts";
 import { PendingSettlements } from "./pending-settlements.ts";
 
 export type TransferWithAuthorizationSubmission = {
@@ -125,7 +124,10 @@ export class EvmChainQueue extends DurableObject<CloudflareBindings> {
     }
 
     const chain = evmChain(network);
-    const transport = http(rpcUrl(this.env, network), { timeout: RPC_TIMEOUT_MS, retryCount: 1 });
+    const transport = evmTransport(this.env, network, {
+      timeout: RPC_TIMEOUT_MS,
+      retryCount: 1,
+    });
     const client = createPublicClient({ chain, transport });
     const wallet = createWalletClient({ account: evmGasAccount(this.env), chain, transport });
 

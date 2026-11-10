@@ -115,3 +115,116 @@ describe("gas-wallet nonces", () => {
     expect(b).toBe((a ?? -1) + 1);
   });
 });
+
+describe("a failing RPC endpoint", () => {
+  // Herald's RPC endpoints are private URLs carrying an API key (the test
+  // ones are in vite.config.ts). viem puts the URL in its error messages.
+  const endpoint = "base-sepolia.rpc.test";
+
+  /** The facilitator's answer, or its error, as the Provider's server sees it. */
+  async function seenByProvider(call: () => Promise<unknown>): Promise<string> {
+    try {
+      return JSON.stringify(await call());
+    } catch (error) {
+      return `${String(error)} ${JSON.stringify(error)}`;
+    }
+  }
+
+  test("a broadcast the node refuses fails without naming the endpoint", async () => {
+    const fake = installFakeNetwork();
+    const chain = fake.chains[network];
+    if (!chain) throw new Error("no fake chain");
+    chain.faults.rejectMethods = {
+      methods: ["eth_sendRawTransaction"],
+      message: "insufficient funds for gas * price + value",
+    };
+    const { payload, requirements, client } = await paidRequest("refused-broadcast.testnet");
+
+    const seen = await seenByProvider(() => client.settle(payload, requirements));
+
+    expect(seen).toContain('"success":false');
+    expect(seen).not.toContain(endpoint);
+    expect(chain.submissions).toHaveLength(0);
+  });
+
+  test("reads the node fails while verifying don't name the endpoint", async () => {
+    const fake = installFakeNetwork();
+    const chain = fake.chains[network];
+    if (!chain) throw new Error("no fake chain");
+    const { payload, requirements, client } = await paidRequest("failing-reads.testnet");
+    chain.faults.rejectMethods = {
+      methods: ["eth_call", "eth_getCode", "eth_chainId", "eth_blockNumber"],
+      message: "upstream unavailable",
+    };
+
+    const seen = await seenByProvider(() => client.verify(payload, requirements));
+
+    expect(seen).not.toContain(endpoint);
+  });
+
+  test("an unreachable EVM endpoint isn't named, though the runtime's error names it", async () => {
+    const fake = installFakeNetwork();
+    const chain = fake.chains[network];
+    if (!chain) throw new Error("no fake chain");
+    const { payload, requirements, client } = await paidRequest("unreachable-evm-rpc.testnet");
+    chain.faults.unreachable = true;
+
+    const seen = await seenByProvider(() => client.settle(payload, requirements));
+
+    expect(seen).not.toContain(endpoint);
+  });
+
+  test("an unreachable Solana endpoint isn't named, though the runtime's error names it", async () => {
+    const fake = installFakeNetwork();
+    const accountId = "unreachable-solana-rpc.testnet";
+    const { provider, secret } = await registeredProvider(accountId);
+    await fake.solana.createTokenAccount(provider.solanaAddress);
+    const { payload, requirements } = await buyerPayment({
+      providerAccount: accountId,
+      network: SOLANA_DEVNET,
+      apiKey: secret,
+    });
+    fake.solana.faults.unreachable = true;
+
+    const client = facilitatorClient(secret);
+    const verified = await seenByProvider(() => client.verify(payload, requirements));
+    const settled = await seenByProvider(() => client.settle(payload, requirements));
+
+    expect(verified).not.toContain("solana-devnet.rpc.test");
+    expect(settled).not.toContain("solana-devnet.rpc.test");
+  });
+
+  test("a failing Solana endpoint doesn't name itself either", async () => {
+    const fake = installFakeNetwork();
+    const accountId = "failing-solana-rpc.testnet";
+    const { provider, secret } = await registeredProvider(accountId);
+    await fake.solana.createTokenAccount(provider.solanaAddress);
+    const { payload, requirements } = await buyerPayment({
+      providerAccount: accountId,
+      network: SOLANA_DEVNET,
+      apiKey: secret,
+    });
+    fake.solana.faults.failNextRequests = 20;
+
+    const seen = await seenByProvider(() =>
+      facilitatorClient(secret).settle(payload, requirements),
+    );
+
+    expect(seen).not.toContain("solana-devnet.rpc.test");
+  });
+
+  test("reads the node fails while settling don't name the endpoint", async () => {
+    const fake = installFakeNetwork();
+    const chain = fake.chains[network];
+    if (!chain) throw new Error("no fake chain");
+    const { payload, requirements, client } = await paidRequest("failing-settle-reads.testnet");
+    chain.faults.rejectMethods = {
+      methods: ["eth_getTransactionCount", "eth_estimateGas", "eth_getBlockByNumber"],
+      message: "upstream unavailable",
+    };
+
+    const seen = await seenByProvider(() => client.settle(payload, requirements));
+
+    expect(seen).not.toContain(endpoint);
+  });
+});

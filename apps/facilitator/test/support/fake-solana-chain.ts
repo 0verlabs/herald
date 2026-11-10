@@ -54,6 +54,8 @@ export type SolanaChainFaults = {
   confirmationDelayMs?: number;
   /** Fail this many upcoming requests of any method with a server error. */
   failNextRequests?: number;
+  /** Refuse connections: every request fails before reaching the node. */
+  unreachable?: boolean;
 };
 
 const SLOT = 400_000_000;

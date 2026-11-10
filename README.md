@@ -62,7 +62,7 @@ Facilitator secrets per environment:
 | `POLYGON_RPC_URL`, `AVALANCHE_RPC_URL`               | Mainnet only.                                                                                                                 |
 | `NEAR_RPC_URL`                                       | NEAR testnet or mainnet, for the MPC root-key check.                                                                          |
 
-Every RPC endpoint is a private QuickNode URL, which carries the API key, so all of them are secrets. Solana's public endpoints wouldn't work anyway: `api.devnet.solana.com` and `api.mainnet-beta.solana.com` refuse requests from Workers (they block on the `CF-Worker` header, locally too). The web Worker's only secret is `NEAR_RPC_URL`, for sign-in.
+Every RPC endpoint is a private QuickNode URL, which carries the API key, so all of them are secrets. Solana's public endpoints wouldn't work anyway: `api.devnet.solana.com` and `api.mainnet-beta.solana.com` refuse requests from Workers (they block on the `CF-Worker` header, locally too). The web Worker needs `NEAR_RPC_URL` for sign-in and the same `<CHAIN>_RPC_URL` secrets as the facilitator for Overview's live balances.
 
 To get a Provider and an API key without the dashboard:
 
@@ -76,6 +76,8 @@ It prints the Provider's Receiving Addresses and an `hk_test_` key, once. Locall
 ### Dashboard
 
 `apps/web` is the Provider dashboard. Open it (`vp -C apps/web dev`, then http://localhost:3000), click **Connect NEAR wallet**, pick a wallet and sign the message it shows. Use a `.testnet` account on the testnet deployment and locally. Signing sends no transaction. You land on Overview, which shows your Provider Account, your EVM Receiving Address (one address for every EVM chain Herald lists) and your Solana Receiving Address, each with a copy button. Signed-out visitors to a dashboard page are sent to sign-in.
+
+Overview also shows the live USDC balance of your Receiving Addresses on each chain, read from that chain's RPC (`<CHAIN>_RPC_URL`) after the page loads. A chain whose RPC fails or takes over 8 s shows as unavailable without hiding the others. Below it, **Revenue** totals the payments Herald settled for you per chain, over the last 7 days and all time. **Payments** lists every settled payment, newest first, 25 per page: time, chain, amount, Buyer address, resource URL and the transaction, linked to the chain's block explorer. The queries live in `packages/core/src/server` (`payments.ts`, `balances.ts`); `apps/web/src/server/overview.ts` and `payments.ts` wire them to server functions.
 
 **API keys** lists your keys with their prefix, environment, creation time, last settlement and revocation. **Create key** issues an `hk_test_` key on testnet (`hk_live_` on mainnet) and shows it once; Herald keeps only its SHA-256 hash. **Revoke** stops a key at once: the facilitator answers its next request with 401 `revoked_api_key`. **Integration** shows a Node.js server for Hono and for Express, ready to paste: the stock `HTTPFacilitatorClient` pointed at Herald's facilitator with the key from `HERALD_API_KEY`, and `accepts()` filled in with your Provider Account.
 
