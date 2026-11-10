@@ -8,15 +8,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getNetwork } from "@/server/network";
+import { getHeraldEnv } from "@/server/herald-env";
 
 export const Route = createFileRoute("/")({
-  loader: () => getNetwork(),
+  loader: () => getHeraldEnv(),
   component: Home,
 });
 
 function Home() {
-  const network = Route.useLoaderData();
+  const heraldEnv = Route.useLoaderData();
 
   return (
     <main className="flex min-h-svh items-center justify-center p-6">
@@ -27,7 +27,7 @@ function Home() {
             Accept x402 payments on many chains into addresses controlled by one NEAR account.
           </CardDescription>
           <CardAction>
-            <Badge variant="secondary">{network}</Badge>
+            <Badge variant="secondary">{heraldEnv}</Badge>
           </CardAction>
         </CardHeader>
         <CardContent>

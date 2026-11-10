@@ -1,0 +1,129 @@
+import { z } from "zod";
+import { USDC_DECIMALS } from "./price.ts";
+import type { HeraldEnv } from "./schemas.ts";
+
+/**
+ * A CAIP-2 network id (`namespace:reference`), as x402 v2 uses in `network`:
+ * `eip155:8453` for Base, `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` for
+ * Solana mainnet.
+ */
+export const Caip2Schema = z
+  .string()
+  .regex(/^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$/, 'must be a CAIP-2 network id like "eip155:8453"')
+  .transform((id) => id as Caip2);
+export type Caip2 = `${string}:${string}`;
+
+/**
+ * A network Herald lists in one Herald environment, identified by its CAIP-2
+ * id, with its USDC deployment.
+ *
+ * Every EVM network shares the Provider's EVM Receiving Address. `eip712` is
+ * the USDC contract's EIP-712 domain, which EIP-3009 signatures (Buyer
+ * payments and Sweeps) commit to.
+ */
+export type Network =
+  | {
+      kind: "evm";
+      caip2: Caip2;
+      label: string;
+      usdc: { address: string; decimals: number; eip712: { name: string; version: string } };
+    }
+  | {
+      kind: "solana";
+      caip2: Caip2;
+      label: string;
+      usdc: { address: string; decimals: number };
+    };
+
+// Domains were read from each contract's `name()` / `version()` on
+// 2026-11-10; the opt-in live test in live.test.ts re-checks them. Testnet
+// USDC can differ from mainnet: Base Sepolia's is named "USDC".
+const USD_COIN_V2 = { name: "USD Coin", version: "2" };
+
+const mainnet: readonly Network[] = [
+  {
+    kind: "evm",
+    caip2: "eip155:8453",
+    label: "Base",
+    usdc: {
+      address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      decimals: USDC_DECIMALS,
+      eip712: USD_COIN_V2,
+    },
+  },
+  {
+    kind: "solana",
+    caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    label: "Solana",
+    usdc: { address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", decimals: USDC_DECIMALS },
+  },
+  {
+    kind: "evm",
+    caip2: "eip155:42161",
+    label: "Arbitrum",
+    usdc: {
+      address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      decimals: USDC_DECIMALS,
+      eip712: USD_COIN_V2,
+    },
+  },
+  {
+    kind: "evm",
+    caip2: "eip155:137",
+    label: "Polygon",
+    usdc: {
+      address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      decimals: USDC_DECIMALS,
+      eip712: USD_COIN_V2,
+    },
+  },
+  {
+    kind: "evm",
+    caip2: "eip155:43114",
+    label: "Avalanche",
+    usdc: {
+      address: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+      decimals: USDC_DECIMALS,
+      eip712: USD_COIN_V2,
+    },
+  },
+];
+
+// Polygon and Avalanche have no Herald testnet.
+const testnet: readonly Network[] = [
+  {
+    kind: "evm",
+    caip2: "eip155:84532",
+    label: "Base Sepolia",
+    usdc: {
+      address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      decimals: USDC_DECIMALS,
+      eip712: { name: "USDC", version: "2" },
+    },
+  },
+  {
+    kind: "solana",
+    caip2: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+    label: "Solana Devnet",
+    usdc: { address: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", decimals: USDC_DECIMALS },
+  },
+  {
+    kind: "evm",
+    caip2: "eip155:421614",
+    label: "Arbitrum Sepolia",
+    usdc: {
+      address: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d",
+      decimals: USDC_DECIMALS,
+      eip712: USD_COIN_V2,
+    },
+  },
+];
+
+/**
+ * The networks each Herald environment lists, in Payment Option order (Base,
+ * Solana, Arbitrum, Polygon, Avalanche).
+ */
+export const networkRegistry: Readonly<Record<HeraldEnv, readonly Network[]>> = {
+  mainnet,
+  testnet,
+};

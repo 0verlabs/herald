@@ -23,6 +23,7 @@ vp check                # format, lint and type check the whole workspace
 vp check --fix          # same, fixing formatting and autofixable lint issues
 vp test                 # run every test (Workers tests run in the Cloudflare Vitest pool)
 vp run ready            # check, test and build everything
+vp -C packages/core run test:live  # check the network registry and MPC root keys against live chains
 ```
 
 ### Run locally
@@ -39,12 +40,12 @@ After changing a `wrangler.jsonc`, run `vp run -r types` to regenerate binding t
 
 ### Deploy
 
-`CLOUDFLARE_ENV` picks the Wrangler environment to deploy. Each environment sets a `NETWORK` var (`testnet` or `mainnet`) that the code reads through `NetworkSchema` in core. Local dev and tests use the top-level config, where `NETWORK` is `testnet`.
+`CLOUDFLARE_ENV` picks the Wrangler environment to deploy. Each environment sets a `HERALD_ENV` var (`testnet` or `mainnet`), the Herald environment, which the code reads through `HeraldEnvSchema` in core. Local dev and tests use the top-level config, where `HERALD_ENV` is `testnet`.
 
-| `CLOUDFLARE_ENV` | `NETWORK` | Facilitator                  | Web                  | D1               | KV (`SESSIONS`)           |
-| ---------------- | --------- | ---------------------------- | -------------------- | ---------------- | ------------------------- |
-| `testnet`        | `testnet` | `herald-facilitator-testnet` | `herald-web-testnet` | `herald-testnet` | `herald-sessions-testnet` |
-| `production`     | `mainnet` | `herald-facilitator-mainnet` | `herald-web-mainnet` | `herald-mainnet` | `herald-sessions-mainnet` |
+| `CLOUDFLARE_ENV` | `HERALD_ENV` | Facilitator                  | Web                  | D1               | KV (`SESSIONS`)           |
+| ---------------- | ------------ | ---------------------------- | -------------------- | ---------------- | ------------------------- |
+| `testnet`        | `testnet`    | `herald-facilitator-testnet` | `herald-web-testnet` | `herald-testnet` | `herald-sessions-testnet` |
+| `production`     | `mainnet`    | `herald-facilitator-mainnet` | `herald-web-mainnet` | `herald-mainnet` | `herald-sessions-mainnet` |
 
 The D1 databases and KV namespaces already exist; their IDs are in `apps/facilitator/wrangler.jsonc` and `apps/web/wrangler.jsonc` (IDs are not secrets). Sign in once with `npx wrangler login`, then:
 

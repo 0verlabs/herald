@@ -1,5 +1,7 @@
-// `accepts()` and the facilitator URLs land here in #3. Until then the package
-// only exposes the network names it will take.
+export { accepts, type AcceptsOptions, type PaymentOption } from "./accepts.ts";
 
-/** Which Herald deployment a Provider integrates with. */
-export type { Network } from "@herald/core";
+/** Herald's facilitator URL per Herald environment, for the stock `HTTPFacilitatorClient`. */
+export { facilitatorUrls } from "@herald/core";
+
+/** Which Herald environment a Provider integrates with, and CAIP-2 network ids. */
+export type { Caip2, HeraldEnv } from "@herald/core";

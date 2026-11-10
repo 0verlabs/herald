@@ -7,10 +7,16 @@
   "scripts": {
     "dev": "wrangler dev --port 8788",
     "build": "wrangler deploy --dry-run --outdir dist",
-    "types": "wrangler types --env-interface CloudflareBindings",
+    "types": "wrangler types --env-interface CloudflareBindings --strict-vars=false",
     "deploy": "wrangler deploy"
   },
   "dependencies": {
+    "@hrld/x402": "workspace:*",
+    "@solana/kit": "catalog:",
+    "@x402/core": "catalog:",
+    "@x402/evm": "catalog:",
+    "@x402/hono": "catalog:",
+    "@x402/svm": "catalog:",
     "hono": "catalog:"
   },
   "devDependencies": {

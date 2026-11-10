@@ -1,4 +1,4 @@
-import { NetworkSchema } from "@herald/core";
+import { HeraldEnvSchema } from "@herald/core";
 import { createFileRoute } from "@tanstack/react-router";
 import { env } from "cloudflare:workers";
 
@@ -10,7 +10,7 @@ export const Route = createFileRoute("/api/health")({
         return Response.json({
           status: "ok",
           service: "web",
-          network: NetworkSchema.parse(env.NETWORK),
+          heraldEnv: HeraldEnvSchema.parse(env.HERALD_ENV),
         });
       },
     },

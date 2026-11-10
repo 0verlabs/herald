@@ -7,7 +7,13 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "scripts": {
+    "test:live": "HERALD_LIVE_CHECKS=1 vp test src/live.test.ts"
+  },
   "dependencies": {
+    "@noble/curves": "catalog:",
+    "@noble/hashes": "catalog:",
+    "@scure/base": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

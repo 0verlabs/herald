@@ -1,5 +1,13 @@
 // Example Provider API. It runs against Herald's testnet only, so it has no
 // Wrangler environments.
+//
+// PROVIDER_ACCOUNT is the NEAR testnet account whose Receiving Addresses get
+// paid; set it to an account you control. HERALD_FACILITATOR_URL is empty to
+// use Herald's testnet facilitator; set it (here or in .dev.vars) to run
+// against another one, such as a local facilitator on http://localhost:8787.
+// HERALD_API_KEY (an `hk_test_` key from the dashboard) is a secret:
+// `npx wrangler secret put HERALD_API_KEY` when deployed, `.dev.vars` locally
+// (see `.dev.vars.example`).
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "herald-weather-api",
@@ -7,4 +15,9 @@
   "compatibility_date": "2026-11-09",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  "vars": {
+    "PROVIDER_ACCOUNT": "herald-demo.testnet",
+    "HERALD_FACILITATOR_URL": "",
+  },
+  "secrets": { "required": ["HERALD_API_KEY"] },
 }

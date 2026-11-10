@@ -1,13 +1,14 @@
 import { z } from "zod";
 
 /**
- * Which set of chains a Herald deployment serves. Herald runs as two separate
- * deployments, each with its own D1 database, KV namespace, gas wallets and
- * URLs, and API keys only work in one of them. Workers read it from the
- * `NETWORK` var in their Wrangler config.
+ * Which Herald environment a deployment is: `testnet` serves the test
+ * networks, `mainnet` the real ones. Herald runs as two separate deployments,
+ * each with its own D1 database, KV namespace, gas wallets and URLs, and API
+ * keys only work in one of them. Workers read it from the `HERALD_ENV` var in
+ * their Wrangler config.
  */
-export const NetworkSchema = z.enum(["testnet", "mainnet"]);
-export type Network = z.infer<typeof NetworkSchema>;
+export const HeraldEnvSchema = z.enum(["testnet", "mainnet"]);
+export type HeraldEnv = z.infer<typeof HeraldEnvSchema>;
 
 /**
  * A NEAR account id, following nearcore's validation rules: 2 to 64
@@ -16,8 +17,8 @@ export type Network = z.infer<typeof NetworkSchema>;
  */
 export const NearAccountIdSchema = z
   .string()
-  .min(2)
-  .max(64)
+  .min(2, "Invalid NEAR account id: shorter than 2 characters")
+  .max(64, "Invalid NEAR account id: longer than 64 characters")
   .regex(/^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/, "Invalid NEAR account id");
 export type NearAccountId = z.infer<typeof NearAccountIdSchema>;
 
