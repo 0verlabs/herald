@@ -10,11 +10,9 @@ import { Hono } from "hono";
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();
 
-app.get("/health", (c) => c.json({ status: "ok", service: "weather-api" }));
-
-// Built per request from the Worker's bindings. Creating the middleware
-// fetches the facilitator's /supported, so it only runs on paid routes.
-app.use("/weather", (c, next) => {
+// Built per request from the Worker's bindings. `routes` decides which
+// requests need payment; every other route passes straight through.
+app.use("*", (c, next) => {
   const facilitator = new HTTPFacilitatorClient({
     url: c.env.HERALD_FACILITATOR_URL || facilitatorUrls.testnet,
     // `/supported` is public; verify and settle need the Herald API key.
@@ -42,6 +40,8 @@ app.use("/weather", (c, next) => {
 
   return paymentMiddleware(routes, server)(c, next);
 });
+
+app.get("/health", (c) => c.json({ status: "ok", service: "weather-api" }));
 
 app.get("/weather", (c) => c.json({ city: "Jakarta", temperatureC: 31, conditions: "Humid" }));
 
