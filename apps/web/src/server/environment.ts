@@ -1,8 +1,10 @@
-import { EnvironmentSchema } from "@herald/core";
+import { environmentFromCloudflareEnv } from "@herald/core";
 import { createServerFn } from "@tanstack/react-start";
-import { env } from "cloudflare:workers";
 
-/** The Herald environment this Worker was deployed as. */
-export const getEnvironment = createServerFn({ method: "GET" }).handler(() =>
-  EnvironmentSchema.parse(env.HERALD_ENV),
-);
+/**
+ * The Herald environment this Worker was built for. vite.config.ts inlines
+ * CLOUDFLARE_ENV at build time; it is unset in local dev (testnet).
+ */
+export const readEnvironment = () => environmentFromCloudflareEnv(process.env.CLOUDFLARE_ENV);
+
+export const getEnvironment = createServerFn({ method: "GET" }).handler(() => readEnvironment());

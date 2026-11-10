@@ -1,9 +1,11 @@
 // Herald's x402 facilitator.
 //
 // The top level is the local development config (`wrangler dev`, tests).
-// `testnet` and `mainnet` are the deployed environments; bindings are not
-// inherited, so each environment declares its own. No secrets live here: gas
-// wallet keys and the 1Click JWT are set with `wrangler secret put --env <env>`.
+// `testnet` and `production` (mainnet) are the deployed environments, picked
+// with CLOUDFLARE_ENV. The deploy script also inlines CLOUDFLARE_ENV into the
+// bundle, where core maps it to the Herald environment. Bindings are not
+// inherited, so each environment declares its own. No secrets live here: set
+// them with `CLOUDFLARE_ENV=<env> wrangler secret put <NAME>`.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "herald-facilitator",
@@ -11,7 +13,6 @@
   "compatibility_date": "2026-11-09",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
-  "vars": { "HERALD_ENV": "testnet" },
   "d1_databases": [
     {
       "binding": "DB",
@@ -24,25 +25,23 @@
   "env": {
     "testnet": {
       "name": "herald-facilitator-testnet",
-      "vars": { "HERALD_ENV": "testnet" },
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "herald-testnet",
-          "database_id": "00000000-0000-0000-0000-000000000000",
+          "database_id": "2498f5b7-647d-4322-ba87-64acf452bca0",
           "migrations_dir": "../../packages/db/migrations",
           "migrations_pattern": "../../packages/db/migrations/*/migration.sql",
         },
       ],
     },
-    "mainnet": {
+    "production": {
       "name": "herald-facilitator-mainnet",
-      "vars": { "HERALD_ENV": "mainnet" },
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "herald-mainnet",
-          "database_id": "00000000-0000-0000-0000-000000000000",
+          "database_id": "40572b28-f964-40ff-a8ef-3676a0f1629a",
           "migrations_dir": "../../packages/db/migrations",
           "migrations_pattern": "../../packages/db/migrations/*/migration.sql",
         },

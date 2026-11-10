@@ -1,9 +1,10 @@
 // Herald dashboard (TanStack Start).
 //
 // The top level is the local development config (`vp dev`). `testnet` and
-// `mainnet` are the deployed environments, selected at build time with
-// CLOUDFLARE_ENV. Bindings are not inherited, so each environment declares
-// its own. D1 is shared with the facilitator: same database per environment.
+// `production` (mainnet) are the deployed environments, picked at build time
+// with CLOUDFLARE_ENV, which vite.config.ts also inlines into the bundle.
+// Bindings are not inherited, so each environment declares its own. D1 is
+// shared with the facilitator: same database per environment.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "herald-web",
@@ -11,7 +12,6 @@
   "compatibility_date": "2026-11-09",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
-  "vars": { "HERALD_ENV": "testnet" },
   "d1_databases": [
     {
       "binding": "DB",
@@ -25,31 +25,29 @@
   "env": {
     "testnet": {
       "name": "herald-web-testnet",
-      "vars": { "HERALD_ENV": "testnet" },
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "herald-testnet",
-          "database_id": "00000000-0000-0000-0000-000000000000",
+          "database_id": "2498f5b7-647d-4322-ba87-64acf452bca0",
           "migrations_dir": "../../packages/db/migrations",
           "migrations_pattern": "../../packages/db/migrations/*/migration.sql",
         },
       ],
-      "kv_namespaces": [{ "binding": "SESSIONS", "id": "00000000000000000000000000000000" }],
+      "kv_namespaces": [{ "binding": "SESSIONS", "id": "2fafa42fee0c42a3891c9c665817324a" }],
     },
-    "mainnet": {
+    "production": {
       "name": "herald-web-mainnet",
-      "vars": { "HERALD_ENV": "mainnet" },
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "herald-mainnet",
-          "database_id": "00000000-0000-0000-0000-000000000000",
+          "database_id": "40572b28-f964-40ff-a8ef-3676a0f1629a",
           "migrations_dir": "../../packages/db/migrations",
           "migrations_pattern": "../../packages/db/migrations/*/migration.sql",
         },
       ],
-      "kv_namespaces": [{ "binding": "SESSIONS", "id": "00000000000000000000000000000000" }],
+      "kv_namespaces": [{ "binding": "SESSIONS", "id": "3ea666d940fe4fe685da650003bc1de7" }],
     },
   },
 }

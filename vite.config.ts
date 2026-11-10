@@ -40,6 +40,9 @@ export default defineConfig({
     projects: ["packages/*/vite.config.ts", "apps/facilitator/vite.config.ts"],
   },
   run: {
-    cache: true,
+    // Never cache package.json scripts: a cached `deploy` replays its old
+    // output and skips the deploy, and cached runs only see allowlisted env
+    // vars, so CLOUDFLARE_ENV would not reach them.
+    cache: { tasks: true, scripts: false },
   },
 });

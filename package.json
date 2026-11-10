@@ -9,8 +9,10 @@
     "dev": "vp run -r --parallel dev",
     "db:generate": "vp run --filter @herald/db generate",
     "db:migrate:local": "vp run --filter @herald/facilitator db:migrate:local",
-    "deploy:testnet": "vp run --filter @herald/facilitator deploy:testnet && vp run --filter @herald/web deploy:testnet",
-    "deploy:mainnet": "vp run --filter @herald/facilitator deploy:mainnet && vp run --filter @herald/web deploy:mainnet"
+    "db:migrate:testnet": "CLOUDFLARE_ENV=testnet vp run --filter @herald/facilitator db:migrate:remote",
+    "db:migrate:production": "CLOUDFLARE_ENV=production vp run --filter @herald/facilitator db:migrate:remote",
+    "deploy:testnet": "CLOUDFLARE_ENV=testnet vp run --filter @herald/facilitator deploy && CLOUDFLARE_ENV=testnet vp run --filter @herald/web deploy",
+    "deploy:production": "CLOUDFLARE_ENV=production vp run --filter @herald/facilitator deploy && CLOUDFLARE_ENV=production vp run --filter @herald/web deploy"
   },
   "devDependencies": {
     "@types/node": "catalog:",

@@ -1,4 +1,4 @@
-import { EnvironmentSchema } from "@herald/core";
+import { environmentFromCloudflareEnv } from "@herald/core";
 import { Hono } from "hono";
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();
@@ -8,7 +8,8 @@ app.get("/health", async (c) => {
   return c.json({
     status: "ok",
     service: "facilitator",
-    environment: EnvironmentSchema.parse(c.env.HERALD_ENV),
+    // Inlined at deploy time with `wrangler deploy --define`; unset locally.
+    environment: environmentFromCloudflareEnv(process.env.CLOUDFLARE_ENV),
   });
 });
 

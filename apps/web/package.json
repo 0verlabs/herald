@@ -9,8 +9,7 @@
     "build": "vp build",
     "preview": "vp preview",
     "types": "wrangler types --env-interface CloudflareBindings",
-    "deploy:testnet": "CLOUDFLARE_ENV=testnet vp build && wrangler deploy",
-    "deploy:mainnet": "CLOUDFLARE_ENV=mainnet vp build && wrangler deploy"
+    "deploy": "test -n \"$CLOUDFLARE_ENV\" || { echo \"Set CLOUDFLARE_ENV to testnet or production\" >&2; exit 1; } && vp build && wrangler deploy"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

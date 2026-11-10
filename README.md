@@ -39,33 +39,23 @@ After changing a `wrangler.jsonc`, run `vp run -r types` to regenerate binding t
 
 ### Deploy
 
-Each Worker has two Wrangler environments, `testnet` and `mainnet`, each with its own Worker name, D1 database and KV namespace:
+`CLOUDFLARE_ENV` picks the deployment. It selects the Wrangler environment and is inlined into each bundle, where `environmentFromCloudflareEnv()` in core maps it to the Herald environment: `production` is mainnet, `testnet` (or unset, in local dev and tests) is testnet. There is no separate Herald env variable.
 
-| Environment | Facilitator                  | Web                  | D1               | KV (`SESSIONS`)           |
-| ----------- | ---------------------------- | -------------------- | ---------------- | ------------------------- |
-| `testnet`   | `herald-facilitator-testnet` | `herald-web-testnet` | `herald-testnet` | `herald-sessions-testnet` |
-| `mainnet`   | `herald-facilitator-mainnet` | `herald-web-mainnet` | `herald-mainnet` | `herald-sessions-mainnet` |
+| `CLOUDFLARE_ENV` | Herald  | Facilitator                  | Web                  | D1               | KV (`SESSIONS`)           |
+| ---------------- | ------- | ---------------------------- | -------------------- | ---------------- | ------------------------- |
+| `testnet`        | testnet | `herald-facilitator-testnet` | `herald-web-testnet` | `herald-testnet` | `herald-sessions-testnet` |
+| `production`     | mainnet | `herald-facilitator-mainnet` | `herald-web-mainnet` | `herald-mainnet` | `herald-sessions-mainnet` |
 
-Sign in once with `npx wrangler login`.
-
-First deploy only: create the resources and put their IDs in both `apps/facilitator/wrangler.jsonc` and `apps/web/wrangler.jsonc` (IDs are not secrets). Until then those files hold all-zero placeholder IDs.
+The D1 databases and KV namespaces already exist; their IDs are in `apps/facilitator/wrangler.jsonc` and `apps/web/wrangler.jsonc` (IDs are not secrets). Sign in once with `npx wrangler login`, then:
 
 ```bash
-cd apps/facilitator
-vp exec wrangler d1 create herald-testnet                   # -> database_id for env.testnet (both Workers)
-vp exec wrangler kv namespace create herald-sessions-testnet  # -> SESSIONS id for env.testnet (apps/web)
+vp run db:migrate:testnet   # apply D1 migrations to herald-testnet
+vp run deploy:testnet       # deploy the facilitator, then the web app
 ```
 
-Then, for each deploy:
+For mainnet use `db:migrate:production` and `deploy:production`. Inside an app, the scripts read `CLOUDFLARE_ENV` and refuse to run without it, for example `CLOUDFLARE_ENV=testnet vp -C apps/facilitator run deploy`. The facilitator deploys first because the web app will bind to its Durable Objects (ADR-0006).
 
-```bash
-vp -C apps/facilitator run db:migrate:testnet   # apply migrations to the testnet D1 database
-vp run deploy:testnet                           # deploy the facilitator, then the web app
-```
-
-Use the `mainnet` variants the same way. The facilitator deploys first because the web app will bind to its Durable Objects (ADR-0006). The web app picks its environment at build time through `CLOUDFLARE_ENV`, so its deploy scripts build first and then run `wrangler deploy` without `--env`.
-
-Secrets (gas wallet keys, the 1Click JWT) never go in the repo. Set them per environment with `npx wrangler secret put <NAME> --env <testnet|mainnet>` from the Worker's directory, and keep local values in a gitignored `.dev.vars`.
+Secrets (gas wallet keys, the 1Click JWT) never go in the repo. Set them per environment with `CLOUDFLARE_ENV=<testnet|production> npx wrangler secret put <NAME>` from the Worker's directory, and keep local values in a gitignored `.dev.vars`.
 
 ### Known workarounds
 
