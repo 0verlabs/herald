@@ -1,3 +1,5 @@
+// @cloudflare/vitest-plugin, not @cloudflare/vitest-pool-workers: the pool
+// package only supports Vitest 4, and Vite+ ships Vitest 5.
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vite-plus";
 import { readMigrations } from "./testing.ts";

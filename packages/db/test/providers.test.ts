@@ -25,9 +25,9 @@ describe("providers table", () => {
 
   test("allows one row per Provider Account", async () => {
     const db = createDb(env.DB);
-    const sameAccount = { ...provider, accountId: "unique-check.near" };
-    await db.insert(providers).values(sameAccount);
+    const duplicateProvider = { ...provider, accountId: "unique-check.near" };
+    await db.insert(providers).values(duplicateProvider);
 
-    await expect(db.insert(providers).values(sameAccount)).rejects.toThrow();
+    await expect(db.insert(providers).values(duplicateProvider)).rejects.toThrow();
   });
 });
