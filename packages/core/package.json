@@ -9,7 +9,8 @@
     "./server": "./src/server/index.ts"
   },
   "scripts": {
-    "test:live": "HERALD_LIVE_CHECKS=1 vp test src/live.test.ts"
+    "test:live": "HERALD_LIVE_CHECKS=1 vp test src/live.test.ts",
+    "types": "wrangler types --env-interface CloudflareBindings"
   },
   "dependencies": {
     "@herald/db": "workspace:*",
@@ -20,7 +21,11 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@cloudflare/vitest-plugin": "catalog:",
+    "@types/node": "catalog:",
+    "near-api-js": "catalog:",
     "typescript": "catalog:",
-    "vite-plus": "catalog:"
+    "vite-plus": "catalog:",
+    "wrangler": "catalog:"
   }
 }

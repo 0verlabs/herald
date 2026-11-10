@@ -35,6 +35,17 @@ export const apiKeys = sqliteTable("api_keys", {
   revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
 });
 
+/**
+ * Sign-in nonces the dashboard has issued and not yet used. Signing in
+ * deletes the nonce it signed, so each one works once. Internal to sign-in,
+ * so no core schema mirrors it.
+ */
+export const signInNonces = sqliteTable("sign_in_nonces", {
+  /** The 32 random bytes the wallet signs, base64-encoded. */
+  nonce: text().primaryKey(),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 /** Mirrors `PaymentSchema`: one row per settled Buyer payment. */
 export const payments = sqliteTable(
   "payments",

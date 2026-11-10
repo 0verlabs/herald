@@ -4,3 +4,5 @@ export * from "./api-keys.ts";
 export type { Db } from "./db.ts";
 export * from "./payments.ts";
 export * from "./providers.ts";
+export * from "./sessions.ts";
+export * from "./sign-in.ts";
