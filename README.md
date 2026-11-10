@@ -23,6 +23,7 @@ vp check                # format, lint and type check the whole workspace
 vp check --fix          # same, fixing formatting and autofixable lint issues
 vp test                 # run every test (Workers tests run in the Cloudflare Vitest pool)
 vp run ready            # check, test and build everything
+vp -C packages/core run test:live  # check the chain registry and MPC root keys against live chains
 ```
 
 ### Run locally

@@ -13,10 +13,14 @@
   ],
   "type": "module",
   "exports": {
-    ".": "./dist/index.mjs",
+    ".": "./src/index.ts",
     "./package.json": "./package.json"
   },
   "publishConfig": {
+    "exports": {
+      ".": "./dist/index.mjs",
+      "./package.json": "./package.json"
+    },
     "access": "public"
   },
   "scripts": {
@@ -24,11 +28,19 @@
     "prepublishOnly": "vp run build"
   },
   "dependencies": {
+    "@noble/curves": "catalog:",
+    "@noble/hashes": "catalog:",
+    "@scure/base": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@herald/core": "workspace:*",
+    "@solana/kit": "catalog:",
+    "@x402/core": "catalog:",
+    "@x402/evm": "catalog:",
+    "@x402/svm": "catalog:",
     "typescript": "catalog:",
+    "viem": "catalog:",
     "vite-plus": "catalog:"
   }
 }

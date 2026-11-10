@@ -1,0 +1,7 @@
+# Copy to .dev.vars for `wrangler dev`. Never commit .dev.vars.
+
+# An hk_test_ API key from the Herald dashboard.
+HERALD_API_KEY=hk_test_replace_me
+
+# Optional: run against a local facilitator instead of Herald's testnet one.
+# HERALD_FACILITATOR_URL=http://localhost:8787

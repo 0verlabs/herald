@@ -11,6 +11,12 @@
     "deploy": "wrangler deploy"
   },
   "dependencies": {
+    "@hrld/x402": "workspace:*",
+    "@solana/kit": "catalog:",
+    "@x402/core": "catalog:",
+    "@x402/evm": "catalog:",
+    "@x402/hono": "catalog:",
+    "@x402/svm": "catalog:",
     "hono": "catalog:"
   },
   "devDependencies": {

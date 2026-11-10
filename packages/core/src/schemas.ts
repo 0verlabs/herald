@@ -16,8 +16,8 @@ export type Network = z.infer<typeof NetworkSchema>;
  */
 export const NearAccountIdSchema = z
   .string()
-  .min(2)
-  .max(64)
+  .min(2, "Invalid NEAR account id: shorter than 2 characters")
+  .max(64, "Invalid NEAR account id: longer than 64 characters")
   .regex(/^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/, "Invalid NEAR account id");
 export type NearAccountId = z.infer<typeof NearAccountIdSchema>;
 
