@@ -36,7 +36,7 @@ vp -C apps/web dev              # dashboard on http://localhost:3000 (GET /api/h
 
 `vp run dev` starts every app at once. Both Workers keep local D1 and KV state in `.wrangler/state` at the repo root, so they share one local database, as they share one database per environment when deployed.
 
-The facilitator needs its gas wallet secrets locally: copy `apps/facilitator/.dev.vars.example` to `.dev.vars` and fill in throwaway testnet keys.
+Both Workers need their secrets locally: copy `apps/facilitator/.dev.vars.example` and `apps/web/.dev.vars.example` to `.dev.vars` next to them, and fill in throwaway testnet keys and your QuickNode testnet endpoints.
 
 ### Facilitator
 
@@ -52,7 +52,17 @@ Refusals come back as `{ "error": "…", "message": "…" }` with 400, 401 (miss
 
 Solana payments settle with the stock `@x402/svm` `exact` mechanism. The Buyer signs a USDC transfer with Herald's gas wallet as fee payer, and one `SolanaChainQueue` Durable Object per network adds the fee payer's signature and sends it. It signs only as fee payer, never a transaction whose instructions use the gas wallet's account, and never sends the same transaction signature twice. A payment only lands in a Receiving Address that has a USDC token account, so the same queue creates one per Provider when it registers (paying the rent) and records the result on the Provider (`solana_token_account_status`: `not_queued`, `queued`, `created` or `failed`). The web Worker queues it through a cross-Worker Durable Object binding. Until it exists, `/verify` and `/settle` answer `invalid_exact_svm_recipient_ata_missing` and nothing is sent.
 
-Secrets per environment: `EVM_GAS_KEY` (0x hex private key, one gas wallet for every EVM chain), `SOLANA_GAS_KEY` (base58 64-byte secret key, funded with SOL for fees and token account rent) and `SOLANA_RPC_URL` (the Solana network's JSON-RPC endpoint). EVM endpoints are the `RPC_URLS` var in `apps/facilitator/wrangler.jsonc`. Solana's is a secret because `api.devnet.solana.com` and `api.mainnet-beta.solana.com` refuse requests from Workers (they block on the `CF-Worker` header, locally too), so it has to be an RPC vendor's URL (Helius, QuickNode, …), which usually carries an API key.
+Facilitator secrets per environment:
+
+| Secret                                               | What it is                                                                                                                    |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `EVM_GAS_KEY`                                        | 0x hex private key, one gas wallet for every EVM chain.                                                                       |
+| `SOLANA_GAS_KEY`                                     | base58 64-byte secret key, funded with SOL for fees and token account rent.                                                   |
+| `BASE_RPC_URL`, `SOLANA_RPC_URL`, `ARBITRUM_RPC_URL` | JSON-RPC endpoint of each chain, for the environment's network (Base Sepolia, Solana Devnet and Arbitrum Sepolia on testnet). |
+| `POLYGON_RPC_URL`, `AVALANCHE_RPC_URL`               | Mainnet only.                                                                                                                 |
+| `NEAR_RPC_URL`                                       | NEAR testnet or mainnet, for the MPC root-key check.                                                                          |
+
+Every RPC endpoint is a private QuickNode URL, which carries the API key, so all of them are secrets. Solana's public endpoints wouldn't work anyway: `api.devnet.solana.com` and `api.mainnet-beta.solana.com` refuse requests from Workers (they block on the `CF-Worker` header, locally too). The web Worker's only secret is `NEAR_RPC_URL`, for sign-in.
 
 To get a Provider and an API key without the dashboard:
 
@@ -90,7 +100,7 @@ BUYER_PRIVATE_KEY=0x… vp -C examples/weather-api run buy --network eip155:4216
 BUYER_SOLANA_KEY=… vp -C examples/weather-api run buy --network solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1  # pays on Solana Devnet
 ```
 
-Set `PROVIDER_ACCOUNT` in `examples/weather-api/wrangler.jsonc` to the seeded account. The Buyer needs testnet USDC ([Circle faucet](https://faucet.circle.com)) and no ETH or SOL; the facilitator's EVM gas wallet needs Sepolia ETH on each chain, and its Solana gas wallet devnet SOL. `BUYER_SOLANA_KEY` is a base58 64-byte secret key. Set `SOLANA_RPC_URL` in `apps/facilitator/.dev.vars` to a devnet endpoint from an RPC vendor. If both dev servers fail to start together, give them different `--inspector-port` values.
+Set `PROVIDER_ACCOUNT` in `examples/weather-api/wrangler.jsonc` to the seeded account. The Buyer needs testnet USDC ([Circle faucet](https://faucet.circle.com)) and no ETH or SOL; the facilitator's EVM gas wallet needs Sepolia ETH on each chain, and its Solana gas wallet devnet SOL. `BUYER_SOLANA_KEY` is a base58 64-byte secret key. If both dev servers fail to start together, give them different `--inspector-port` values.
 
 After changing a `wrangler.jsonc`, run `vp run -r types` to regenerate binding types (`wrangler types --env-interface CloudflareBindings`). Hono apps type their bindings as `new Hono<{ Bindings: CloudflareBindings }>()`; `env` from `cloudflare:workers` is typed through `Cloudflare.Env`, which Wrangler declares with the same bindings. After changing `packages/db/src/schema.ts`, run `vp run db:generate` to write a new migration.
 
@@ -112,7 +122,7 @@ vp run deploy:testnet       # deploy the facilitator, then the web app
 
 For mainnet use `db:migrate:production` and `deploy:production`. Inside an app, the scripts read `CLOUDFLARE_ENV` and refuse to run without it, for example `CLOUDFLARE_ENV=testnet vp -C apps/facilitator run deploy`. The facilitator deploys first because the web app will bind to its Durable Objects (ADR-0006).
 
-Secrets (gas wallet keys, the 1Click JWT) never go in the repo. Set them per environment with `CLOUDFLARE_ENV=<testnet|production> npx wrangler secret put <NAME>` from the Worker's directory, and keep local values in a gitignored `.dev.vars`.
+Secrets (gas wallet keys, RPC endpoints, the 1Click JWT) never go in the repo. Set them per environment with `CLOUDFLARE_ENV=<testnet|production> npx wrangler secret put <NAME>` from the Worker's directory, and keep local values in a gitignored `.dev.vars`.
 
 ### Known workarounds
 

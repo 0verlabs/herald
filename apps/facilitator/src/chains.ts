@@ -27,20 +27,39 @@ export function evmChain(network: Caip2): Chain {
 }
 
 /**
- * The JSON-RPC endpoint for a network: the `SOLANA_RPC_URL` secret for the
- * Herald environment's Solana network, the `RPC_URLS` var for EVM networks.
- * Solana's public endpoints refuse requests from Workers (they block on the
- * `CF-Worker` header), so Solana needs an RPC vendor's endpoint, whose URL
- * usually carries an API key.
+ * The secret holding each network's JSON-RPC endpoint, named after the chain.
+ * Each Herald environment sets it to that environment's network: on testnet
+ * `BASE_RPC_URL` is Base Sepolia and `SOLANA_RPC_URL` Solana Devnet.
+ */
+const rpcUrlSecrets: Partial<Record<Caip2, RpcUrlSecret>> = {
+  "eip155:8453": "BASE_RPC_URL",
+  "eip155:84532": "BASE_RPC_URL",
+  "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "SOLANA_RPC_URL",
+  "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "SOLANA_RPC_URL",
+  "eip155:42161": "ARBITRUM_RPC_URL",
+  "eip155:421614": "ARBITRUM_RPC_URL",
+  "eip155:137": "POLYGON_RPC_URL",
+  "eip155:43114": "AVALANCHE_RPC_URL",
+};
+
+type RpcUrlSecret =
+  | "BASE_RPC_URL"
+  | "SOLANA_RPC_URL"
+  | "ARBITRUM_RPC_URL"
+  | "POLYGON_RPC_URL"
+  | "AVALANCHE_RPC_URL";
+
+/**
+ * The JSON-RPC endpoint for a network, from its `<CHAIN>_RPC_URL` secret.
+ * Every endpoint is a private one (its URL carries the API key), and
+ * Solana's public endpoints refuse requests from Workers anyway: they block
+ * on the `CF-Worker` header.
  */
 export function rpcUrl(env: CloudflareBindings, network: Caip2): string {
-  if (network.startsWith("solana:")) {
-    if (!env.SOLANA_RPC_URL) throw new Error("The SOLANA_RPC_URL secret is not set");
-    return env.SOLANA_RPC_URL;
-  }
-  const urls: Record<string, string | undefined> = env.RPC_URLS;
-  const url = urls[network];
-  if (!url) throw new Error(`RPC_URLS has no endpoint for ${network}`);
+  const secret = rpcUrlSecrets[network];
+  if (!secret) throw new Error(`Herald has no RPC endpoint secret for ${network}`);
+  const url = env[secret];
+  if (!url) throw new Error(`The ${secret} secret is not set`);
   return url;
 }
 

@@ -25,8 +25,11 @@ export default defineConfig(async () => ({
           TEST_MIGRATIONS: await readMigrations(),
           EVM_GAS_KEY: `0x${randomBytes(32).toString("hex")}`,
           SOLANA_GAS_KEY: testSolanaKey(),
-          // Answered by the fake Solana cluster (test/support/network.ts).
+          // Answered by the fake chains and NEAR RPC in test/support/network.ts.
+          BASE_RPC_URL: "https://base-sepolia.rpc.test/",
           SOLANA_RPC_URL: "https://solana-devnet.rpc.test/",
+          ARBITRUM_RPC_URL: "https://arbitrum-sepolia.rpc.test/",
+          NEAR_RPC_URL: "https://near-testnet.rpc.test/",
           // Short, so the settlement_pending tests don't wait 30 s.
           SETTLE_RECEIPT_TIMEOUT_MS: "1500",
         },
