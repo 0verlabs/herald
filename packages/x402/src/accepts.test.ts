@@ -74,7 +74,7 @@ describe("accepts() on testnet", () => {
     const options = accepts({
       providerAccount: "herald-test.near",
       price: "$0.01",
-      network: "testnet",
+      env: "testnet",
     });
 
     expect(options).toEqual([
@@ -113,17 +113,17 @@ describe("accepts() on testnet", () => {
 
   test("defaults to mainnet", () => {
     expect(accepts({ providerAccount: "herald-test.near", price: "$0.01" })).toEqual(
-      accepts({ providerAccount: "herald-test.near", price: "$0.01", network: "mainnet" }),
+      accepts({ providerAccount: "herald-test.near", price: "$0.01", env: "mainnet" }),
     );
   });
 });
 
-describe("accepts() chains filter", () => {
-  test("keeps only the listed chains, in registry order whatever the list's order", () => {
+describe("accepts() networks filter", () => {
+  test("keeps only the listed CAIP-2 networks, in registry order whatever the list's order", () => {
     const options = accepts({
       providerAccount: "herald-test.near",
       price: "$0.01",
-      chains: ["avalanche", "solana", "base"],
+      networks: ["eip155:43114", "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", "eip155:8453"],
     });
 
     expect(options.map((o) => o.network)).toEqual([
@@ -133,40 +133,59 @@ describe("accepts() chains filter", () => {
     ]);
   });
 
-  test("skips chains the network doesn't list, so one config works on both networks", () => {
+  test("filters testnet by its own CAIP-2 ids", () => {
     const options = accepts({
       providerAccount: "herald-test.near",
       price: "$0.01",
-      network: "testnet",
-      chains: ["polygon", "arbitrum"],
+      env: "testnet",
+      networks: ["eip155:421614"],
     });
 
     expect(options.map((o) => o.network)).toEqual(["eip155:421614"]);
   });
 
-  test("rejects a filter that leaves no Payment Option", () => {
+  test("rejects a network Herald doesn't list in that environment", () => {
+    // Polygon has no Herald testnet.
     expect(() =>
       accepts({
         providerAccount: "herald-test.near",
         price: "$0.01",
-        network: "testnet",
-        chains: ["polygon", "avalanche"],
+        env: "testnet",
+        networks: ["eip155:421614", "eip155:137"],
       }),
-    ).toThrow("none of polygon, avalanche is listed on testnet");
+    ).toThrow(
+      "accepts(): eip155:137 is not a Herald network on testnet (testnet lists eip155:84532, solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1, eip155:421614)",
+    );
+    // A mainnet id on testnet is a mix-up, not something to skip.
     expect(() =>
-      accepts({ providerAccount: "herald-test.near", price: "$0.01", chains: [] }),
-    ).toThrow("chains must list at least one chain");
+      accepts({
+        providerAccount: "herald-test.near",
+        price: "$0.01",
+        env: "testnet",
+        networks: ["eip155:8453"],
+      }),
+    ).toThrow("eip155:8453 is not a Herald network on testnet");
+    // Optimism is not a Herald network at all.
+    expect(() =>
+      accepts({ providerAccount: "herald-test.near", price: "$0.01", networks: ["eip155:10"] }),
+    ).toThrow("eip155:10 is not a Herald network on mainnet");
   });
 
-  test("rejects an unknown chain name", () => {
+  test("rejects an empty list", () => {
+    expect(() =>
+      accepts({ providerAccount: "herald-test.near", price: "$0.01", networks: [] }),
+    ).toThrow("accepts(): networks: must list at least one network");
+  });
+
+  test("rejects an id that isn't CAIP-2", () => {
     expect(() =>
       accepts({
         providerAccount: "herald-test.near",
         price: "$0.01",
-        // @ts-expect-error: Optimism is not a Herald chain.
-        chains: ["base", "optimism"],
+        // @ts-expect-error: networks are CAIP-2 ids, not names.
+        networks: ["eip155:8453", "base"],
       }),
-    ).toThrow(/chains\[1\].*"base", "solana", "arbitrum", "polygon", "avalanche"/);
+    ).toThrow('accepts(): networks[1]: must be a CAIP-2 network id like "eip155:8453"');
   });
 });
 
@@ -204,11 +223,11 @@ describe("accepts() input checks", () => {
     );
   });
 
-  test("rejects an unknown network", () => {
+  test("rejects an unknown Herald environment", () => {
     expect(() =>
-      // @ts-expect-error: devnet is a Solana cluster, not a Herald network.
-      accepts({ providerAccount: "herald-test.near", price: "$0.01", network: "devnet" }),
-    ).toThrow(/^accepts\(\): network: /);
+      // @ts-expect-error: devnet is a Solana cluster, not a Herald environment.
+      accepts({ providerAccount: "herald-test.near", price: "$0.01", env: "devnet" }),
+    ).toThrow(/^accepts\(\): env: /);
   });
 });
 

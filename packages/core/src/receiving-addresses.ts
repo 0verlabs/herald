@@ -3,10 +3,10 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { bytesToHex, bytesToNumberBE, bytesToNumberLE } from "@noble/curves/utils.js";
 import { keccak_256, sha3_256 } from "@noble/hashes/sha3.js";
 import { base58 } from "@scure/base";
-import type { EvmAddress, NearAccountId, Network, SolanaAddress } from "./schemas.ts";
+import type { EvmAddress, HeraldEnv, NearAccountId, SolanaAddress } from "./schemas.ts";
 
 /**
- * NEAR's MPC signer contract per Herald network, and the root public keys of
+ * NEAR's MPC signer contract per Herald environment, and the root public keys of
  * its signing domains, pinned so Receiving Addresses derive offline. A
  * root-key change would change every Receiving Address, so
  * `checkMpcRootKeys` compares these with the live contract.
@@ -29,14 +29,14 @@ export const mpcSigners = {
     },
   },
 } as const satisfies Record<
-  Network,
+  HeraldEnv,
   { contractId: string; rootKeys: { secp256k1: string; ed25519: string } }
 >;
 
 /**
  * The signing domain of each curve on the MPC contract (`domain_id`), and the
  * fixed derivation path Herald uses for it. One EVM address serves every EVM
- * chain.
+ * network.
  */
 export const receivingAddressPaths = {
   evm: { path: "ethereum-1", domainId: 0, curve: "secp256k1" },
@@ -51,9 +51,9 @@ export type ReceivingAddresses = { evm: EvmAddress; solana: SolanaAddress };
  */
 export function deriveReceivingAddresses(
   providerAccount: NearAccountId,
-  network: Network,
+  env: HeraldEnv,
 ): ReceivingAddresses {
-  const { rootKeys } = mpcSigners[network];
+  const { rootKeys } = mpcSigners[env];
   return {
     evm: deriveEvmAddress(
       rootKeys.secp256k1,

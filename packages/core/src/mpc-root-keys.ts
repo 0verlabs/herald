@@ -1,5 +1,5 @@
 import { mpcSigners, receivingAddressPaths } from "./receiving-addresses.ts";
-import type { Network } from "./schemas.ts";
+import type { HeraldEnv } from "./schemas.ts";
 
 /**
  * Reads a signing domain's root public key from an MPC contract, as its
@@ -20,17 +20,17 @@ export type MpcRootKeyMismatch = {
 export type MpcRootKeyCheck = { ok: boolean; mismatches: MpcRootKeyMismatch[] };
 
 /**
- * Compares the pinned MPC root keys with the live contract for a network
- * (`v1.signer` or `v1.signer-prod.testnet`). If they differ, the Receiving
- * Addresses Herald derives are not the ones the contract would sign for, so
- * nothing should be paid into them. Reader errors propagate: a key that
- * couldn't be read is not a match.
+ * Compares the pinned MPC root keys with the live contract for a Herald
+ * environment (`v1.signer` or `v1.signer-prod.testnet`). If they differ, the
+ * Receiving Addresses Herald derives are not the ones the contract would sign
+ * for, so nothing should be paid into them. Reader errors propagate: a key
+ * that couldn't be read is not a match.
  */
 export async function checkMpcRootKeys(
-  network: Network,
+  env: HeraldEnv,
   readRootKey: MpcRootKeyReader,
 ): Promise<MpcRootKeyCheck> {
-  const { contractId, rootKeys } = mpcSigners[network];
+  const { contractId, rootKeys } = mpcSigners[env];
   const domains = Object.values(receivingAddressPaths).map(({ domainId, curve }) => ({
     domainId,
     pinned: rootKeys[curve],

@@ -1,14 +1,14 @@
 import { describe, expect, test } from "vite-plus/test";
 import {
-  chainRegistry,
   checkMpcRootKeys,
   nearRpcMpcRootKeyReader,
-  type Chain,
+  networkRegistry,
+  type HeraldEnv,
   type Network,
 } from "./index.ts";
 
-// Checks the pinned data against live chains. Opt-in, since it needs the
-// network: `vp run test:live` in packages/core sets HERALD_LIVE_CHECKS.
+// Checks the pinned data against live chains. Opt-in, since it needs
+// internet access: `vp run test:live` in packages/core sets HERALD_LIVE_CHECKS.
 const enabled = Boolean(
   (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env
     .HERALD_LIVE_CHECKS,
@@ -25,7 +25,7 @@ const rpcUrls: Record<string, string> = {
   "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "https://api.mainnet-beta.solana.com",
   "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "https://api.devnet.solana.com",
 };
-const nearRpcUrls: Record<Network, string> = {
+const nearRpcUrls: Record<HeraldEnv, string> = {
   mainnet: "https://rpc.mainnet.fastnear.com",
   testnet: "https://rpc.testnet.fastnear.com",
 };
@@ -49,17 +49,17 @@ function decodeString(hex: string): string {
   return new TextDecoder().decode(bytes.subarray(64, 64 + length));
 }
 
-async function readUsdc(chain: Chain) {
-  const url = rpcUrls[chain.network];
-  if (!url) throw new Error(`No RPC URL for ${chain.network}`);
-  if (chain.kind === "solana") {
-    const supply = (await jsonRpc(url, "getTokenSupply", [chain.usdc.address])) as {
+async function readUsdc(network: Network) {
+  const url = rpcUrls[network.caip2];
+  if (!url) throw new Error(`No RPC URL for ${network.caip2}`);
+  if (network.kind === "solana") {
+    const supply = (await jsonRpc(url, "getTokenSupply", [network.usdc.address])) as {
       value: { decimals: number };
     };
     return { decimals: supply.value.decimals };
   }
   const call = (data: string) =>
-    jsonRpc(url, "eth_call", [{ to: chain.usdc.address, data }, "latest"]) as Promise<string>;
+    jsonRpc(url, "eth_call", [{ to: network.usdc.address, data }, "latest"]) as Promise<string>;
   const [name, version, decimals] = await Promise.all([
     call("0x06fdde03"),
     call("0x54fd4d50"),
@@ -71,17 +71,17 @@ async function readUsdc(chain: Chain) {
   };
 }
 
-const allChains = Object.values(chainRegistry).flat();
+const allNetworks = Object.values(networkRegistry).flat();
 
-describe.runIf(enabled)("live: chain registry", () => {
-  test.each(allChains.map((chain) => [chain.label, chain] as const))(
+describe.runIf(enabled)("live: network registry", () => {
+  test.each(allNetworks.map((network) => [network.label, network] as const))(
     "%s USDC matches its on-chain name(), version() and decimals()",
-    async (_label, chain) => {
+    async (_label, network) => {
       const expected =
-        chain.kind === "evm"
-          ? { decimals: chain.usdc.decimals, eip712: chain.usdc.eip712 }
-          : { decimals: chain.usdc.decimals };
-      expect(await readUsdc(chain)).toEqual(expected);
+        network.kind === "evm"
+          ? { decimals: network.usdc.decimals, eip712: network.usdc.eip712 }
+          : { decimals: network.usdc.decimals };
+      expect(await readUsdc(network)).toEqual(expected);
     },
     30_000,
   );
@@ -90,8 +90,8 @@ describe.runIf(enabled)("live: chain registry", () => {
 describe.runIf(enabled)("live: MPC root keys", () => {
   test.each(["mainnet", "testnet"] as const)(
     "the pinned %s root keys match the live contract",
-    async (network) => {
-      const check = await checkMpcRootKeys(network, nearRpcMpcRootKeyReader(nearRpcUrls[network]));
+    async (env) => {
+      const check = await checkMpcRootKeys(env, nearRpcMpcRootKeyReader(nearRpcUrls[env]));
       expect(check).toEqual({ ok: true, mismatches: [] });
     },
     30_000,

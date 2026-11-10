@@ -1,4 +1,4 @@
-import { NetworkSchema } from "@herald/core";
+import { HeraldEnvSchema } from "@herald/core";
 import { createServerFn } from "@tanstack/react-start";
 import { env } from "cloudflare:workers";
 
@@ -6,7 +6,7 @@ import { env } from "cloudflare:workers";
 // every `env` read inside one; a plain exported helper would pull
 // `cloudflare:workers` into the browser build.
 
-/** The Herald network this Worker serves, from the `NETWORK` Wrangler var. */
-export const getNetwork = createServerFn({ method: "GET" }).handler(() =>
-  NetworkSchema.parse(env.NETWORK),
+/** The Herald environment this Worker serves, from the `HERALD_ENV` Wrangler var. */
+export const getHeraldEnv = createServerFn({ method: "GET" }).handler(() =>
+  HeraldEnvSchema.parse(env.HERALD_ENV),
 );

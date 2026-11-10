@@ -10,7 +10,7 @@ import {
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { ExactSvmScheme } from "@x402/svm/exact/server";
 import { describe, expect, test } from "vite-plus/test";
-import { accepts, type Network } from "./index.ts";
+import { accepts, type Caip2, type HeraldEnv } from "./index.ts";
 
 // Feeds accepts() to the stock x402 v2 resource server, the way a Provider's
 // middleware does, to catch stock x402 changes that would break it.
@@ -20,13 +20,13 @@ const feePayer = "FeePayer1111111111111111111111111111111111";
 
 // Answers /supported for every network the Payment Options use, as Herald's
 // facilitator does. Verify and settle are never reached by an unpaid request.
-function facilitatorFor(networks: string[]): FacilitatorClient {
+function facilitatorFor(networks: Caip2[]): FacilitatorClient {
   return {
     getSupported: async () => ({
       kinds: networks.map((network) => ({
         x402Version: 2,
         scheme: "exact",
-        network: network as `${string}:${string}`,
+        network,
         ...(network.startsWith("solana:") ? { extra: { feePayer } } : {}),
       })),
       extensions: [],
@@ -51,8 +51,8 @@ const unpaidRequest: HTTPAdapter = {
   getUserAgent: () => "herald-test",
 };
 
-async function paymentRequiredFor(network: Network) {
-  const options = accepts({ providerAccount: "herald-test.near", price: "$0.01", network });
+async function paymentRequiredFor(env: HeraldEnv) {
+  const options = accepts({ providerAccount: "herald-test.near", price: "$0.01", env });
   // Type-level check: the output drops into a stock route config.
   const routes: RoutesConfig = { "GET /weather": { accepts: options, description: "Weather" } };
 

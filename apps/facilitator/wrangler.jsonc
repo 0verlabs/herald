@@ -2,7 +2,7 @@
 //
 // The top level is the local development config (`wrangler dev`, tests).
 // `testnet` and `production` are the deployed environments, picked with
-// CLOUDFLARE_ENV. The `NETWORK` var tells the code which chains it serves
+// CLOUDFLARE_ENV. The `HERALD_ENV` var tells the code which Herald environment it is
 // (`testnet` or `mainnet`). Bindings and vars are not inherited, so each
 // environment declares its own. No secrets live here: set
 // them with `CLOUDFLARE_ENV=<env> wrangler secret put <NAME>`.
@@ -13,7 +13,7 @@
   "compatibility_date": "2026-11-09",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
-  "vars": { "NETWORK": "testnet" },
+  "vars": { "HERALD_ENV": "testnet" },
   "d1_databases": [
     {
       "binding": "DB",
@@ -26,7 +26,7 @@
   "env": {
     "testnet": {
       "name": "herald-facilitator-testnet",
-      "vars": { "NETWORK": "testnet" },
+      "vars": { "HERALD_ENV": "testnet" },
       "d1_databases": [
         {
           "binding": "DB",
@@ -39,7 +39,7 @@
     },
     "production": {
       "name": "herald-facilitator-mainnet",
-      "vars": { "NETWORK": "mainnet" },
+      "vars": { "HERALD_ENV": "mainnet" },
       "d1_databases": [
         {
           "binding": "DB",

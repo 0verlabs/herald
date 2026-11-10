@@ -1,14 +1,13 @@
 import {
-  ChainNameSchema,
-  chainRegistry,
+  Caip2Schema,
   deriveReceivingAddresses,
+  HeraldEnvSchema,
   NearAccountIdSchema,
-  NetworkSchema,
+  networkRegistry,
   PriceSchema,
   priceToBaseUnits,
-  type CaipNetwork,
-  type ChainName,
-  type Network,
+  type Caip2,
+  type HeraldEnv,
 } from "@herald/core";
 import { z } from "zod";
 
@@ -22,8 +21,8 @@ const MAX_TIMEOUT_SECONDS = 300;
 const AcceptsOptionsSchema = z.object({
   providerAccount: NearAccountIdSchema,
   price: PriceSchema,
-  network: NetworkSchema.default("mainnet"),
-  chains: z.array(ChainNameSchema).min(1, "chains must list at least one chain").optional(),
+  env: HeraldEnvSchema.default("mainnet"),
+  networks: z.array(Caip2Schema).min(1, "must list at least one network").optional(),
 });
 
 export type AcceptsOptions = {
@@ -31,19 +30,19 @@ export type AcceptsOptions = {
   providerAccount: string;
   /** USD Price per request, e.g. `"$0.01"`. The same on every Payment Option. */
   price: string;
-  /** Which Herald network to take payments on. Defaults to `"mainnet"`. */
-  network?: Network;
+  /** Which Herald environment to take payments on. Defaults to `"mainnet"`. */
+  env?: HeraldEnv;
   /**
-   * Only offer these chains. Order is always Herald's (Base, Solana,
-   * Arbitrum, Polygon, Avalanche). Chains the network doesn't list are
-   * skipped, so the same list works on testnet.
+   * Only offer these CAIP-2 networks, e.g. `["eip155:8453"]`. Each must be
+   * one Herald lists in `env`. Order is always Herald's (Base, Solana,
+   * Arbitrum, Polygon, Avalanche).
    */
-  chains?: ChainName[];
+  networks?: Caip2[];
 };
 
 export type PaymentOption = {
   scheme: "exact";
-  network: CaipNetwork;
+  network: Caip2;
   payTo: string;
   price: { asset: string; amount: string; extra?: { name: string; version: string } };
   maxTimeoutSeconds: number;
@@ -57,42 +56,38 @@ export type PaymentOption = {
  * "GET /weather": { accepts: accepts({ providerAccount: "alice.near", price: "$0.01" }) }
  * ```
  *
- * One `exact` USDC option per chain, paying into the Provider's Receiving
+ * One `exact` USDC option per network, paying into the Provider's Receiving
  * Addresses. Synchronous and pure: the addresses are derived offline from the
  * pinned MPC root keys, with no network calls. Throws a `TypeError` on an
- * invalid account id, price, network or chain list.
+ * invalid account id, price, environment or network list.
  */
 export function accepts(options: AcceptsOptions): PaymentOption[] {
   const parsed = AcceptsOptionsSchema.safeParse(options);
   if (!parsed.success) throw new TypeError(formatError(parsed.error));
-  const { providerAccount, price, network, chains } = parsed.data;
+  const { providerAccount, price, env, networks } = parsed.data;
 
-  const listed = chainRegistry[network].filter((chain) => !chains || chains.includes(chain.name));
-  if (listed.length === 0) {
+  const listed = networkRegistry[env];
+  const unlisted = networks?.find((id) => !listed.some((network) => network.caip2 === id));
+  if (unlisted) {
     throw new TypeError(
-      `accepts(): none of ${chains?.join(", ")} is listed on ${network}, so no Payment Option is left`,
+      `accepts(): ${unlisted} is not a Herald network on ${env} (${env} lists ${listed.map((n) => n.caip2).join(", ")})`,
     );
   }
 
-  const addresses = deriveReceivingAddresses(providerAccount, network);
-  return listed.map((chain): PaymentOption => {
-    const amount = priceToBaseUnits(price, chain.usdc.decimals);
-    return chain.kind === "evm"
-      ? {
-          scheme: "exact",
-          network: chain.network,
-          payTo: addresses.evm,
-          price: { asset: chain.usdc.address, amount, extra: { ...chain.usdc.eip712 } },
-          maxTimeoutSeconds: MAX_TIMEOUT_SECONDS,
-        }
-      : {
-          scheme: "exact",
-          network: chain.network,
-          payTo: addresses.solana,
-          price: { asset: chain.usdc.address, amount },
-          maxTimeoutSeconds: MAX_TIMEOUT_SECONDS,
-        };
-  });
+  const addresses = deriveReceivingAddresses(providerAccount, env);
+  return listed
+    .filter((network) => !networks || networks.includes(network.caip2))
+    .map((network) => ({
+      scheme: "exact",
+      network: network.caip2,
+      payTo: addresses[network.kind],
+      price: {
+        asset: network.usdc.address,
+        amount: priceToBaseUnits(price, network.usdc.decimals),
+        ...(network.kind === "evm" && { extra: { ...network.usdc.eip712 } }),
+      },
+      maxTimeoutSeconds: MAX_TIMEOUT_SECONDS,
+    }));
 }
 
 // One message per field: a short account id also fails the pattern, and
