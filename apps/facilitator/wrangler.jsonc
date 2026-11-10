@@ -11,7 +11,8 @@
 // SETTLE_RECEIPT_TIMEOUT_MS bounds the receipt wait in /settle; past it the
 // answer is `settlement_pending` and the resource server retries once.
 //
-// Secrets, never in this file: EVM_GAS_KEY (0x-prefixed hex private key of
+// Secrets (declared in `secrets.required` at the top level and in each
+// environment, since `secrets` is not inherited), never their values in this file: EVM_GAS_KEY (0x-prefixed hex private key of
 // the gas wallet shared by every EVM chain) and SOLANA_GAS_KEY (base58
 // 64-byte secret key of the Solana fee payer). Set them with
 // `CLOUDFLARE_ENV=<env> wrangler secret put <NAME>`, and locally in
@@ -63,6 +64,7 @@
   "env": {
     "testnet": {
       "name": "herald-facilitator-testnet",
+      "secrets": { "required": ["EVM_GAS_KEY", "SOLANA_GAS_KEY"] },
       "vars": {
         "HERALD_ENV": "testnet",
         "SETTLE_RECEIPT_TIMEOUT_MS": "30000",
@@ -103,6 +105,7 @@
     },
     "production": {
       "name": "herald-facilitator-mainnet",
+      "secrets": { "required": ["EVM_GAS_KEY", "SOLANA_GAS_KEY"] },
       "vars": {
         "HERALD_ENV": "mainnet",
         "SETTLE_RECEIPT_TIMEOUT_MS": "30000",
