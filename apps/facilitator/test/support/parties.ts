@@ -43,7 +43,13 @@ export async function buyerPayment(input: {
   providerAccount: string;
   network: Caip2;
   apiKey: string;
-}): Promise<{ payload: PaymentPayload; requirements: PaymentRequirements; buyer: string }> {
+}): Promise<{
+  payload: PaymentPayload;
+  requirements: PaymentRequirements;
+  buyer: string;
+  /** The Provider's stock resource server, for settling the way middleware does. */
+  server: x402ResourceServer;
+}> {
   const [option] = accepts({
     providerAccount: input.providerAccount,
     price: "$0.001",
@@ -68,5 +74,5 @@ export async function buyerPayment(input: {
   const payload = await buyer.createPaymentPayload(paymentRequired);
   const [accepted] = requirements;
   if (!accepted) throw new Error("The resource server built no requirements");
-  return { payload, requirements: accepted, buyer: account.address };
+  return { payload, requirements: accepted, buyer: account.address, server };
 }

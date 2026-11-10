@@ -1,5 +1,5 @@
 import { apiKeys, payments } from "@herald/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { networkRegistry, type Network } from "../networks.ts";
 import { PaymentSchema, type HeraldEnv, type Payment, type Provider } from "../schemas.ts";
 import type { Db } from "./db.ts";
@@ -59,8 +59,9 @@ const NewPaymentSchema = PaymentSchema.omit({ id: true, settledAt: true });
 
 /**
  * Records a payment settled now and marks the API key that settled it as
- * used, in one D1 batch. Throws a `ZodError`, before writing anything, if the
- * payment doesn't fit `PaymentSchema`.
+ * used, in one D1 batch. Recording the same transaction again returns the
+ * existing row. Throws a `ZodError`, before writing anything, if the payment
+ * doesn't fit `PaymentSchema`.
  */
 export async function recordPayment(
   db: Db,
@@ -68,12 +69,16 @@ export async function recordPayment(
 ): Promise<Payment> {
   const payment = NewPaymentSchema.parse(input);
   const settledAt = new Date();
-  const [inserted] = await db.batch([
+  await db.batch([
     db
       .insert(payments)
       .values({ ...payment, settledAt })
-      .returning(),
+      .onConflictDoNothing({ target: [payments.network, payments.txHash] }),
     db.update(apiKeys).set({ lastUsedAt: settledAt }).where(eq(apiKeys.id, payment.apiKeyId)),
   ]);
-  return PaymentSchema.parse(inserted[0]);
+  const [row] = await db
+    .select()
+    .from(payments)
+    .where(and(eq(payments.network, payment.network), eq(payments.txHash, payment.txHash)));
+  return PaymentSchema.parse(row);
 }

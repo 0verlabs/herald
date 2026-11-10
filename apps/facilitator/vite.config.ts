@@ -25,6 +25,8 @@ export default defineConfig(async () => ({
           TEST_MIGRATIONS: await readMigrations(),
           EVM_GAS_KEY: `0x${randomBytes(32).toString("hex")}`,
           SOLANA_GAS_KEY: testSolanaKey(),
+          // Short, so the settlement_pending tests don't wait 30 s.
+          SETTLE_RECEIPT_TIMEOUT_MS: "1500",
         },
       },
     }),

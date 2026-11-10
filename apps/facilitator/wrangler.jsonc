@@ -8,6 +8,8 @@
 //
 // RPC_URLS maps each CAIP-2 network Herald lists to a JSON-RPC endpoint.
 // NEAR_RPC_URL is used for the MPC root-key check before settling.
+// SETTLE_RECEIPT_TIMEOUT_MS bounds the receipt wait in /settle; past it the
+// answer is `settlement_pending` and the resource server retries once.
 //
 // Secrets, never in this file: EVM_GAS_KEY (0x-prefixed hex private key of
 // the gas wallet shared by every EVM chain) and SOLANA_GAS_KEY (base58
@@ -25,6 +27,7 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["EvmChainQueue"] }],
   "vars": {
     "HERALD_ENV": "testnet",
+    "SETTLE_RECEIPT_TIMEOUT_MS": "30000",
     "NEAR_RPC_URL": "https://rpc.testnet.fastnear.com",
     "RPC_URLS": {
       "eip155:84532": "https://sepolia.base.org",
@@ -35,12 +38,17 @@
   "durable_objects": {
     "bindings": [{ "name": "EVM_CHAIN_QUEUE", "class_name": "EvmChainQueue" }],
   },
-  // 60 settlements per minute per API key.
+  // Per API key: 60 settle and 120 verify requests per minute.
   "ratelimits": [
     {
       "name": "SETTLE_RATE_LIMITER",
       "namespace_id": "4000",
       "simple": { "limit": 60, "period": 60 },
+    },
+    {
+      "name": "VERIFY_RATE_LIMITER",
+      "namespace_id": "4010",
+      "simple": { "limit": 120, "period": 60 },
     },
   ],
   "d1_databases": [
@@ -57,6 +65,7 @@
       "name": "herald-facilitator-testnet",
       "vars": {
         "HERALD_ENV": "testnet",
+        "SETTLE_RECEIPT_TIMEOUT_MS": "30000",
         "NEAR_RPC_URL": "https://rpc.testnet.fastnear.com",
         "RPC_URLS": {
           "eip155:84532": "https://sepolia.base.org",
@@ -72,6 +81,11 @@
           "name": "SETTLE_RATE_LIMITER",
           "namespace_id": "4001",
           "simple": { "limit": 60, "period": 60 },
+        },
+        {
+          "name": "VERIFY_RATE_LIMITER",
+          "namespace_id": "4011",
+          "simple": { "limit": 120, "period": 60 },
         },
       ],
       "d1_databases": [
@@ -91,6 +105,7 @@
       "name": "herald-facilitator-mainnet",
       "vars": {
         "HERALD_ENV": "mainnet",
+        "SETTLE_RECEIPT_TIMEOUT_MS": "30000",
         "NEAR_RPC_URL": "https://rpc.mainnet.fastnear.com",
         "RPC_URLS": {
           "eip155:8453": "https://mainnet.base.org",
@@ -108,6 +123,11 @@
           "name": "SETTLE_RATE_LIMITER",
           "namespace_id": "4002",
           "simple": { "limit": 60, "period": 60 },
+        },
+        {
+          "name": "VERIFY_RATE_LIMITER",
+          "namespace_id": "4012",
+          "simple": { "limit": 120, "period": 60 },
         },
       ],
       "d1_databases": [

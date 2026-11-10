@@ -28,6 +28,18 @@ export type Submission = {
   to: Address;
 };
 
+/** Ways the fake chain misbehaves, set by a test before it settles. */
+export type ChainFaults = {
+  /** Receipts appear only this many milliseconds after the broadcast. */
+  receiptDelayMs?: number;
+  /** Accept the next broadcast, then forget it: never mined, never known. */
+  dropNextBroadcast?: boolean;
+  /** Mine the next broadcast, but answer it with an internal error. */
+  loseNextBroadcastResponse?: boolean;
+  /** Report a pending transaction count this many below the real one. */
+  pendingCountLag?: number;
+};
+
 const TRANSFER_TOPIC = toEventSelector("Transfer(address,address,uint256)");
 const ERROR_ABI = parseAbi(["error Error(string)"]);
 const BALANCE_ABI = parseAbi([
@@ -36,6 +48,8 @@ const BALANCE_ABI = parseAbi([
 ]);
 const GWEI = 1_000_000_000n;
 
+type Mined = { submission: Submission; raw: TransactionSerialized; minedAt: number; block: bigint };
+
 /**
  * An in-memory EVM chain answering the JSON-RPC calls the stock x402 exact
  * mechanism and viem make while verifying and settling an EIP-3009 payment.
@@ -43,12 +57,15 @@ const GWEI = 1_000_000_000n;
  * whose nonce is unused, mines each broadcast transaction at once (a reused
  * authorization mines as reverted), and records it in `submissions`. It
  * doesn't check signatures; the stock mechanism does that before anything
- * reaches the chain.
+ * reaches the chain. `faults` makes it misbehave the way real nodes do.
  */
 export class FakeEvmChain {
   readonly submissions: Submission[] = [];
+  /** Broadcasts the chain accepted and then forgot (`dropNextBroadcast`). */
+  readonly dropped: Submission[] = [];
+  readonly faults: ChainFaults = {};
   readonly #used = new Set<string>();
-  readonly #receipts = new Map<Hex, Record<string, unknown>>();
+  readonly #mined = new Map<Hex, Mined>();
   #block = 1000n;
 
   readonly chainId: number;
@@ -63,8 +80,12 @@ export class FakeEvmChain {
     try {
       return { jsonrpc: "2.0", id: request.id, result: await this.#call(request) };
     } catch (error) {
-      if (error instanceof MethodNotFound) {
-        return { jsonrpc: "2.0", id: request.id, error: { code: -32601, message: error.message } };
+      if (error instanceof RpcError) {
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          error: { code: error.code, message: error.message },
+        };
       }
       const failure = error as { message: string; data?: Hex };
       return {
@@ -80,13 +101,15 @@ export class FakeEvmChain {
       case "eth_chainId":
         return numberToHex(this.chainId);
       case "eth_blockNumber":
+        // A live chain: a new block every time someone polls.
+        this.#block += 1n;
         return numberToHex(this.#block);
       case "eth_getCode":
         return this.#isUsdc(params[0] as Address) ? "0x6080604052" : "0x";
       case "eth_call":
         return this.#ethCall(params[0] as { to: Address; data: Hex });
       case "eth_getTransactionCount":
-        return numberToHex(this.submissions.length);
+        return numberToHex(Math.max(0, this.#mined.size - (this.faults.pendingCountLag ?? 0)));
       case "eth_estimateGas":
         return numberToHex(100_000);
       case "eth_gasPrice":
@@ -95,11 +118,13 @@ export class FakeEvmChain {
       case "eth_getBlockByNumber":
         return this.#blockHeader();
       case "eth_sendRawTransaction":
-        return this.#mine(params[0] as TransactionSerialized);
+        return this.#broadcast(params[0] as TransactionSerialized);
+      case "eth_getTransactionByHash":
+        return this.#transaction(params[0] as Hex);
       case "eth_getTransactionReceipt":
-        return this.#receipts.get(params[0] as Hex) ?? null;
+        return this.#receipt(params[0] as Hex);
       default:
-        throw new MethodNotFound(`the method ${method} does not exist/is not available`);
+        throw new RpcError(-32601, `the method ${method} does not exist/is not available`);
     }
   }
 
@@ -128,28 +153,83 @@ export class FakeEvmChain {
     return "0x";
   }
 
-  async #mine(raw: TransactionSerialized): Promise<Hex> {
+  async #broadcast(raw: TransactionSerialized): Promise<Hex> {
+    const hash = keccak256(raw);
+    if (this.#mined.has(hash)) throw new RpcError(-32000, "already known");
     const transaction = parseTransaction(raw);
     if (!transaction.to || !this.#isUsdc(transaction.to) || !transaction.data) {
       throw new Error("FakeEvmChain: only USDC transfers are expected");
     }
     const sender = await recoverTransactionAddress({ serializedTransaction: raw });
+    const { from, to, nonce } = decodeTransfer(transaction.data);
+    const submission = { hash, sender, nonce: transaction.nonce ?? 0, from, to };
+
+    if (this.faults.dropNextBroadcast) {
+      this.faults.dropNextBroadcast = false;
+      this.dropped.push(submission);
+      return hash;
+    }
     // Like a real node, accept the broadcast and mine it; a reused
     // authorization reverts on-chain, after Herald has paid the gas.
-    const { from, to, value, nonce } = decodeTransfer(transaction.data);
-    const reverted = this.#used.has(key(from, nonce));
+    this.#block += 1n;
+    this.#mined.set(hash, { submission, raw, minedAt: Date.now(), block: this.#block });
+    this.submissions.push(submission);
+    this.#usedBefore.set(hash, this.#used.has(key(from, nonce)));
     this.#used.add(key(from, nonce));
 
-    const hash = keccak256(raw);
-    this.#block += 1n;
-    const block = numberToHex(this.#block);
+    if (this.faults.loseNextBroadcastResponse) {
+      this.faults.loseNextBroadcastResponse = false;
+      throw new RpcError(-32603, "internal error");
+    }
+    return hash;
+  }
+
+  // Whether each mined transaction's authorization was already used, i.e.
+  // whether it reverted.
+  readonly #usedBefore = new Map<Hex, boolean>();
+
+  #transaction(hash: Hex) {
+    const mined = this.#mined.get(hash);
+    if (!mined) return null;
+    const transaction = parseTransaction(mined.raw);
+    return {
+      hash,
+      nonce: numberToHex(transaction.nonce ?? 0),
+      blockHash: keccak256(numberToHex(mined.block)),
+      blockNumber: numberToHex(mined.block),
+      transactionIndex: "0x0",
+      from: mined.submission.sender,
+      to: transaction.to,
+      value: "0x0",
+      gas: numberToHex(transaction.gas ?? 0n),
+      maxFeePerGas: numberToHex(transaction.maxFeePerGas ?? 0n),
+      maxPriorityFeePerGas: numberToHex(transaction.maxPriorityFeePerGas ?? 0n),
+      input: transaction.data,
+      type: "0x2",
+      chainId: numberToHex(this.chainId),
+      v: "0x0",
+      r: pad("0x1"),
+      s: pad("0x1"),
+      yParity: "0x0",
+      accessList: [],
+    };
+  }
+
+  #receipt(hash: Hex) {
+    const mined = this.#mined.get(hash);
+    if (!mined || Date.now() - mined.minedAt < (this.faults.receiptDelayMs ?? 0)) return null;
+    const { from, to } = mined.submission;
+    const transaction = parseTransaction(mined.raw);
+    const { value } = decodeTransfer(transaction.data ?? "0x");
+    const reverted = this.#usedBefore.get(hash) ?? false;
+    const block = numberToHex(mined.block);
     const blockHash = keccak256(block);
-    this.#receipts.set(hash, {
+    return {
       transactionHash: hash,
       transactionIndex: "0x0",
       blockHash,
       blockNumber: block,
-      from: sender,
+      from: mined.submission.sender,
       to: this.usdc,
       status: reverted ? "0x0" : "0x1",
       type: "0x2",
@@ -173,9 +253,7 @@ export class FakeEvmChain {
               removed: false,
             },
           ],
-    });
-    this.submissions.push({ hash, sender, nonce: transaction.nonce ?? 0, from, to });
-    return hash;
+    };
   }
 
   #blockHeader() {
@@ -193,7 +271,13 @@ export class FakeEvmChain {
   }
 }
 
-class MethodNotFound extends Error {}
+class RpcError extends Error {
+  readonly code: number;
+  constructor(code: number, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
 
 function decodeTransfer(data: Hex) {
   const call = decodeFunctionData({ abi: eip3009ABI, data });

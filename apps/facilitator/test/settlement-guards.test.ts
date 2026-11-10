@@ -101,6 +101,29 @@ describe("rate limit", () => {
   });
 });
 
+describe("verify rate limit", () => {
+  test("allows 120 verifications per minute per API key, then answers 429", async () => {
+    installFakeNetwork();
+    const { secret } = await registeredProvider("verify-limited.testnet");
+    const verify = () =>
+      fetch(`${FACILITATOR_URL}/verify`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+        body: "{}",
+      });
+
+    for (let attempt = 1; attempt <= 120; attempt++) {
+      const response = await verify();
+      await response.body?.cancel();
+      expect(response.status, `attempt ${attempt}`).toBe(400);
+    }
+    const over = await verify();
+
+    expect(over.status).toBe(429);
+    expect(await over.json()).toMatchObject({ error: "rate_limited" });
+  });
+});
+
 describe("MPC root-key check", () => {
   test("refuses to settle when the live root keys don't match the pinned ones", async () => {
     const fake = installFakeNetwork();

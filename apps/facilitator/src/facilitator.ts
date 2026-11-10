@@ -5,7 +5,7 @@ import { ExactEvmScheme } from "@x402/evm/exact/facilitator";
 import { toFacilitatorSvmSigner } from "@x402/svm";
 import { ExactSvmScheme } from "@x402/svm/exact/facilitator";
 import { heraldEnvOf, rpcUrl, solanaFeePayerAddress } from "./chains.ts";
-import { facilitatorEvmSigner } from "./evm-signer.ts";
+import { facilitatorEvmSigner, pendingSettlementStore } from "./evm-signer.ts";
 
 /**
  * The stock x402 facilitator with the stock `exact` mechanism registered for
@@ -23,7 +23,9 @@ export function createFacilitator(env: CloudflareBindings): x402Facilitator {
     if (network.kind === "evm") {
       facilitator.register(
         network.caip2,
-        new ExactEvmScheme(facilitatorEvmSigner(env, network.caip2)),
+        new ExactEvmScheme(facilitatorEvmSigner(env, network.caip2), {
+          pendingSettlementStore: pendingSettlementStore(env, network.caip2),
+        }),
       );
     } else {
       const cannotSign = async (): Promise<never> => {

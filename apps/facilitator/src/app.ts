@@ -1,5 +1,10 @@
 import type { ApiKey, Provider } from "@herald/core";
-import { authenticateApiKey, checkReceivingAddress, recordPayment } from "@herald/core/server";
+import {
+  authenticateApiKey,
+  checkReceivingAddress,
+  recordPayment,
+  type Db,
+} from "@herald/core/server";
 import { createDb } from "@herald/db";
 import { PaymentPayloadV2Schema, PaymentRequirementsV2Schema } from "@x402/core/schemas";
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
@@ -53,6 +58,12 @@ export function createApp() {
   const paymentRoute = [bodyLimit({ maxSize: 64 * 1024 }), requireApiKey] as const;
 
   app.post("/verify", ...paymentRoute, async (c) => {
+    const { success: withinLimit } = await c.env.VERIFY_RATE_LIMITER.limit({
+      key: String(c.get("apiKey").id),
+    });
+    if (!withinLimit) {
+      return refuse(c, 429, "rate_limited", "At most 120 verifications per minute per API key.");
+    }
     const request = await readPaymentRequest(c);
     if (!request.ok) return request.response;
     const { paymentPayload, paymentRequirements } = request;
@@ -88,29 +99,19 @@ export function createApp() {
       }),
     );
     if (result.success) {
-      // The payment has happened on-chain whatever happens here, so a failed
-      // write is logged rather than reported to the Provider as a failure.
-      try {
-        await recordPayment(createDb(c.env.DB), {
-          providerId: c.get("provider").id,
-          apiKeyId: apiKey.id,
-          network: paymentRequirements.network,
-          asset: paymentRequirements.asset,
-          amount: result.amount ?? paymentRequirements.amount,
-          buyerAddress: result.payer ?? "",
-          txHash: result.transaction,
-          resourceUrl: paymentPayload.resource?.url ?? null,
-        });
-      } catch (error) {
-        console.error(
-          JSON.stringify({
-            event: "record_payment_failed",
-            network: result.network,
-            transaction: result.transaction,
-            error: String(error),
-          }),
-        );
-      }
+      const payment = {
+        providerId: c.get("provider").id,
+        apiKeyId: apiKey.id,
+        network: paymentRequirements.network,
+        asset: paymentRequirements.asset,
+        amount: result.amount ?? paymentRequirements.amount,
+        // The stock EVM mechanism always reports the payer (the
+        // authorization's `from`); the payload is the fallback.
+        buyerAddress: result.payer ?? payerOf(paymentPayload),
+        txHash: result.transaction,
+        resourceUrl: paymentPayload.resource?.url ?? null,
+      };
+      await recordPaymentOrLog(createDb(c.env.DB), payment);
     }
     return c.json(result);
   });
@@ -123,6 +124,36 @@ export function createApp() {
   });
 
   return app;
+}
+
+/**
+ * The payment has happened on-chain whatever happens here, so the Provider
+ * still gets its success. Recording is idempotent per transaction and is
+ * tried three times; if D1 still fails, the full row is logged for
+ * reconciliation.
+ */
+async function recordPaymentOrLog(db: Db, payment: Parameters<typeof recordPayment>[1]) {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await recordPayment(db, payment);
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  console.error(
+    JSON.stringify({ event: "record_payment_failed", payment, error: String(lastError) }),
+  );
+}
+
+function payerOf(payload: PaymentPayload): string {
+  const authorization = payload.payload["authorization"];
+  const from =
+    typeof authorization === "object" && authorization !== null && "from" in authorization
+      ? authorization.from
+      : undefined;
+  return typeof from === "string" ? from : "unknown";
 }
 
 const PaymentRequestBodySchema = z.object({
