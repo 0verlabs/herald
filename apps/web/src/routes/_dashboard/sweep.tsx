@@ -52,7 +52,13 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { formatUsdc, formatUtc, shortenMiddle } from "@/lib/format";
 import { walletFor } from "@/lib/near-wallet";
 import { cn } from "@/lib/utils";
-import { finishSweep, getSweepChoices, listSweeps, startSweep } from "@/server/sweeps";
+import {
+  discardPlannedSweep,
+  finishSweep,
+  getSweepChoices,
+  listSweeps,
+  startSweep,
+} from "@/server/sweeps";
 
 export const Route = createFileRoute("/_dashboard/sweep")({
   loader: async () => {
@@ -199,6 +205,7 @@ function SweepForm(props: {
   const router = useRouter();
   const plan = useServerFn(startSweep);
   const finish = useServerFn(finishSweep);
+  const discard = useServerFn(discardPlannedSweep);
   const [network, setNetwork] = useState(props.chains[0]?.network ?? "");
   const [kind, setKind] = useState<SweepDestinationKind>("same_chain");
   const [destinationNetwork, setDestinationNetwork] = useState("");
@@ -274,11 +281,18 @@ function SweepForm(props: {
   const secondsLeft = quoted ? (quoted.quote.signBy.getTime() - now) / 1000 : 0;
   const quoteExpired = quoted !== null && secondsLeft <= 0;
 
-  // Any change to the Sweep makes its quote stale.
+  // Any change to the Sweep makes its quote stale: drop it so it can't be signed later.
   function edit(change: () => void) {
     change();
-    setQuoted(null);
+    dropQuote();
     setNotice(null);
+  }
+
+  function dropQuote() {
+    if (!quoted) return;
+    // Best effort: an unsigned quote expires on its own anyway.
+    void discard({ data: { sweepId: quoted.sweepId } }).catch(() => undefined);
+    setQuoted(null);
   }
 
   async function requestPlan() {
@@ -364,7 +378,7 @@ function SweepForm(props: {
 
   const handleQuote = () =>
     run("quoting", async () => {
-      setQuoted(null);
+      dropQuote();
       const planned = await requestPlan();
       if (!planned.quote) throw new Error("Herald didn't answer a 1Click quote.");
       setNow(Date.now());
@@ -617,7 +631,7 @@ function SweepForm(props: {
           </Button>
         ) : quoted && !quoteExpired ? (
           <>
-            <Button variant="outline" disabled={busy} onClick={() => setQuoted(null)}>
+            <Button variant="outline" disabled={busy} onClick={dropQuote}>
               Discard quote
             </Button>
             <Button

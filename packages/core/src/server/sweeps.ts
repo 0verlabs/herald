@@ -3,7 +3,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { base58, base64 } from "@scure/base";
 import { isAddress } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
-import { and, count, desc, eq, gte, inArray, ne, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNotNull, ne, or } from "drizzle-orm";
 import { encodeFunctionData, hashTypedData, parseAbi, recoverAddress, type Hex } from "viem";
 import { z } from "zod";
 import { explorerTxUrl, networkRegistry, type Caip2, type Network } from "../networks.ts";
@@ -104,6 +104,22 @@ export const ONE_CLICK_DEPOSIT_MARGIN_SECONDS = 10 * 60;
 
 /** A 1Click quote that leaves less than this to sign is refused, and the Provider asks again. */
 const MIN_QUOTE_SIGNING_SECONDS = 30;
+
+/**
+ * The largest share of a 1Click Sweep, in percent, that 1Click may keep if
+ * it refunds (its `refundFee`). Refunds are rare on these USDC-to-USDC
+ * routes, but some are dear: from Solana 1Click keeps about 0.22 USDC, so a
+ * smaller Sweep would come back nearly empty. A quote with a higher refund
+ * fee is refused with the least amount that passes.
+ */
+export const MAX_REFUND_FEE_PERCENT = 10n;
+
+/**
+ * How long after a 1Click quote's deadline Herald keeps waiting for 1Click
+ * to see a deposit that landed. Past it the deposit address is inactive and
+ * the Sweep fails, saying where the USDC sits.
+ */
+export const ONE_CLICK_PICKUP_GRACE_SECONDS = 60 * 60;
 
 /**
  * The slippage Herald allows 1Click, in basis points. Every route is USDC to
@@ -584,6 +600,17 @@ async function requestQuote(
     return reject("quote_refused", `Herald can't use 1Click's quote: ${unusable}.`);
   }
 
+  const refundFee = BigInt(quote.refundFee);
+  if (refundFee * 100n > BigInt(amount) * MAX_REFUND_FEE_PERCENT) {
+    // The least amount whose refund fee is within the limit, rounded up.
+    const least = (refundFee * 100n + MAX_REFUND_FEE_PERCENT - 1n) / MAX_REFUND_FEE_PERCENT;
+    log("sweep_quote_refund_fee_too_high", { quoteId: quote.quoteId, refundFee: quote.refundFee });
+    return reject(
+      "below_minimum",
+      `If 1Click refunds a Sweep from ${network.label} to ${target.label}, it keeps up to ${formatUsdc(quote.refundFee)} USDC. Sweep at least ${formatUsdc(String(least))} USDC so a refund costs no more than ${MAX_REFUND_FEE_PERCENT}%.`,
+    );
+  }
+
   const nowSeconds = Math.floor(now.getTime() / 1000);
   const deadline = Math.floor(quote.deadline.getTime() / 1000);
   const inactiveAt = quote.timeWhenInactive
@@ -1049,10 +1076,45 @@ export async function refreshSweeps(
   const latest = await deps.db
     .select()
     .from(sweeps)
-    .where(eq(sweeps.providerId, provider.id))
+    .where(
+      and(
+        eq(sweeps.providerId, provider.id),
+        // A 1Click quote the Provider never sent to the wallet isn't a
+        // Sweep they started: leave it out, discarded or expired.
+        or(eq(sweeps.destinationKind, "same_chain"), isNotNull(sweeps.nearTxHash)),
+      ),
+    )
     .orderBy(desc(sweeps.createdAt), desc(sweeps.id))
     .limit(input.limit ?? SWEEP_LIST_LIMIT);
   return latest.map((row) => sweepEntry(input.env, SweepSchema.parse(row)));
+}
+
+/**
+ * Discards a planned Sweep the Provider decided not to sign, such as a
+ * 1Click quote they dropped: it fails, so it can't be completed later, and
+ * `refreshSweeps` leaves an unsigned 1Click one out of the list. False if
+ * the Provider has no such Sweep still `planned`.
+ */
+export async function discardSweep(
+  db: Db,
+  input: { providerId: number; sweepId: number },
+): Promise<boolean> {
+  const discarded = await db
+    .update(sweeps)
+    .set({
+      status: "failed",
+      error: "You discarded this Sweep before signing it.",
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(sweeps.id, input.sweepId),
+        eq(sweeps.providerId, input.providerId),
+        eq(sweeps.status, "planned"),
+      ),
+    )
+    .returning({ id: sweeps.id });
+  return discarded.length > 0;
 }
 
 const nearTxExplorers = {
@@ -1154,9 +1216,14 @@ function expiryOf(sweep: Sweep): string {
  * 1Click's status for its deposit address: `delivering` once 1Click has the
  * deposit, then `delivered` or `refunded` (to the source Receiving
  * Address), or `failed` if 1Click gave up. A status 1Click can't give yet,
- * or that can't be read, leaves the Sweep as it is.
+ * or that can't be read, leaves the Sweep as it is, except that a deposit
+ * 1Click still hasn't seen `ONE_CLICK_PICKUP_GRACE_SECONDS` after the
+ * quote's deadline fails the Sweep: the deposit address is inactive by then.
  */
-async function followOneClick(deps: SweepDeps, { sweep, env }: SweepContext): Promise<Sweep> {
+async function followOneClick(
+  deps: SweepDeps,
+  { sweep, env, now: at }: SweepContext,
+): Promise<Sweep> {
   const depositAddress = sweep.oneClickDepositAddress;
   if (!depositAddress) return sweep;
   let swap: OneClickSwap | null;
@@ -1166,11 +1233,26 @@ async function followOneClick(deps: SweepDeps, { sweep, env }: SweepContext): Pr
     logSweep("sweep_one_click_status_failed", sweep, { error: String(error) }, "warn");
     return sweep;
   }
-  // Not seen yet: 1Click picks the deposit up from the chain.
-  if (!swap || swap.status === "PENDING_DEPOSIT") return sweep;
+  const now = at ?? new Date();
+  // Not seen yet: 1Click picks the deposit up from the chain, until well
+  // after the quote's deadline.
+  if (!swap || swap.status === "PENDING_DEPOSIT") {
+    const deadline = sweep.quoteDeadline?.getTime();
+    if (
+      sweep.status !== "confirmed" ||
+      deadline === undefined ||
+      now.getTime() < deadline + ONE_CLICK_PICKUP_GRACE_SECONDS * 1000
+    ) {
+      return sweep;
+    }
+    return fail(
+      deps.db,
+      sweep,
+      `1Click didn't pick up the deposit before its quote's deadline. The USDC sits at 1Click's deposit address ${depositAddress}; contact NEAR Intents support with it.`,
+    );
+  }
   const source = networkRegistry[env].find((n) => n.caip2 === sweep.sourceNetwork);
   const sourceLabel = source?.label ?? sweep.sourceNetwork;
-  const now = new Date();
   const guard = and(eq(sweeps.id, sweep.id), eq(sweeps.status, sweep.status));
 
   switch (swap.status) {

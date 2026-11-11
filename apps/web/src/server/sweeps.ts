@@ -1,6 +1,7 @@
 import { rpcUrlsFrom } from "@herald/core";
 import {
   completeSweep,
+  discardSweep,
   getSweepOptions,
   nearRpcTransactionReader,
   planSweep,
@@ -170,3 +171,17 @@ export const finishSweep = createServerFn({ method: "POST" })
       destinationKind: result.sweep.destinationKind,
     };
   });
+
+/**
+ * Discards a planned Sweep the signed-in Provider won't sign, such as a
+ * 1Click quote they dropped or replaced, so it can't be signed later.
+ */
+export const discardPlannedSweep = createServerFn({ method: "POST" })
+  .middleware([requireSession])
+  .validator(z.object({ sweepId: z.number().int().positive() }))
+  .handler(async ({ context, data }) => ({
+    discarded: await discardSweep(createDb(env.DB), {
+      providerId: context.session.providerId,
+      sweepId: data.sweepId,
+    }),
+  }));

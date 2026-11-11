@@ -18,9 +18,11 @@ import { describe, expect, test } from "vite-plus/test";
 import type { SolanaSweep } from "../src/index.ts";
 import {
   completeSweep,
+  discardSweep,
   getSweepOptions,
   ONE_CLICK_DEADLINE_SECONDS,
   ONE_CLICK_DEPOSIT_MARGIN_SECONDS,
+  ONE_CLICK_PICKUP_GRACE_SECONDS,
   planSweep,
   refreshSweeps,
   SWEEP_VALIDITY_SECONDS,
@@ -335,6 +337,27 @@ describe("planning a cross-chain Sweep", () => {
     expect(!plan.ok && plan.message).toContain("0.23 USDC");
   });
 
+  test("refuses a route whose refund fee would take more than 10% of the Sweep, naming the least amount", async () => {
+    const context = await mainnetProvider("oc-refund-fee.near");
+    // What 1Click keeps if it refunds from Solana, read from a live quote.
+    context.oneClick.refundFee = 221_292n;
+    const plan = (amount: string) =>
+      planSweep(context.planDeps, {
+        ...context.base,
+        network: SOLANA,
+        amount,
+        destinationKind: "intents",
+      });
+
+    const small = await plan("1500000");
+    const atLeast = await plan("2212920");
+
+    expect(small).toMatchObject({ ok: false, reason: "below_minimum" });
+    expect(!small.ok && small.message).toContain("0.221292 USDC");
+    expect(!small.ok && small.message).toContain("2.21292 USDC");
+    expect(atLeast).toMatchObject({ ok: true, quote: { refundFee: "221292" } });
+  });
+
   test.each([
     {
       case: "1Click can't be reached",
@@ -503,17 +526,79 @@ describe("completing a cross-chain Sweep", () => {
     });
   });
 
-  test("fails a Sweep left unsigned past its quote's signing window", async () => {
+  test("fails a quote left unsigned past its signing window, and leaves it out of the list", async () => {
     const context = await mainnetProvider("oc-expired.near");
-    const { sweep } = await planBaseToArbitrum(context);
+    const { sweep, signRequest } = await planBaseToArbitrum(context);
+    const later = new Date((sweep.validBefore + 1) * 1000);
 
-    const [expired] = await refreshSweeps(context.deps, {
+    const listed = await refreshSweeps(context.deps, { ...context.base, now: later });
+    // Signing it now is too late: the Sweep says why it failed.
+    const nearTxHash = await context.near.sign({
+      signerId: context.provider.accountId,
+      request: signRequest,
+      key: context.receivingKey,
+    });
+    const late = await completeSweep(context.deps, {
       ...context.base,
-      now: new Date((sweep.validBefore + 1) * 1000),
+      sweepId: sweep.id,
+      nearTxHash,
+      now: later,
     });
 
-    expect(expired).toMatchObject({ id: sweep.id, status: "failed" });
-    expect(expired?.error).toContain("1Click quote expired");
+    expect(listed).toEqual([]);
+    expect(late).toMatchObject({ ok: true, sweep: { id: sweep.id, status: "failed" } });
+    expect(late.ok && late.sweep.error).toContain("1Click quote expired");
+    expect(context.queue.submissions).toEqual([]);
+  });
+
+  test("a discarded quote can't be signed later, and isn't listed", async () => {
+    const context = await mainnetProvider("oc-discarded.near");
+    const { sweep, signRequest } = await planBaseToArbitrum(context);
+
+    const discarded = await discardSweep(db(), {
+      providerId: context.provider.id,
+      sweepId: sweep.id,
+    });
+    const again = await discardSweep(db(), { providerId: context.provider.id, sweepId: sweep.id });
+    const nearTxHash = await context.near.sign({
+      signerId: context.provider.accountId,
+      request: signRequest,
+      key: context.receivingKey,
+    });
+    const signed = await completeSweep(context.deps, {
+      ...context.base,
+      sweepId: sweep.id,
+      nearTxHash,
+    });
+
+    expect([discarded, again]).toEqual([true, false]);
+    expect(signed).toMatchObject({ ok: true, sweep: { status: "failed" } });
+    expect(signed.ok && signed.sweep.error).toContain("discarded");
+    expect(context.queue.submissions).toEqual([]);
+    expect(await refreshSweeps(context.deps, context.base)).toEqual([]);
+  });
+
+  test("only the Provider who planned a Sweep can discard it", async () => {
+    const context = await mainnetProvider("oc-discard-owner.near");
+    const other = await sweepingProvider("oc-discard-other.near");
+    const { sweep } = await planBaseToArbitrum(context);
+
+    const byOther = await discardSweep(db(), { providerId: other.provider.id, sweepId: sweep.id });
+    const byOwner = await discardSweep(db(), {
+      providerId: context.provider.id,
+      sweepId: sweep.id,
+    });
+
+    expect([byOther, byOwner]).toEqual([false, true]);
+  });
+
+  test("lists a 1Click Sweep once its signing transaction is sent", async () => {
+    const context = await mainnetProvider("oc-listed.near");
+    const { sweep } = await submittedSweep(context);
+
+    const listed = await refreshSweeps(context.deps, context.base);
+
+    expect(listed.map((s) => s.id)).toEqual([sweep.id]);
   });
 
   test("doesn't submit a signature that arrives after the quote's signing window", async () => {
@@ -601,6 +686,39 @@ describe("following a cross-chain Sweep through 1Click", () => {
 
     expect(failed).toMatchObject({ status: "failed" });
     expect(failed?.error).toContain("1Click");
+  });
+
+  test("stops waiting for a deposit 1Click never picks up, an hour after the quote's deadline", async () => {
+    const context = await mainnetProvider("oc-never-seen.near");
+    const { sweep, depositAddress } = await confirmedSweep(context);
+    const deadline = sweep.quoteDeadline!.getTime();
+    const refreshAt = async (ms: number) =>
+      (await refreshSweeps(context.deps, { ...context.base, now: new Date(ms) }))[0];
+
+    const unknownAtDeadline = await refreshAt(deadline);
+    context.oneClick.report(depositAddress, "PENDING_DEPOSIT");
+    const pendingInGrace = await refreshAt(deadline + (ONE_CLICK_PICKUP_GRACE_SECONDS - 1) * 1000);
+    const pastGrace = await refreshAt(deadline + ONE_CLICK_PICKUP_GRACE_SECONDS * 1000);
+
+    expect(unknownAtDeadline).toMatchObject({ status: "confirmed" });
+    expect(pendingInGrace).toMatchObject({ status: "confirmed" });
+    expect(pastGrace).toMatchObject({ status: "failed" });
+    expect(pastGrace?.error).toContain(depositAddress);
+  });
+
+  test("keeps following a swap 1Click is delivering, even past the quote's deadline", async () => {
+    const context = await mainnetProvider("oc-slow-delivery.near");
+    const { sweep, depositAddress } = await confirmedSweep(context);
+    context.oneClick.report(depositAddress, "PROCESSING");
+    await context.refresh();
+    const muchLater = sweep.quoteDeadline!.getTime() + 2 * ONE_CLICK_PICKUP_GRACE_SECONDS * 1000;
+
+    const [stillDelivering] = await refreshSweeps(context.deps, {
+      ...context.base,
+      now: new Date(muchLater),
+    });
+
+    expect(stillDelivering).toMatchObject({ status: "delivering" });
   });
 
   test("leaves the Sweep as it is while 1Click can't be reached", async () => {
