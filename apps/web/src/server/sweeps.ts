@@ -81,7 +81,7 @@ export const listSweeps = createServerFn({ method: "GET" })
     refreshSweeps(sweepDeps(), { providerId: context.session.providerId, env: readHeraldEnv() }),
   );
 
-const address = z.string().max(64);
+const AddressInputSchema = z.string().max(64);
 
 /**
  * Plans a Sweep and answers the NEAR call the Provider's wallet sends to
@@ -96,14 +96,14 @@ export const startSweep = createServerFn({ method: "POST" })
         destinationKind: z.literal("same_chain"),
         network: z.string().max(64),
         amount: z.string().max(40),
-        destination: address,
+        destination: AddressInputSchema,
       }),
       z.object({
         destinationKind: z.literal("cross_chain"),
         network: z.string().max(64),
         amount: z.string().max(40),
         destinationNetwork: z.string().max(64),
-        destination: address,
+        destination: AddressInputSchema,
       }),
       z.object({
         destinationKind: z.literal("intents"),

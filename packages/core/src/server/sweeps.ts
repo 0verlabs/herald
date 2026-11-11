@@ -586,10 +586,10 @@ async function requestQuote(
 
   const nowSeconds = Math.floor(now.getTime() / 1000);
   const deadline = Math.floor(quote.deadline.getTime() / 1000);
-  const cold = quote.timeWhenInactive
+  const inactiveAt = quote.timeWhenInactive
     ? Math.floor(quote.timeWhenInactive.getTime() / 1000)
     : Infinity;
-  const signBy = Math.min(deadline - ONE_CLICK_DEPOSIT_MARGIN_SECONDS, cold);
+  const signBy = Math.min(deadline - ONE_CLICK_DEPOSIT_MARGIN_SECONDS, inactiveAt);
   if (signBy - nowSeconds < MIN_QUOTE_SIGNING_SECONDS) {
     log("sweep_quote_too_short", { quoteId: quote.quoteId, deadline: quote.deadline });
     return reject(

@@ -737,7 +737,7 @@ function QuoteReview(props: {
     { term: "1Click fee", value: `${formatUsdc(quote.fee)} USDC`, mono: true },
     {
       term: "Minimum",
-      value: `${formatUsdc(quote.minimum)} USDC, 1Click's minimum deposit from ${chain.label}`,
+      value: `${formatUsdc(quote.minimum)} USDC from ${chain.label} (Herald's minimum, seeded from 1Click's minimum deposit)`,
     },
     {
       term: "Time",
