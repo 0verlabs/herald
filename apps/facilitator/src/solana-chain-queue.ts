@@ -8,6 +8,8 @@ import {
 import {
   setSolanaTokenAccountStatus,
   type SolanaChainQueueRpc,
+  type SolanaSweepSubmission,
+  type SolanaSweepSubmissionResult,
   type SolanaTokenAccountJob,
 } from "@herald/core/server";
 import { createDb } from "@herald/db";
@@ -49,11 +51,24 @@ import {
   solanaRpc,
 } from "./chains.ts";
 import { PendingSettlements } from "./pending-settlements.ts";
+import { sweepTransactionProblem } from "./solana-sweeps.ts";
 
 type Refusal = { ok: false; message: string };
 export type SolanaSigningResult = { ok: true; transaction: string } | Refusal;
 export type SolanaSubmissionResult = { ok: true; signature: string } | Refusal;
 type QueueResult = { ok: true } | Refusal;
+
+/**
+ * How a send treats a transaction it has sent before (`refuse` it, or
+ * `answer` its signature), and whether the node simulates it first.
+ */
+type SendOptions = { onResend: "refuse" | "answer"; preflight: boolean };
+
+const SweepSubmissionSchema = z.object({
+  network: Caip2Schema,
+  // A Solana transaction is at most 1232 bytes, 1644 in base64.
+  transaction: z.string().min(1).max(1644),
+});
 
 // Each submission makes RPC calls while the queue waits on it, so a hung
 // endpoint must fail fast rather than stall every transaction behind it.
@@ -97,6 +112,9 @@ type TokenAccountJobRow = {
  * land: the web Worker queues one when a Provider registers
  * (`queueTokenAccount`), and an alarm creates it, at most once per
  * Provider, recording the outcome on the Provider in D1.
+ *
+ * It sends Providers' Sweeps (`submitSweep`) from the web Worker, signing
+ * as fee payer only transactions that are Sweeps.
  *
  * It also holds the stock mechanism's pending settlements (see
  * `PendingSettlements`).
@@ -221,7 +239,66 @@ export class SolanaChainQueue
    * wallet, and answers its signature. Refuses one it has already sent.
    */
   sendTransaction(network: Caip2, transaction: string): Promise<SolanaSubmissionResult> {
-    const run = this.#tail.then(() => this.#send(network, transaction));
+    return this.#enqueue(network, transaction, { onResend: "refuse", preflight: false });
+  }
+
+  /** The gas wallet's address, the fee payer of every Solana Sweep. */
+  async feePayer(): Promise<string> {
+    return solanaFeePayerAddress(this.env);
+  }
+
+  /**
+   * Adds the fee payer's signature to a Sweep's transaction (base64 wire
+   * format), already signed by the MPC network for a Provider's Receiving
+   * Address, and sends it. The web Worker calls it through its cross-Worker
+   * binding. It refuses anything but a Sweep (see `sweepTransactionProblem`):
+   * the gas wallet pays the fee, and the rent of the destination's USDC
+   * token account if the transaction creates it, nothing else.
+   *
+   * Unlike a settlement, sending the same transaction again answers its
+   * signature, after broadcasting it again in case the first broadcast
+   * never reached the node, so a Sweep whose answer was lost can safely be
+   * submitted again: it lands at most once. The node simulates a new one
+   * first, so one that would fail (an expired blockhash, a balance that
+   * moved) is refused without costing a fee.
+   */
+  async submitSweep(submission: SolanaSweepSubmission): Promise<SolanaSweepSubmissionResult> {
+    const parsed = SweepSubmissionSchema.safeParse(submission);
+    if (!parsed.success) return { ok: false, message: "Not a Solana Sweep submission" };
+    const { network, transaction } = parsed.data;
+    const listed = this.#solanaNetwork(network);
+    if (!listed) {
+      return {
+        ok: false,
+        message: `${network} is not a Herald Solana network on ${this.env.HERALD_ENV}`,
+      };
+    }
+    let decoded: Transaction;
+    let problem: string | null;
+    try {
+      decoded = decodeTransaction(transaction);
+      problem = await sweepTransactionProblem(
+        decoded,
+        solanaFeePayerAddress(this.env),
+        address(listed.usdc.address),
+      );
+    } catch {
+      return { ok: false, message: "Not a Solana transaction" };
+    }
+    if (problem) return { ok: false, message: problem };
+    const signed = await partiallySignTransaction([await this.#gasKeyPair()], decoded);
+    return this.#enqueue(network, getBase64EncodedWireTransaction(signed), {
+      onResend: "answer",
+      preflight: true,
+    });
+  }
+
+  #enqueue(
+    network: Caip2,
+    transaction: string,
+    options: SendOptions,
+  ): Promise<SolanaSubmissionResult> {
+    const run = this.#tail.then(() => this.#send(network, transaction, options));
     this.#tail = run.catch(() => undefined);
     return run;
   }
@@ -246,7 +323,11 @@ export class SolanaChainQueue
     this.#pending.delete(settlementKey);
   }
 
-  async #send(network: Caip2, transaction: string): Promise<SolanaSubmissionResult> {
+  async #send(
+    network: Caip2,
+    transaction: string,
+    { onResend, preflight }: SendOptions,
+  ): Promise<SolanaSubmissionResult> {
     let signature: Signature;
     try {
       const decoded = decodeTransaction(transaction);
@@ -261,6 +342,10 @@ export class SolanaChainQueue
     const [previous] = this.ctx.storage.sql
       .exec("SELECT signature FROM submissions WHERE signature = ?", signature)
       .toArray();
+    if (previous && onResend === "answer") {
+      await this.#resend(network, transaction, signature);
+      return { ok: true, signature };
+    }
     if (previous) {
       return { ok: false, message: `Herald already sent transaction ${signature}` };
     }
@@ -276,8 +361,9 @@ export class SolanaChainQueue
       await solanaRpc(this.env, network)
         .sendTransaction(transaction as Base64EncodedWireTransaction, {
           encoding: "base64",
-          // The stock mechanism simulated it while verifying.
-          skipPreflight: true,
+          // The stock mechanism simulated payments while verifying; Sweeps
+          // are simulated here.
+          skipPreflight: !preflight,
           preflightCommitment: "confirmed",
         })
         .send({ abortSignal: AbortSignal.timeout(RPC_TIMEOUT_MS) });
@@ -288,13 +374,36 @@ export class SolanaChainQueue
       // decides; a signature lands at most once.
       if (isSolanaError(error) && error.context.__code < 0) {
         this.ctx.storage.sql.exec("DELETE FROM submissions WHERE signature = ?", signature);
-        return { ok: false, message: `Broadcast refused: ${error.message}` };
+        // A failed simulation's reason is its cause, the transaction error.
+        const reason = error.cause instanceof Error ? `: ${error.cause.message}` : "";
+        return { ok: false, message: `Broadcast refused: ${error.message}${reason}` };
       }
       console.warn(
         JSON.stringify({ event: "solana_broadcast_unanswered", signature, error: String(error) }),
       );
     }
     return { ok: true, signature };
+  }
+
+  /**
+   * Broadcasts again a transaction sent before, whose first broadcast may
+   * not have reached the node. A signature lands at most once, so this is
+   * safe. Without preflight: simulating one that already landed would fail
+   * as "already processed". Its outcome doesn't matter, so it's only logged.
+   */
+  async #resend(network: Caip2, transaction: string, signature: Signature): Promise<void> {
+    try {
+      await solanaRpc(this.env, network)
+        .sendTransaction(transaction as Base64EncodedWireTransaction, {
+          encoding: "base64",
+          skipPreflight: true,
+        })
+        .send({ abortSignal: AbortSignal.timeout(RPC_TIMEOUT_MS) });
+    } catch (error) {
+      console.warn(
+        JSON.stringify({ event: "solana_rebroadcast_failed", signature, error: String(error) }),
+      );
+    }
   }
 
   async #scheduleNextAttempt(): Promise<void> {

@@ -10,10 +10,18 @@ import {
 } from "viem";
 import { generatePrivateKey } from "viem/accounts";
 import { describe, expect, test } from "vite-plus/test";
-import { completeSweep, getSweepOptions, planSweep, refreshSweeps } from "../src/server/index.ts";
+import type { Provider } from "../src/index.ts";
+import {
+  completeSweep,
+  getSweepOptions,
+  planSweep,
+  refreshSweeps,
+  type UsdcBalanceReader,
+} from "../src/server/index.ts";
 import {
   FakeChainQueue,
   FakeNear,
+  FakeSolana,
   fakeReceipts,
   sweepingProvider,
   usdcBalances,
@@ -41,22 +49,21 @@ describe("planSweep", () => {
     const { provider } = await sweepingProvider("plan-payload.testnet");
     const now = new Date("2026-11-11T12:00:00Z");
 
-    const plan = await planSweep(
-      { db: db(), readUsdcBalance: usdcBalances({ [provider.evmAddress]: "5000000" }) },
-      {
-        providerId: provider.id,
-        env: "testnet",
-        network: BASE_SEPOLIA,
-        amount: "1500000",
-        destination: DESTINATION,
-        now,
-      },
-    );
+    const plan = await planSweep(planDeps(usdcBalances({ [provider.evmAddress]: "5000000" })), {
+      providerId: provider.id,
+      env: "testnet",
+      network: BASE_SEPOLIA,
+      amount: "1500000",
+      destination: DESTINATION,
+      now,
+    });
 
     if (!plan.ok) throw new Error(plan.message);
     const { sweep, signRequest } = plan;
+    if (sweep.sourceKind !== "evm") throw new Error("Expected an EVM Sweep");
     expect(sweep).toMatchObject({
       providerId: provider.id,
+      sourceKind: "evm",
       sourceNetwork: BASE_SEPOLIA,
       asset: BASE_SEPOLIA_USDC,
       amount: "1500000",
@@ -104,7 +111,7 @@ describe("planSweep", () => {
 
   test("refuses an amount below the network's minimum and accepts the minimum itself", async () => {
     const { provider } = await sweepingProvider("plan-minimum.testnet");
-    const deps = { db: db(), readUsdcBalance: usdcBalances({ [provider.evmAddress]: "5000000" }) };
+    const deps = planDeps(usdcBalances({ [provider.evmAddress]: "5000000" }));
     const plan = (amount: string) =>
       planSweep(deps, {
         providerId: provider.id,
@@ -126,16 +133,13 @@ describe("planSweep", () => {
   test("refuses more than the Receiving Address holds on that chain", async () => {
     const { provider } = await sweepingProvider("plan-balance.testnet");
 
-    const plan = await planSweep(
-      { db: db(), readUsdcBalance: usdcBalances({ [provider.evmAddress]: "1000000" }) },
-      {
-        providerId: provider.id,
-        env: "testnet",
-        network: BASE_SEPOLIA,
-        amount: "1000001",
-        destination: DESTINATION,
-      },
-    );
+    const plan = await planSweep(planDeps(usdcBalances({ [provider.evmAddress]: "1000000" })), {
+      providerId: provider.id,
+      env: "testnet",
+      network: BASE_SEPOLIA,
+      amount: "1000001",
+      destination: DESTINATION,
+    });
 
     expect(plan).toMatchObject({ ok: false, reason: "insufficient_balance" });
     expect(!plan.ok && plan.message).toContain("1 USDC");
@@ -145,12 +149,9 @@ describe("planSweep", () => {
     const { provider } = await sweepingProvider("plan-balance-down.testnet");
 
     const plan = await planSweep(
-      {
-        db: db(),
-        readUsdcBalance: async () => {
-          throw new Error("Base Sepolia RPC request failed (TypeError)");
-        },
-      },
+      planDeps(async () => {
+        throw new Error("Base Sepolia RPC request failed (TypeError)");
+      }),
       {
         providerId: provider.id,
         env: "testnet",
@@ -186,38 +187,32 @@ describe("planSweep", () => {
   ])("refuses a destination that is $case", async ({ id, destination, reason }) => {
     const { provider } = await sweepingProvider(`plan-destination-${id}.testnet`);
 
-    const plan = await planSweep(
-      { db: db(), readUsdcBalance: usdcBalances({ [provider.evmAddress]: "5000000" }) },
-      {
-        providerId: provider.id,
-        env: "testnet",
-        network: BASE_SEPOLIA,
-        amount: "150000",
-        destination: destination === "own" ? provider.evmAddress : destination,
-      },
-    );
+    const plan = await planSweep(planDeps(usdcBalances({ [provider.evmAddress]: "5000000" })), {
+      providerId: provider.id,
+      env: "testnet",
+      network: BASE_SEPOLIA,
+      amount: "150000",
+      destination: destination === "own" ? provider.evmAddress : destination,
+    });
 
     expect(plan).toMatchObject({ ok: false, reason });
   });
 
   test.each([
-    { case: "Solana", network: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1" },
     { case: "a mainnet network on testnet", network: "eip155:8453" },
-  ])("refuses to plan an EVM Sweep on $case", async ({ network }) => {
+    { case: "a network Herald doesn't list", network: "eip155:10" },
+  ])("refuses to plan a Sweep on $case", async ({ network }) => {
     const { provider } = await sweepingProvider(
       `plan-network-${network.split(":")[1]!.slice(0, 8).toLowerCase()}.testnet`,
     );
 
-    const plan = await planSweep(
-      { db: db(), readUsdcBalance: usdcBalances({ [provider.evmAddress]: "5000000" }) },
-      {
-        providerId: provider.id,
-        env: "testnet",
-        network,
-        amount: "150000",
-        destination: DESTINATION,
-      },
-    );
+    const plan = await planSweep(planDeps(usdcBalances({ [provider.evmAddress]: "5000000" })), {
+      providerId: provider.id,
+      env: "testnet",
+      network,
+      amount: "150000",
+      destination: DESTINATION,
+    });
 
     expect(plan).toMatchObject({ ok: false, reason: "unsupported_network" });
   });
@@ -229,29 +224,34 @@ async function plannedSweep(accountId: string, amount = "1500000") {
 }
 
 async function plannedSweepFor(
-  { provider, receivingKey }: Awaited<ReturnType<typeof sweepingProvider>>,
+  { provider, receivingKey }: { provider: Provider; receivingKey: Hex },
   amount = "1500000",
 ) {
-  const plan = await planSweep(
-    { db: db(), readUsdcBalance: usdcBalances({ [provider.evmAddress]: "5000000" }) },
-    {
-      providerId: provider.id,
-      env: "testnet",
-      network: BASE_SEPOLIA,
-      amount,
-      destination: DESTINATION,
-    },
-  );
+  const plan = await planSweep(planDeps(usdcBalances({ [provider.evmAddress]: "5000000" })), {
+    providerId: provider.id,
+    env: "testnet",
+    network: BASE_SEPOLIA,
+    amount,
+    destination: DESTINATION,
+  });
   if (!plan.ok) throw new Error(plan.message);
-  return { provider, receivingKey, ...plan };
+  const { sweep, signRequest } = plan;
+  if (sweep.sourceKind !== "evm") throw new Error("Expected an EVM Sweep");
+  return { provider, receivingKey, sweep, signRequest };
 }
 
 describe("getSweepOptions", () => {
-  test("lists each EVM chain with the Receiving Address's balance and the minimum Sweep", async () => {
+  test("lists each chain with the Receiving Address there, its balance and the minimum Sweep", async () => {
     const { provider } = await sweepingProvider("options.testnet");
 
     const options = await getSweepOptions(
-      { db: db(), readUsdcBalance: usdcBalances({ [provider.evmAddress]: "2500000" }) },
+      {
+        db: db(),
+        readUsdcBalance: usdcBalances({
+          [provider.evmAddress]: "2500000",
+          [provider.solanaAddress]: "700000",
+        }),
+      },
       { providerId: provider.id, env: "testnet" },
     );
 
@@ -259,13 +259,23 @@ describe("getSweepOptions", () => {
       chains: [
         {
           network: BASE_SEPOLIA,
+          kind: "evm",
           label: "Base Sepolia",
           address: provider.evmAddress,
           balance: { ok: true, amount: "2500000" },
           minimum: "150000",
         },
         {
+          network: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+          kind: "solana",
+          label: "Solana Devnet",
+          address: provider.solanaAddress,
+          balance: { ok: true, amount: "700000" },
+          minimum: "1000",
+        },
+        {
           network: "eip155:421614",
+          kind: "evm",
           label: "Arbitrum Sepolia",
           address: provider.evmAddress,
           balance: { ok: true, amount: "2500000" },
@@ -315,15 +325,12 @@ describe("completeSweep", () => {
       key: receivingKey,
     });
 
-    const result = await completeSweep(
-      {
-        db: db(),
-        readNearTransaction: near.readTransaction,
-        submitSweep: queue.submit,
-        readReceipt: fakeReceipts().read,
-      },
-      { providerId: provider.id, env: "testnet", sweepId: sweep.id, nearTxHash },
-    );
+    const result = await completeSweep(sweepDeps(near, queue), {
+      providerId: provider.id,
+      env: "testnet",
+      sweepId: sweep.id,
+      nearTxHash,
+    });
 
     if (!result.ok) throw new Error(result.message);
     expect(result.sweep).toMatchObject({
@@ -458,7 +465,7 @@ describe("the daily cap", () => {
     near: FakeNear,
   ) {
     const plan = await planSweep(
-      { db: db(), readUsdcBalance: usdcBalances({ [context.provider.evmAddress]: "5000000" }) },
+      planDeps(usdcBalances({ [context.provider.evmAddress]: "5000000" })),
       {
         providerId: context.provider.id,
         env: "testnet",
@@ -493,17 +500,14 @@ describe("the daily cap", () => {
       });
     }
     const planAt = (now: Date) =>
-      planSweep(
-        { db: db(), readUsdcBalance: usdcBalances({ [context.provider.evmAddress]: "5000000" }) },
-        {
-          providerId: context.provider.id,
-          env: "testnet",
-          network: BASE_SEPOLIA,
-          amount: "150000",
-          destination: DESTINATION,
-          now,
-        },
-      );
+      planSweep(planDeps(usdcBalances({ [context.provider.evmAddress]: "5000000" })), {
+        providerId: context.provider.id,
+        env: "testnet",
+        network: BASE_SEPOLIA,
+        amount: "150000",
+        destination: DESTINATION,
+        now,
+      });
 
     const eleventh = await planAt(new Date());
     const nextDay = await planAt(new Date(Date.now() + 25 * HOUR_MS));
@@ -668,11 +672,20 @@ describe("refreshSweeps", () => {
   });
 });
 
+/** Planning's deps: D1, the given balances, and a Solana that EVM Sweeps never touch. */
+function planDeps(readUsdcBalance: UsdcBalanceReader) {
+  const solana = new FakeSolana();
+  return { db: db(), readUsdcBalance, readSolana: solana.reader, solanaQueue: solana.queue };
+}
+
 function sweepDeps(near: FakeNear, queue: FakeChainQueue, receipts = fakeReceipts()) {
+  const solana = new FakeSolana();
   return {
     db: db(),
     readNearTransaction: near.readTransaction,
     submitSweep: queue.submit,
     readReceipt: receipts.read,
+    readSolana: solana.reader,
+    solanaQueue: solana.queue,
   };
 }

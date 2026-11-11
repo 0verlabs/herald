@@ -12,6 +12,7 @@ import {
   type SolanaTokenAccountStatus,
 } from "../schemas.ts";
 import type { Db } from "./db.ts";
+import type { SolanaSweepSubmission, SolanaSweepSubmissionResult } from "./solana-sweeps.ts";
 
 /**
  * Creating one Provider's USDC token account on a Solana network: the token
@@ -41,6 +42,12 @@ export interface SolanaChainQueueRpc {
   queueTokenAccount(
     job: SolanaTokenAccountJob,
   ): Promise<{ ok: true } | { ok: false; message: string }>;
+
+  /** The gas wallet's address: the fee payer of every Solana Sweep. */
+  feePayer(): Promise<string>;
+
+  /** `SolanaSweepQueue.submitSweep` for the queue's network. */
+  submitSweep(submission: SolanaSweepSubmission): Promise<SolanaSweepSubmissionResult>;
 }
 
 /**

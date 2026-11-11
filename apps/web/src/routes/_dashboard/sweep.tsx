@@ -2,6 +2,7 @@ import {
   EvmAddressSchema,
   PriceSchema,
   priceToBaseUnits,
+  SolanaAddressSchema,
   USDC_DECIMALS,
   type SweepStatus,
 } from "@herald/core";
@@ -94,8 +95,8 @@ function SweepPage() {
       <div className="flex flex-col gap-1">
         <h1 className="font-heading text-xl font-medium">Sweep</h1>
         <p className="text-muted-foreground">
-          Move USDC from your EVM Receiving Address to any address on the same chain. Your NEAR
-          wallet signs once, through NEAR Chain Signatures, and Herald pays the gas.
+          Move USDC from a Receiving Address to any address on the same chain. Your NEAR wallet
+          signs once, through NEAR Chain Signatures, and Herald pays the gas.
         </p>
       </div>
 
@@ -187,13 +188,21 @@ function SweepForm(props: {
         : balance !== null && BigInt(baseUnits) > BigInt(balance)
           ? `Your Receiving Address holds ${formatUsdc(balance)} USDC on ${chain.label}.`
           : null;
+  const trimmedDestination = destination.trim();
+  // EVM addresses are case-insensitive; Solana's base58 ones aren't.
+  const isOwnAddress =
+    chain.kind === "evm"
+      ? trimmedDestination.toLowerCase() === chain.address.toLowerCase()
+      : trimmedDestination === chain.address;
   const destinationProblem = !destination
     ? null
-    : !EvmAddressSchema.safeParse(destination.trim()).success
+    : chain.kind === "evm" && !EvmAddressSchema.safeParse(trimmedDestination).success
       ? "Enter an EVM address: 0x and 40 hex characters."
-      : destination.trim().toLowerCase() === chain.address.toLowerCase()
-        ? "That's your Receiving Address. Sweep to another address."
-        : null;
+      : chain.kind === "solana" && !SolanaAddressSchema.safeParse(trimmedDestination).success
+        ? "Enter a Solana wallet address."
+        : isOwnAddress
+          ? "That's your Receiving Address. Sweep to another address."
+          : null;
   const busy = step !== "idle";
   const ready =
     !busy &&
@@ -289,7 +298,11 @@ function SweepForm(props: {
             <ToggleGroup
               value={[network]}
               onValueChange={(value) => {
-                if (value[0]) setNetwork(value[0]);
+                const next = props.chains.find((c) => c.network === value[0]);
+                if (!next) return;
+                // An address on one kind of chain is never one on the other.
+                if (next.kind !== chain.kind) setDestination("");
+                setNetwork(next.network);
               }}
               variant="outline"
               disabled={busy}
@@ -340,7 +353,7 @@ function SweepForm(props: {
               id="sweep-destination"
               autoComplete="off"
               spellCheck={false}
-              placeholder="0x…"
+              placeholder={chain.kind === "evm" ? "0x…" : "Solana wallet address"}
               className="font-mono"
               value={destination}
               disabled={busy}
@@ -348,8 +361,10 @@ function SweepForm(props: {
               onChange={(event) => setDestination(event.target.value)}
             />
             <FieldDescription>
-              Any address on {chain.label} that can hold USDC. Double-check it: a Sweep can't be
-              undone.
+              {chain.kind === "evm"
+                ? `Any address on ${chain.label} that can hold USDC.`
+                : `A wallet address on ${chain.label}, not a token account. If it has no USDC account yet, Herald creates one.`}{" "}
+              Double-check it: a Sweep can't be undone.
             </FieldDescription>
             <FieldError>{destinationProblem}</FieldError>
           </Field>
@@ -408,10 +423,19 @@ function SweepSummary(props: {
     },
     { term: "You send", value: amount, mono: true },
     { term: "Destination receives", value: amount, mono: true },
-    { term: "Fee", value: `None. Herald pays the gas on ${props.chain.label}.` },
+    {
+      term: "Fee",
+      value:
+        props.chain.kind === "evm"
+          ? `None. Herald pays the gas on ${props.chain.label}.`
+          : `None. Herald pays the fee on ${props.chain.label}, and the rent of the destination's USDC account if it needs one.`,
+    },
     {
       term: "You approve",
-      value: "One NEAR transaction to the MPC signer: 1 yoctoNEAR plus NEAR gas.",
+      value:
+        props.chain.kind === "evm"
+          ? "One NEAR transaction to the MPC signer: 1 yoctoNEAR plus NEAR gas."
+          : "One NEAR transaction to the MPC signer: 1 yoctoNEAR plus NEAR gas. Approve it right away: the Solana transaction expires about a minute after you start.",
     },
   ];
   return (
@@ -419,7 +443,7 @@ function SweepSummary(props: {
       {rows.map(({ term, value, mono, title }) => (
         <div key={term} className="contents">
           <dt className="text-muted-foreground">{term}</dt>
-          <dd className={cn("min-w-0 truncate", mono && value && "font-mono")} title={title}>
+          <dd className={cn("min-w-0", mono && value && "truncate font-mono")} title={title}>
             {value ?? <span className="text-muted-foreground">Not set</span>}
           </dd>
         </div>

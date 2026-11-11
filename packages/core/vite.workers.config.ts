@@ -18,6 +18,12 @@ export default defineConfig(async () => ({
       },
     }),
   ],
+  // Resolve packages the way Wrangler bundles a Worker. With the default
+  // `browser` main field, Vite follows @solana/*'s package.json `browser`
+  // map to their browser builds, which refuse to hash outside a browser
+  // secure context (workerd has no `isSecureContext`), and Solana Sweep
+  // planning hashes to find token account addresses.
+  resolve: { mainFields: ["module", "main"] },
   test: {
     name: "@herald/core (workers)",
     include: ["test/**/*.test.ts"],

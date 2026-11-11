@@ -451,6 +451,12 @@ importers:
       '@scure/base':
         specifier: 'catalog:'
         version: 2.4.0
+      '@solana-program/token':
+        specifier: 'catalog:'
+        version: 0.16.1(@solana/kit@8.6.0(typescript@7.0.2))
+      '@solana/kit':
+        specifier: 'catalog:'
+        version: 8.6.0(typescript@7.0.2)
       drizzle-orm:
         specifier: 'catalog:'
         version: 1.0.0-rc.5(zod@4.6.7)

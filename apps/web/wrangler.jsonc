@@ -24,9 +24,11 @@
 // (ADR-0006), bound across Workers with `script_name`: the facilitator Worker
 // of the same environment. Registration queues each Provider's Solana USDC
 // token account on the Solana one; Sweeps submit their signed transfers
-// through the EVM one, which pays the gas. Locally, run the facilitator with
-// `wrangler dev` alongside. Sweeps also read the MPC signature from NEAR over
-// NEAR_RPC_URL, and transfer receipts over <CHAIN>_RPC_URL.
+// through the queue of their chain, which pays the gas (on Solana, as the
+// transaction's fee payer). Locally, run the facilitator with `wrangler dev`
+// alongside. Sweeps also read the MPC signature from NEAR over NEAR_RPC_URL,
+// and transfer receipts, blockhashes and signature statuses over
+// <CHAIN>_RPC_URL.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "herald-web",

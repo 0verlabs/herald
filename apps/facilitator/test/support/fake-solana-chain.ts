@@ -67,8 +67,9 @@ const SLOT = 400_000_000;
  * token account exists only once `createTokenAccount` or a landed
  * create-associated-token-account instruction made it. Sent transactions
  * land at once if every signature is valid, and land once per signature, as
- * on a real cluster. It records USDC transfers in `transfers` and token
- * account creations in `tokenAccountCreations`.
+ * on a real cluster; sent with preflight, one that would fail is refused
+ * instead. It records USDC transfers in `transfers` and token account
+ * creations in `tokenAccountCreations`.
  */
 export class FakeSolanaChain {
   readonly transfers: SolanaTransfer[] = [];
@@ -112,6 +113,17 @@ export class FakeSolanaChain {
     try {
       return { jsonrpc: "2.0", id: request.id, result: await this.#call(request) };
     } catch (error) {
+      if (error instanceof PreflightFailure) {
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          error: {
+            code: -32002,
+            message: "Transaction simulation failed",
+            data: { err: error.err, logs: [], accounts: null, unitsConsumed: 0, returnData: null },
+          },
+        } as JsonRpcResponse;
+      }
       return {
         jsonrpc: "2.0",
         id: request.id,
@@ -144,8 +156,12 @@ export class FakeSolanaChain {
             returnData: null,
           },
         };
-      case "sendTransaction":
-        return this.#send(this.#decode(params[0] as string));
+      case "sendTransaction": {
+        const options = params[1] as { skipPreflight?: boolean } | undefined;
+        return this.#send(this.#decode(params[0] as string), {
+          preflight: options?.skipPreflight === false,
+        });
+      }
       case "getSignatureStatuses":
         return { context, value: (params[0] as string[]).map((s) => this.#status(s)) };
       default:
@@ -199,19 +215,28 @@ export class FakeSolanaChain {
   }
 
   // What the token program would answer: a transfer into a token account
-  // that doesn't exist fails. Buyers' source accounts always exist.
+  // that doesn't exist, or wasn't created earlier in the transaction,
+  // fails. Buyers' source accounts always exist.
   async #simulate({ instructions }: Decoded): Promise<unknown> {
+    const created = new Set<Address>();
     for (const [index, instruction] of instructions.entries()) {
+      if (isTokenAccountCreation(instruction)) {
+        created.add(
+          parseCreateAssociatedTokenIdempotentInstruction(instruction as never).accounts.ata
+            .address,
+        );
+      }
       if (instruction.programAddress !== TOKEN_PROGRAM_ADDRESS) continue;
       const transfer = parseTransferCheckedInstruction(instruction as never);
-      if (!this.#tokenAccounts.has(transfer.accounts.destination.address)) {
+      const destination = transfer.accounts.destination.address;
+      if (!this.#tokenAccounts.has(destination) && !created.has(destination)) {
         return { InstructionError: [index, "InvalidAccountData"] };
       }
     }
     return null;
   }
 
-  async #send(decoded: Decoded): Promise<string> {
+  async #send(decoded: Decoded, { preflight }: { preflight: boolean }): Promise<string> {
     const { transaction, feePayer, instructions } = decoded;
     await assertFullySigned(transaction);
     const signature = getBase58Decoder().decode(
@@ -222,6 +247,9 @@ export class FakeSolanaChain {
     if (this.#landed.has(signature)) return signature;
 
     const err = await this.#simulate(decoded);
+    // With preflight, the node refuses a transaction whose simulation fails,
+    // and it never lands.
+    if (err && preflight) throw new PreflightFailure(err);
     this.#landed.set(signature, { at: Date.now(), err });
     if (err) return signature;
     for (const instruction of instructions) {
@@ -234,11 +262,7 @@ export class FakeSolanaChain {
           destination: transfer.accounts.destination.address,
           amount: transfer.data.amount,
         });
-      } else if (
-        instruction.programAddress === ASSOCIATED_TOKEN_PROGRAM_ADDRESS &&
-        identifyAssociatedTokenInstruction(instruction as never) ===
-          AssociatedTokenInstruction.CreateAssociatedTokenIdempotent
-      ) {
+      } else if (isTokenAccountCreation(instruction)) {
         const create = parseCreateAssociatedTokenIdempotentInstruction(instruction as never);
         const tokenAccount = create.accounts.ata.address;
         if (create.accounts.mint.address !== this.usdc) {
@@ -281,6 +305,24 @@ type Decoded = {
 
 const MEMO_PROGRAM = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 const COMPUTE_BUDGET_PROGRAM = "ComputeBudget111111111111111111111111111111";
+
+/** A transaction a node refused because its preflight simulation failed with `err`. */
+class PreflightFailure extends Error {
+  readonly err: unknown;
+
+  constructor(err: unknown) {
+    super("Transaction simulation failed");
+    this.err = err;
+  }
+}
+
+function isTokenAccountCreation(instruction: Decoded["instructions"][number]): boolean {
+  return (
+    instruction.programAddress === ASSOCIATED_TOKEN_PROGRAM_ADDRESS &&
+    identifyAssociatedTokenInstruction(instruction as never) ===
+      AssociatedTokenInstruction.CreateAssociatedTokenIdempotent
+  );
+}
 
 function isComputeBudget(instruction: { programAddress: Address }) {
   return instruction.programAddress === COMPUTE_BUDGET_PROGRAM;

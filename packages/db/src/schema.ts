@@ -102,10 +102,17 @@ export const sweepMinimums = sqliteTable(
 );
 
 /**
- * Mirrors `SweepSchema`: one row per Sweep a Provider planned. An EVM Sweep
- * is an EIP-3009 `transferWithAuthorization` from the Receiving Address;
- * `payload_hash` is its EIP-712 hash, which the Provider's NEAR wallet asks
- * the MPC signer to sign in the NEAR transaction `near_tx_hash`.
+ * Mirrors `SweepSchema`: one row per Sweep a Provider planned, with the
+ * columns of its `source_kind` set and the other kind's left null.
+ *
+ * - `evm`: an EIP-3009 `transferWithAuthorization` from the Receiving
+ *   Address; `payload_hash` is its EIP-712 hash.
+ * - `solana`: an SPL transfer from the Receiving Address's USDC token
+ *   account; `solana_transaction` is the unsigned transaction, whose message
+ *   is the payload.
+ *
+ * The Provider's NEAR wallet asks the MPC signer to sign the payload in the
+ * NEAR transaction `near_tx_hash`.
  */
 export const sweeps = sqliteTable(
   "sweeps",
@@ -114,6 +121,7 @@ export const sweeps = sqliteTable(
     providerId: integer("provider_id")
       .notNull()
       .references(() => providers.id),
+    sourceKind: text("source_kind", { enum: ["evm", "solana"] }).notNull(),
     sourceNetwork: text("source_network").notNull(),
     asset: text().notNull(),
     /** Base units of `asset`, as a decimal string. */
@@ -121,12 +129,22 @@ export const sweeps = sqliteTable(
     destinationKind: text("destination_kind", { enum: ["same_chain"] }).notNull(),
     destinationNetwork: text("destination_network").notNull(),
     destinationAddress: text("destination_address").notNull(),
-    /** The EIP-3009 authorization nonce, 32 bytes as 0x-prefixed hex. */
-    authorizationNonce: text("authorization_nonce").notNull(),
-    /** Unix seconds; the authorization is valid strictly between the two. */
-    validAfter: integer("valid_after").notNull(),
+    /** EVM: the EIP-3009 authorization nonce, 32 bytes as 0x-prefixed hex. */
+    authorizationNonce: text("authorization_nonce"),
+    /** EVM: Unix seconds; the authorization is valid strictly between this and `valid_before`. */
+    validAfter: integer("valid_after"),
+    /**
+     * Unix seconds. EVM: the authorization's expiry. Solana: when the
+     * transaction's blockhash is expected to expire (`last_valid_block_height`
+     * is the exact limit).
+     */
     validBefore: integer("valid_before").notNull(),
-    payloadHash: text("payload_hash").notNull(),
+    /** EVM: the EIP-712 hash of the authorization. */
+    payloadHash: text("payload_hash"),
+    /** Solana: the unsigned transaction, base64 wire format. */
+    solanaTransaction: text("solana_transaction"),
+    /** Solana: the last block height at which the transaction can land. */
+    lastValidBlockHeight: integer("last_valid_block_height"),
     nearTxHash: text("near_tx_hash").unique(),
     sourceTxHash: text("source_tx_hash"),
     status: text({
