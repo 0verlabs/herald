@@ -21,6 +21,10 @@ import type {
   MpcSignRequest,
   NearTransactionOutcome,
   NearTransactionReader,
+  OneClickClient,
+  OneClickQuoteRequest,
+  OneClickQuoteResult,
+  OneClickSwap,
   SolanaSweepQueue,
   SolanaSweepReader,
   SolanaSweepSubmission,
@@ -282,4 +286,73 @@ export async function tokenAccountOf(owner: string, mint: string): Promise<strin
     tokenProgram: TOKEN_PROGRAM_ADDRESS,
   });
   return tokenAccount;
+}
+
+/**
+ * A fake 1Click. `client` quotes every request it records in `quotes`,
+ * keeping `fee` base units and answering a fresh deposit address on the
+ * origin chain (Solana for a `sol-` asset, EVM otherwise), with the
+ * requested deadline. `swaps` holds each deposit address's status, set by
+ * the test the way 1Click would move it on; addresses not listed are
+ * unknown (404).
+ */
+export class FakeOneClick {
+  readonly quotes: OneClickQuoteRequest[] = [];
+  readonly swaps = new Map<string, OneClickSwap>();
+  /** What 1Click keeps of each quote, base units. */
+  fee = 1_000n;
+  /** What it keeps if it refunds, base units. */
+  refundFee = 2_400n;
+  /** Answer quote requests with this refusal instead. */
+  refusal: Extract<OneClickQuoteResult, { ok: false }> | null = null;
+  /** Throw instead of answering, as when 1Click can't be reached. */
+  unreachable = false;
+  /** Change each quote before answering it, as a misbehaving 1Click would. */
+  tamper: ((quote: Extract<OneClickQuoteResult, { ok: true }>["quote"]) => void) | null = null;
+
+  readonly client: OneClickClient = {
+    quote: async (request) => {
+      if (this.unreachable) throw new Error("1Click quote request failed (TypeError)");
+      this.quotes.push(request);
+      if (this.refusal) return this.refusal;
+      const amountOut = BigInt(request.amount) - this.fee;
+      const quote = {
+        quoteId: crypto.randomUUID(),
+        depositAddress: request.originAsset.startsWith("nep141:sol-")
+          ? solanaKeyPair().address
+          : privateKeyToAccount(generatePrivateKey()).address,
+        amountIn: request.amount,
+        amountOut: String(amountOut),
+        minAmountOut: String((amountOut * 995n) / 1000n),
+        refundFee: String(this.refundFee),
+        timeEstimate: 34,
+        deadline: request.deadline,
+        timeWhenInactive: null,
+        signature: `ed25519:${base58.encode(crypto.getRandomValues(new Uint8Array(64)))}`,
+      };
+      this.tamper?.(quote);
+      return { ok: true, quote };
+    },
+    status: async (depositAddress) => {
+      if (this.unreachable) throw new Error("1Click status request failed (TypeError)");
+      const swap = this.swaps.get(depositAddress);
+      return swap ? structuredClone(swap) : null;
+    },
+  };
+
+  /** 1Click moves the swap at `depositAddress` to `status`, with `details`. */
+  report(
+    depositAddress: string,
+    status: OneClickSwap["status"],
+    details: Partial<Omit<OneClickSwap, "status">> = {},
+  ): void {
+    this.swaps.set(depositAddress, {
+      status,
+      amountOut: null,
+      refundedAmount: null,
+      refundReason: null,
+      destinationTxHashes: [],
+      ...details,
+    });
+  }
 }

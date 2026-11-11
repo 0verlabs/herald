@@ -29,6 +29,12 @@
 // alongside. Sweeps also read the MPC signature from NEAR over NEAR_RPC_URL,
 // and transfer receipts, blockhashes and signature statuses over
 // <CHAIN>_RPC_URL.
+//
+// Cross-chain and NEAR Intents Sweeps (mainnet only) call 1Click at
+// https://1click.chaindefuser.com. ONE_CLICK_JWT, a 1Click partner key, is an
+// optional secret: 1Click quotes without it. It stays out of
+// `secrets.required`, since `wrangler deploy` refuses to deploy while a
+// required secret is missing; `wrangler types` therefore doesn't type it.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "herald-web",
