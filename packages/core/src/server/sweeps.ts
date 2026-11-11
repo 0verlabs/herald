@@ -1,5 +1,8 @@
 import { providers, sweepMinimums, sweeps } from "@herald/db/schema";
-import { base64 } from "@scure/base";
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { base58, base64 } from "@scure/base";
+import { isAddress } from "@solana/kit";
+import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { and, count, desc, eq, gte, inArray } from "drizzle-orm";
 import { encodeFunctionData, hashTypedData, parseAbi, recoverAddress, type Hex } from "viem";
 import { z } from "zod";
@@ -12,13 +15,29 @@ import {
   ProviderSchema,
   SweepMinimumSchema,
   SweepSchema,
+  type EvmSweep,
   type HeraldEnv,
   type Provider,
+  type SolanaSweep,
   type Sweep,
   type SweepMinimum,
 } from "../schemas.ts";
 import { getProviderBalances, type UsdcBalanceReader } from "./balances.ts";
 import type { Db } from "./db.ts";
+import {
+  buildSolanaSweepTransaction,
+  SYSTEM_PROGRAM_ADDRESS,
+  solanaTransactionMessage,
+  TOKEN_2022_PROGRAM_ADDRESS,
+  usdcTokenAccount,
+  withSolanaSignature,
+  type SolanaSweepQueue,
+  type SolanaSweepReader,
+  type SolanaSweepSubmissionResult,
+} from "./solana-sweeps.ts";
+
+type EvmNetwork = Extract<Network, { kind: "evm" }>;
+type SolanaNetwork = Extract<Network, { kind: "solana" }>;
 
 /**
  * How many Sweeps Herald submits for one Provider in any 24 hours, which
@@ -47,8 +66,19 @@ async function sweepsSubmittedInLastDay(db: Db, providerId: number, now: Date): 
   return row?.submitted ?? 0;
 }
 
-/** How long a planned Sweep's authorization stays valid: long enough to sign, short enough not to linger. */
+/** How long a planned EVM Sweep's authorization stays valid: long enough to sign, short enough not to linger. */
 export const SWEEP_VALIDITY_SECONDS = 10 * 60;
+
+/**
+ * How long a planned Solana Sweep can be signed, by the server's clock: an
+ * upper bound on its blockhash's lifetime, generous on purpose. A blockhash
+ * lasts 150 blocks, about 60 to 70 s at Solana's block times, and the exact
+ * limit is the Sweep's `lastValidBlockHeight`, which the chain enforces: a
+ * transaction signed too late is refused when the queue submits it. Past
+ * this bound, an unsigned Sweep fails, as does one whose signature still
+ * isn't on NEAR.
+ */
+export const SOLANA_SWEEP_VALIDITY_SECONDS = 120;
 
 // The authorization is valid from a little before it was planned, so a
 // chain whose clock lags the Worker's still accepts it.
@@ -68,13 +98,20 @@ export const MPC_SIGN_DEPOSIT = "1";
  * The NEAR function call the Provider's wallet sends to have the MPC signer
  * sign a Sweep: `<contractId>.sign({ request })` with `gas` and `deposit`
  * (yoctoNEAR), from the Provider Account. The derivation path and domain
- * are the EVM Receiving Address's, so the signature is that address's.
+ * are the source Receiving Address's, so the signature is that address's:
+ * an ECDSA signature of a 32-byte hash (`Ecdsa`, hex) for the EVM one, an
+ * Ed25519 signature of the transaction message (`Eddsa`, hex) for the
+ * Solana one.
  */
 export type MpcSignRequest = {
   contractId: string;
   methodName: "sign";
   args: {
-    request: { payload_v2: { Ecdsa: string }; path: string; domain_id: number };
+    request: {
+      payload_v2: { Ecdsa: string } | { Eddsa: string };
+      path: string;
+      domain_id: number;
+    };
   };
   gas: string;
   deposit: string;
@@ -88,7 +125,8 @@ export type SweepPlanRejection =
   | "below_minimum"
   | "daily_cap_reached"
   | "balance_unavailable"
-  | "insufficient_balance";
+  | "insufficient_balance"
+  | "chain_unavailable";
 
 export type SweepPlan =
   | { ok: true; sweep: Sweep; signRequest: MpcSignRequest }
@@ -97,8 +135,16 @@ export type SweepPlan =
 const SweepPlanInputSchema = z.object({
   network: z.string(),
   amount: z.string().regex(/^\d+$/, "The amount must be a whole number of USDC base units"),
-  destination: EvmAddressSchema,
+  destination: z.string(),
 });
+
+/** What planning a Sweep reads: D1, balances, and for Solana the chain and Herald's chain queue. */
+export type SweepPlanDeps = {
+  db: Db;
+  readUsdcBalance: UsdcBalanceReader;
+  readSolana: SolanaSweepReader;
+  solanaQueue: Pick<SolanaSweepQueue, "feePayer">;
+};
 
 const transferWithAuthorizationTypes = {
   TransferWithAuthorization: [
@@ -113,14 +159,21 @@ const transferWithAuthorizationTypes = {
 
 /**
  * Plans a same-chain Sweep of `amount` USDC (base units) from a Provider's
- * EVM Receiving Address on `network` to `destination` on that network, and
- * records it as `planned`. The plan is an EIP-3009
- * `transferWithAuthorization` valid for `SWEEP_VALIDITY_SECONDS`, and
- * `signRequest` is the NEAR call that has the MPC signer sign its EIP-712
- * hash for the Receiving Address. `now` defaults to the current time.
+ * Receiving Address on `network` to `destination` on that network, and
+ * records it as `planned`. `signRequest` is the NEAR call that has the MPC
+ * signer sign it for the Receiving Address. `now` defaults to the current
+ * time.
+ *
+ * - EVM: an EIP-3009 `transferWithAuthorization` valid for
+ *   `SWEEP_VALIDITY_SECONDS`; the MPC signer signs its EIP-712 hash.
+ * - Solana: an SPL `TransferChecked` between the USDC token accounts, with
+ *   Herald's Solana gas wallet as fee payer, creating the destination's
+ *   token account first (Herald paying the rent) if it has none. It uses a
+ *   recent blockhash, so it must be signed within about
+ *   `SOLANA_SWEEP_VALIDITY_SECONDS`; the MPC signer signs its message.
  */
 export async function planSweep(
-  deps: { db: Db; readUsdcBalance: UsdcBalanceReader },
+  deps: SweepPlanDeps,
   input: {
     providerId: number;
     env: HeraldEnv;
@@ -134,12 +187,21 @@ export async function planSweep(
   if (!parsed.success) {
     return reject("invalid_request", parsed.error.issues[0]?.message ?? "Invalid Sweep.");
   }
-  const { amount, destination } = parsed.data;
+  const { amount } = parsed.data;
   const network = networkRegistry[input.env].find((n) => n.caip2 === parsed.data.network);
-  if (network?.kind !== "evm") {
+  if (!network) {
     return reject(
       "unsupported_network",
-      `${parsed.data.network} is not an EVM network Herald lists on ${input.env}.`,
+      `${parsed.data.network} is not a network Herald lists on ${input.env}.`,
+    );
+  }
+  const destination = parseDestination(parsed.data.destination.trim(), network);
+  if (!destination) {
+    return reject(
+      "invalid_request",
+      network.kind === "evm"
+        ? "Enter an EVM address: 0x and 40 hex characters."
+        : "Enter a Solana wallet address.",
     );
   }
   const [row] = await deps.db.select().from(providers).where(eq(providers.id, input.providerId));
@@ -168,11 +230,12 @@ export async function planSweep(
     return reject("daily_cap_reached", dailyCapMessage);
   }
 
-  // A transfer of more than the balance would revert, with Herald paying
-  // the gas.
+  // A transfer of more than the balance would fail, with Herald paying the
+  // fee.
+  const owner = receivingAddressOn(provider, network);
   let balance: string;
   try {
-    balance = await deps.readUsdcBalance({ network, owner: provider.evmAddress });
+    balance = await deps.readUsdcBalance({ network, owner });
   } catch (error) {
     console.warn(
       JSON.stringify({
@@ -194,16 +257,11 @@ export async function planSweep(
     );
   }
 
-  const nowSeconds = Math.floor(now.getTime() / 1000);
-  const validAfter = nowSeconds - VALID_AFTER_SKEW_SECONDS;
-  const validBefore = nowSeconds + SWEEP_VALIDITY_SECONDS;
-  const { nonce, hash } = authorizationPayload(network, {
-    from: provider.evmAddress,
-    to: destination,
-    value: BigInt(amount),
-    validAfter: BigInt(validAfter),
-    validBefore: BigInt(validBefore),
-  });
+  const plan =
+    network.kind === "evm"
+      ? planEvmColumns({ provider, network, amount, destination, now })
+      : await planSolanaColumns(deps, { provider, network, amount, destination, now });
+  if (!plan.ok) return plan;
 
   const [inserted] = await deps.db
     .insert(sweeps)
@@ -215,17 +273,172 @@ export async function planSweep(
       destinationKind: "same_chain",
       destinationNetwork: network.caip2,
       destinationAddress: destination,
+      status: "planned",
+      createdAt: now,
+      updatedAt: now,
+      ...plan.row,
+    })
+    .returning();
+  const sweep = SweepSchema.parse(inserted);
+  return { ok: true, sweep, signRequest: signRequestFor(input.env, sweep) };
+}
+
+/** A Sweep's chain-specific columns, as planning fills them in. */
+type PlannedColumns =
+  | {
+      sourceKind: "evm";
+      authorizationNonce: Hex;
+      validAfter: number;
+      validBefore: number;
+      payloadHash: Hex;
+    }
+  | {
+      sourceKind: "solana";
+      solanaTransaction: string;
+      lastValidBlockHeight: number;
+      validBefore: number;
+    };
+
+type PlannedRow =
+  | { ok: true; row: PlannedColumns }
+  | { ok: false; reason: SweepPlanRejection; message: string };
+
+type PlanContext<N extends Network> = {
+  provider: Provider;
+  network: N;
+  amount: string;
+  destination: string;
+  now: Date;
+};
+
+function planEvmColumns({
+  provider,
+  network,
+  amount,
+  destination,
+  now,
+}: PlanContext<EvmNetwork>): PlannedRow {
+  const nowSeconds = Math.floor(now.getTime() / 1000);
+  const validAfter = nowSeconds - VALID_AFTER_SKEW_SECONDS;
+  const validBefore = nowSeconds + SWEEP_VALIDITY_SECONDS;
+  const { nonce, hash } = authorizationPayload(network, {
+    from: provider.evmAddress,
+    to: destination,
+    value: BigInt(amount),
+    validAfter: BigInt(validAfter),
+    validBefore: BigInt(validBefore),
+  });
+  return {
+    ok: true,
+    row: {
+      sourceKind: "evm",
       authorizationNonce: nonce,
       validAfter,
       validBefore,
       payloadHash: hash,
-      status: "planned",
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
-  const sweep = SweepSchema.parse(inserted);
-  return { ok: true, sweep, signRequest: signRequestFor(input.env, hash) };
+    },
+  };
+}
+
+/**
+ * Reads what the Solana transaction needs (Herald's fee payer, whether the
+ * destination is a wallet and has a USDC token account, a recent blockhash)
+ * and builds it.
+ */
+async function planSolanaColumns(
+  deps: Pick<SweepPlanDeps, "readSolana" | "solanaQueue">,
+  { provider, network, amount, destination, now }: PlanContext<SolanaNetwork>,
+): Promise<PlannedRow> {
+  let feePayer: string;
+  let destinationOwner: string | null;
+  let tokenAccountExists: boolean;
+  try {
+    const destinationTokenAccount = await usdcTokenAccount(destination, network.usdc.address);
+    [feePayer, destinationOwner, tokenAccountExists] = await Promise.all([
+      deps.solanaQueue.feePayer(network.caip2),
+      deps.readSolana.accountOwner({ network, account: destination }),
+      deps.readSolana
+        .accountOwner({ network, account: destinationTokenAccount })
+        .then((owner) => owner !== null),
+    ]);
+  } catch (error) {
+    return chainUnavailable(provider, network, error);
+  }
+  if (destination === feePayer) {
+    return reject(
+      "invalid_destination",
+      `That's Herald's fee payer on ${network.label}. Sweep to an address you control.`,
+    );
+  }
+  // USDC sent to a token account's own token account can't be moved again.
+  if (
+    destinationOwner === TOKEN_PROGRAM_ADDRESS ||
+    destinationOwner === TOKEN_2022_PROGRAM_ADDRESS
+  ) {
+    return reject(
+      "invalid_destination",
+      `${destination} is a token account or mint, not a wallet. Enter the wallet address that should receive the USDC.`,
+    );
+  }
+
+  // Read last, so the transaction has as much of its blockhash's lifetime
+  // left as possible.
+  let blockhash: { blockhash: string; lastValidBlockHeight: number };
+  try {
+    blockhash = await deps.readSolana.latestBlockhash({ network });
+  } catch (error) {
+    return chainUnavailable(provider, network, error);
+  }
+  const solanaTransaction = await buildSolanaSweepTransaction({
+    feePayer,
+    owner: provider.solanaAddress,
+    destination,
+    mint: network.usdc.address,
+    decimals: network.usdc.decimals,
+    amount: BigInt(amount),
+    createTokenAccount: !tokenAccountExists,
+    ...blockhash,
+  });
+  return {
+    ok: true,
+    row: {
+      sourceKind: "solana",
+      solanaTransaction,
+      lastValidBlockHeight: blockhash.lastValidBlockHeight,
+      validBefore: Math.floor(now.getTime() / 1000) + SOLANA_SWEEP_VALIDITY_SECONDS,
+    },
+  };
+}
+
+function chainUnavailable(provider: Provider, network: Network, error: unknown): PlannedRow {
+  console.warn(
+    JSON.stringify({
+      event: "sweep_chain_read_failed",
+      providerId: provider.id,
+      network: network.caip2,
+      error: String(error),
+    }),
+  );
+  return reject(
+    "chain_unavailable",
+    `Herald couldn't reach ${network.label} to plan the Sweep. Try again later.`,
+  );
+}
+
+/** A Provider's Receiving Address on `network`. */
+function receivingAddressOn(provider: Provider, network: Network): string {
+  return network.kind === "evm" ? provider.evmAddress : provider.solanaAddress;
+}
+
+/**
+ * `destination` as an address on `network`'s chain, or null if it isn't
+ * one: 0x and 40 hex characters on EVM, a base58 32-byte key on Solana.
+ */
+function parseDestination(destination: string, network: Network): string | null {
+  if (network.kind === "evm") {
+    return EvmAddressSchema.safeParse(destination).success ? destination : null;
+  }
+  return isAddress(destination) ? destination : null;
 }
 
 /**
@@ -287,8 +500,12 @@ export type EvmReceiptReader = (request: {
 export type SweepDeps = {
   db: Db;
   readNearTransaction: NearTransactionReader;
+  /** EVM: Herald's chain queue, and transfer receipts. */
   submitSweep: EvmSweepSubmitter;
   readReceipt: EvmReceiptReader;
+  /** Solana: the chain, and Herald's chain queue. */
+  readSolana: SolanaSweepReader;
+  solanaQueue: Pick<SolanaSweepQueue, "submitSweep">;
 };
 
 export type SweepCompletionRejection = "invalid_request" | "unknown_sweep" | "near_tx_mismatch";
@@ -355,6 +572,8 @@ export async function completeSweep(
     }
     sweep = await readSweep(deps.db, sweep.id);
   }
+  // Expired before this signing transaction came in: say why it failed.
+  if (sweep.status === "failed" && sweep.nearTxHash === null) return { ok: true, sweep };
   if (sweep.nearTxHash !== nearTxHash) {
     return {
       ok: false,
@@ -369,12 +588,14 @@ export async function completeSweep(
 }
 
 /**
- * One chain a Provider can Sweep from: its EVM Receiving Address, the USDC
- * balance there (or why it couldn't be read), and the minimum Sweep in base
- * units, null if Herald has none for the chain (it can't Sweep there).
+ * One chain a Provider can Sweep from: its Receiving Address there (the
+ * EVM one on every EVM chain), the USDC balance there (or why it couldn't
+ * be read), and the minimum Sweep in base units, null if Herald has none
+ * for the chain (it can't Sweep there).
  */
 export type SweepChainOption = {
   network: Caip2;
+  kind: Network["kind"];
   label: string;
   address: string;
   balance: { ok: true; amount: string } | { ok: false; message: string };
@@ -382,7 +603,7 @@ export type SweepChainOption = {
 };
 
 export type SweepOptions = {
-  /** The EVM networks of the Herald environment, in Payment Option order. */
+  /** The networks of the Herald environment, in Payment Option order. */
   chains: SweepChainOption[];
   /** Sweeps Herald submitted for the Provider in the last 24 hours. */
   submittedToday: number;
@@ -390,7 +611,7 @@ export type SweepOptions = {
 };
 
 /**
- * What a Provider can Sweep now: every EVM chain of `env` with the live
+ * What a Provider can Sweep now: every chain of `env` with the live
  * balance (see `getProviderBalances`) and the minimum, and how much of the
  * daily cap is used. Null if no Provider has this id.
  */
@@ -403,10 +624,11 @@ export async function getSweepOptions(
   const chains: SweepChainOption[] = [];
   for (const network of networkRegistry[input.env]) {
     const read = balances.find((b) => b.network === network.caip2);
-    if (network.kind !== "evm" || !read) continue;
+    if (!read) continue;
     const minimum = await getSweepMinimum(deps.db, network);
     chains.push({
       network: network.caip2,
+      kind: network.kind,
       label: network.label,
       address: read.address,
       balance: read.ok ? { ok: true, amount: read.amount } : { ok: false, message: read.message },
@@ -511,7 +733,12 @@ function sweepEntry(env: HeraldEnv, sweep: Sweep): SweepEntry {
 // can no longer execute, so the Sweep has failed.
 const UNMINED_GRACE_SECONDS = 5 * 60;
 
-type SweepContext = { provider: Provider; sweep: Sweep; env: HeraldEnv; now?: Date };
+type SweepContext<S extends Sweep = Sweep> = {
+  provider: Provider;
+  sweep: S;
+  env: HeraldEnv;
+  now?: Date;
+};
 
 /** Moves a Sweep on from where it stands, as far as it can go now. */
 async function advance(deps: SweepDeps, context: SweepContext): Promise<Sweep> {
@@ -520,26 +747,45 @@ async function advance(deps: SweepDeps, context: SweepContext): Promise<Sweep> {
   switch (sweep.status) {
     case "planned":
       if (nowSeconds < sweep.validBefore) return sweep;
-      return fail(deps.db, sweep, "It wasn't signed before its authorization expired.");
-    case "awaiting_signature":
+      return fail(deps.db, sweep, `It wasn't signed before its ${expiryOf(sweep)} expired.`);
+    case "awaiting_signature": {
       if (nowSeconds >= sweep.validBefore) {
         return fail(
           deps.db,
           sweep,
-          "The MPC signature didn't arrive before the authorization expired. Start a new Sweep.",
+          `The MPC signature didn't arrive before the ${expiryOf(sweep)} expired. Start a new Sweep.`,
         );
       }
-      return awaitSignature(deps, context);
+      const signature = await readMpcSignature(deps, context);
+      if (signature === "pending") return sweep;
+      if (signature.ok === false) return fail(deps.db, sweep, signature.error);
+      if (
+        (await sweepsSubmittedInLastDay(deps.db, sweep.providerId, context.now ?? new Date())) >=
+        SWEEP_DAILY_CAP
+      ) {
+        return fail(deps.db, sweep, dailyCapMessage);
+      }
+      return sweep.sourceKind === "evm"
+        ? submitEvmSweep(deps, { ...context, sweep }, signature.successValue)
+        : submitSolanaSweep(deps, { ...context, sweep }, signature.successValue);
+    }
     case "submitted":
-      return awaitReceipt(deps, context, nowSeconds);
+      return sweep.sourceKind === "evm"
+        ? awaitReceipt(deps, { ...context, sweep }, nowSeconds)
+        : awaitSolanaTransaction(deps, { ...context, sweep });
     default:
       return sweep;
   }
 }
 
+/** What `validBefore` is the expiry of, for messages. */
+function expiryOf(sweep: Sweep): string {
+  return sweep.sourceKind === "evm" ? "authorization" : "transaction's blockhash";
+}
+
 async function awaitReceipt(
   deps: SweepDeps,
-  { sweep, env }: SweepContext,
+  { sweep, env }: SweepContext<EvmSweep>,
   nowSeconds: number,
 ): Promise<Sweep> {
   const network = networkRegistry[env].find((n) => n.caip2 === sweep.sourceNetwork);
@@ -551,14 +797,7 @@ async function awaitReceipt(
     logSweep("sweep_receipt_read_failed", sweep, { error: String(error) }, "warn");
     return sweep;
   }
-  if (receipt === "success") {
-    await deps.db
-      .update(sweeps)
-      .set({ status: "confirmed", updatedAt: new Date() })
-      .where(and(eq(sweeps.id, sweep.id), eq(sweeps.status, "submitted")));
-    logSweep("sweep_confirmed", sweep, { sourceTxHash: sweep.sourceTxHash });
-    return readSweep(deps.db, sweep.id);
-  }
+  if (receipt === "success") return confirm(deps.db, sweep);
   if (receipt === "reverted") {
     return fail(deps.db, sweep, `The transfer reverted on ${network.label}.`);
   }
@@ -572,9 +811,60 @@ async function awaitReceipt(
   return sweep;
 }
 
-async function awaitSignature(deps: SweepDeps, context: SweepContext): Promise<Sweep> {
-  const { provider, sweep } = context;
-  if (!sweep.nearTxHash) return sweep;
+/**
+ * Reads whether a submitted Solana transaction landed. One that hasn't
+ * fails only once the chain is past its last valid block height, and its
+ * status is read again after the height so it can't have landed between
+ * the two reads.
+ */
+async function awaitSolanaTransaction(
+  deps: SweepDeps,
+  { sweep, env }: SweepContext<SolanaSweep>,
+): Promise<Sweep> {
+  const network = networkRegistry[env].find((n) => n.caip2 === sweep.sourceNetwork);
+  const signature = sweep.sourceTxHash;
+  if (!network || !signature) return sweep;
+  let status: "success" | "failed" | null;
+  try {
+    status = await deps.readSolana.signatureStatus({ network, signature });
+    if (status === null) {
+      const height = await deps.readSolana.blockHeight({ network });
+      if (height <= sweep.lastValidBlockHeight) return sweep;
+      status = await deps.readSolana.signatureStatus({ network, signature });
+    }
+  } catch (error) {
+    logSweep("sweep_solana_status_read_failed", sweep, { error: String(error) }, "warn");
+    return sweep;
+  }
+  if (status === "success") return confirm(deps.db, sweep);
+  if (status === "failed") return fail(deps.db, sweep, `The transfer failed on ${network.label}.`);
+  // Not landed, and past the last block height it could land at.
+  return fail(
+    deps.db,
+    sweep,
+    `The transfer didn't land on ${network.label} before its blockhash expired.`,
+  );
+}
+
+async function confirm(db: Db, sweep: Sweep): Promise<Sweep> {
+  await db
+    .update(sweeps)
+    .set({ status: "confirmed", updatedAt: new Date() })
+    .where(and(eq(sweeps.id, sweep.id), eq(sweeps.status, "submitted")));
+  logSweep("sweep_confirmed", sweep, { sourceTxHash: sweep.sourceTxHash });
+  return readSweep(db, sweep.id);
+}
+
+/**
+ * The MPC signer's answer in a Sweep's NEAR transaction: `pending` while
+ * NEAR doesn't have it yet (or can't be read), the `SuccessValue` once the
+ * transaction succeeded, or why the Sweep fails.
+ */
+async function readMpcSignature(
+  deps: SweepDeps,
+  { provider, sweep }: SweepContext,
+): Promise<"pending" | { ok: true; successValue: string } | { ok: false; error: string }> {
+  if (!sweep.nearTxHash) return "pending";
   let outcome: NearTransactionOutcome | null;
   try {
     outcome = await deps.readNearTransaction({
@@ -583,36 +873,38 @@ async function awaitSignature(deps: SweepDeps, context: SweepContext): Promise<S
     });
   } catch (error) {
     logSweep("sweep_near_read_failed", sweep, { error: String(error) }, "warn");
-    return sweep;
+    return "pending";
   }
-  if (!outcome) return sweep;
+  if (!outcome) return "pending";
 
   const status = outcome.status as { SuccessValue?: unknown; Failure?: unknown } | null;
   if (status?.Failure !== undefined) {
     logSweep("sweep_near_tx_failed", sweep, { failure: status.Failure }, "warn");
-    return fail(
-      deps.db,
-      sweep,
-      `NEAR transaction ${sweep.nearTxHash} failed, so the MPC signer didn't sign this Sweep.`,
-    );
+    return {
+      ok: false,
+      error: `NEAR transaction ${sweep.nearTxHash} failed, so the MPC signer didn't sign this Sweep.`,
+    };
   }
-  if (typeof status?.SuccessValue !== "string") return sweep;
-  const signature = parseMpcSignature(status.SuccessValue);
+  if (typeof status?.SuccessValue !== "string") return "pending";
+  return { ok: true, successValue: status.SuccessValue };
+}
+
+function notYourSignature(sweep: Sweep): string {
+  return `The signature in NEAR transaction ${sweep.nearTxHash} isn't your Receiving Address's signature of this Sweep.`;
+}
+
+/** Checks the MPC signer's ECDSA signature and submits the signed transfer through the EVM chain queue. */
+async function submitEvmSweep(
+  deps: SweepDeps,
+  context: SweepContext<EvmSweep>,
+  successValue: string,
+): Promise<Sweep> {
+  const { provider, sweep } = context;
+  const signature = parseMpcSignature(successValue);
   if (!signature) return fail(deps.db, sweep, "The MPC signer's answer isn't an ECDSA signature.");
   const signer = await recoverAddress({ hash: sweep.payloadHash as Hex, signature });
   if (signer.toLowerCase() !== provider.evmAddress.toLowerCase()) {
-    return fail(
-      deps.db,
-      sweep,
-      `The signature in NEAR transaction ${sweep.nearTxHash} isn't your Receiving Address's signature of this Sweep.`,
-    );
-  }
-
-  if (
-    (await sweepsSubmittedInLastDay(deps.db, provider.id, context.now ?? new Date())) >=
-    SWEEP_DAILY_CAP
-  ) {
-    return fail(deps.db, sweep, dailyCapMessage);
+    return fail(deps.db, sweep, notYourSignature(sweep));
   }
 
   const data = encodeFunctionData({
@@ -646,18 +938,73 @@ async function awaitSignature(deps: SweepDeps, context: SweepContext): Promise<S
   if (!submitted.ok) {
     return fail(deps.db, sweep, `Herald couldn't submit the transfer: ${submitted.message}`);
   }
+  return markSubmitted(deps.db, context, submitted.hash);
+}
+
+/**
+ * Checks the MPC signer's Ed25519 signature of the planned transaction's
+ * message against the Solana Receiving Address, and hands the transaction,
+ * signed by it, to the Solana chain queue, which adds the fee payer's
+ * signature and sends it.
+ */
+async function submitSolanaSweep(
+  deps: SweepDeps,
+  context: SweepContext<SolanaSweep>,
+  successValue: string,
+): Promise<Sweep> {
+  const { provider, sweep } = context;
+  const signature = parseMpcEd25519Signature(successValue);
+  if (!signature) {
+    return fail(deps.db, sweep, "The MPC signer's answer isn't an Ed25519 signature.");
+  }
+  const message = solanaTransactionMessage(sweep.solanaTransaction);
+  // Strict RFC 8032 verification: whatever passes it, Solana accepts.
+  const valid = ed25519.verify(signature, message, base58.decode(provider.solanaAddress), {
+    zip215: false,
+  });
+  const transaction = valid
+    ? withSolanaSignature(sweep.solanaTransaction, provider.solanaAddress, signature)
+    : null;
+  if (!transaction) return fail(deps.db, sweep, notYourSignature(sweep));
+
+  let submitted: SolanaSweepSubmissionResult;
+  try {
+    submitted = await deps.solanaQueue.submitSweep({ network: sweep.sourceNetwork, transaction });
+  } catch (error) {
+    // Safe to submit again: the queue answers the same signature for the
+    // same transaction.
+    logSweep("sweep_submission_unanswered", sweep, { error: String(error) }, "warn");
+    return sweep;
+  }
+  if (!submitted.ok) {
+    return fail(deps.db, sweep, `Herald couldn't submit the transfer: ${submitted.message}`);
+  }
+  return markSubmitted(deps.db, context, submitted.signature);
+}
+
+async function markSubmitted(db: Db, context: SweepContext, sourceTxHash: string): Promise<Sweep> {
+  const { sweep } = context;
   const now = context.now ?? new Date();
-  await deps.db
+  await db
     .update(sweeps)
-    .set({ status: "submitted", sourceTxHash: submitted.hash, submittedAt: now, updatedAt: now })
+    .set({ status: "submitted", sourceTxHash, submittedAt: now, updatedAt: now })
     .where(and(eq(sweeps.id, sweep.id), eq(sweeps.status, "awaiting_signature")));
-  logSweep("sweep_submitted", sweep, { sourceTxHash: submitted.hash });
-  return readSweep(deps.db, sweep.id);
+  logSweep("sweep_submitted", sweep, { sourceTxHash });
+  return readSweep(db, sweep.id);
 }
 
 const transferWithAuthorizationAbi = parseAbi([
   "function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)",
 ]);
+
+/** The MPC signer's answer (base64 JSON, as NEAR returns it), or undefined if it isn't JSON. */
+function decodeMpcAnswer(successValue: string): unknown {
+  try {
+    return JSON.parse(new TextDecoder().decode(base64.decode(successValue)));
+  } catch {
+    return undefined;
+  }
+}
 
 const MpcSignatureSchema = z.object({
   scheme: z.literal("Secp256k1"),
@@ -672,13 +1019,7 @@ const MpcSignatureSchema = z.object({
  * already low-s, and `recovery_id` is the y parity. Null if it isn't one.
  */
 function parseMpcSignature(successValue: string): { r: Hex; s: Hex; yParity: 0 | 1 } | null {
-  let json: unknown;
-  try {
-    json = JSON.parse(new TextDecoder().decode(base64.decode(successValue)));
-  } catch {
-    return null;
-  }
-  const parsed = MpcSignatureSchema.safeParse(json);
+  const parsed = MpcSignatureSchema.safeParse(decodeMpcAnswer(successValue));
   if (!parsed.success) return null;
   const { big_r, s, recovery_id } = parsed.data;
   return {
@@ -686,6 +1027,19 @@ function parseMpcSignature(successValue: string): { r: Hex; s: Hex; yParity: 0 |
     s: `0x${s.scalar.toLowerCase()}`,
     yParity: recovery_id,
   };
+}
+
+// Shape read from mainnet `v1.signer` tx CLhgqus9hkSPMu93UdTw6oUj71Rg9KWbNiPQn1psNAo1:
+// `{"scheme":"Ed25519","signature":[143,213,…]}`, the 64 signature bytes.
+const MpcEd25519SignatureSchema = z.object({
+  scheme: z.literal("Ed25519"),
+  signature: z.array(z.number().int().min(0).max(255)).length(64),
+});
+
+/** The MPC signer's answer to an EdDSA `sign` as the 64 signature bytes, or null if it isn't one. */
+function parseMpcEd25519Signature(successValue: string): Uint8Array | null {
+  const parsed = MpcEd25519SignatureSchema.safeParse(decodeMpcAnswer(successValue));
+  return parsed.success ? Uint8Array.from(parsed.data.signature) : null;
 }
 
 async function fail(db: Db, sweep: Sweep, error: string): Promise<Sweep> {
@@ -813,21 +1167,32 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 /**
  * Why `destination` can't receive a Sweep on `network`, or null if it can.
- * Sending to the Receiving Address itself does nothing, and USDC sent to
- * the zero address or the USDC contract is lost.
+ * Sending to the Receiving Address itself does nothing. On EVM, USDC sent
+ * to the zero address or the USDC contract is lost; on Solana, so is USDC
+ * sent to the USDC mint or the System Program. (Planning a Solana Sweep
+ * also refuses token accounts and Herald's fee payer, which it reads from
+ * the chain.)
  */
 function checkDestination(
   destination: string,
   provider: Provider,
   network: Network,
 ): string | null {
+  const lost = `USDC sent to ${destination} on ${network.label} is lost. Sweep to an address you control.`;
+  if (network.kind === "solana") {
+    if (destination === provider.solanaAddress) {
+      return "That's your Receiving Address. Sweep to another address.";
+    }
+    if (destination === network.usdc.address || destination === SYSTEM_PROGRAM_ADDRESS) {
+      return lost;
+    }
+    return null;
+  }
   const to = destination.toLowerCase();
   if (to === provider.evmAddress.toLowerCase()) {
     return "That's your Receiving Address. Sweep to another address.";
   }
-  if (to === ZERO_ADDRESS || to === network.usdc.address.toLowerCase()) {
-    return `USDC sent to ${destination} on ${network.label} is lost. Sweep to an address you control.`;
-  }
+  if (to === ZERO_ADDRESS || to === network.usdc.address.toLowerCase()) return lost;
   return null;
 }
 
@@ -854,7 +1219,7 @@ const SECP256K1_P = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffeff
  * `TransferWithAuthorization` it makes, under the network's USDC domain.
  */
 function authorizationPayload(
-  network: Extract<Network, { kind: "evm" }>,
+  network: EvmNetwork,
   message: { from: string; to: string; value: bigint; validAfter: bigint; validBefore: bigint },
 ): { nonce: Hex; hash: Hex } {
   for (;;) {
@@ -875,14 +1240,21 @@ function authorizationPayload(
   }
 }
 
-function signRequestFor(env: HeraldEnv, payloadHash: Hex): MpcSignRequest {
-  const { path, domainId } = receivingAddressPaths.evm;
+/**
+ * The MPC `sign` call for a planned Sweep, on the source Receiving
+ * Address's derivation path and domain: the EIP-712 hash for an EVM Sweep
+ * (ECDSA), the transaction message for a Solana one (EdDSA).
+ */
+function signRequestFor(env: HeraldEnv, sweep: Sweep): MpcSignRequest {
+  const { path, domainId } = receivingAddressPaths[sweep.sourceKind];
+  const payload =
+    sweep.sourceKind === "evm"
+      ? { Ecdsa: sweep.payloadHash.slice(2) }
+      : { Eddsa: bytesToHex(solanaTransactionMessage(sweep.solanaTransaction)).slice(2) };
   return {
     contractId: mpcSigners[env].contractId,
     methodName: "sign",
-    args: {
-      request: { payload_v2: { Ecdsa: payloadHash.slice(2) }, path, domain_id: domainId },
-    },
+    args: { request: { payload_v2: payload, path, domain_id: domainId } },
     gas: MPC_SIGN_GAS,
     deposit: MPC_SIGN_DEPOSIT,
   };
@@ -905,6 +1277,9 @@ function formatUsdc(baseUnits: string): string {
   return fraction ? `${whole}.${fraction}` : whole;
 }
 
-function reject(reason: SweepPlanRejection, message: string): SweepPlan {
+function reject(
+  reason: SweepPlanRejection,
+  message: string,
+): { ok: false; reason: SweepPlanRejection; message: string } {
   return { ok: false, reason, message };
 }

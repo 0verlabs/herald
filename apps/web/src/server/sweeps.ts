@@ -6,8 +6,10 @@ import {
   planSweep,
   refreshSweeps,
   rpcEvmReceiptReader,
+  rpcSolanaSweepReader,
   rpcUsdcBalanceReader,
   type SweepDeps,
+  type SweepPlanDeps,
 } from "@herald/core/server";
 import { createDb } from "@herald/db";
 import { redirect } from "@tanstack/react-router";
@@ -17,6 +19,7 @@ import { z } from "zod";
 import { requireSession } from "./auth";
 import { evmSweepSubmitter } from "./evm-chain-queue";
 import { readHeraldEnv } from "./herald-env";
+import { solanaSweepQueue } from "./solana-chain-queue";
 
 // Every `env` read stays inside a server function or `createServerOnlyFn`
 // (see herald-env.ts).
@@ -24,15 +27,29 @@ import { readHeraldEnv } from "./herald-env";
 const readUsdcBalance = createServerOnlyFn(() => rpcUsdcBalanceReader(rpcUrlsFrom(env)));
 
 /**
+ * What planning a Sweep reads: D1, balances, and for Solana the chain
+ * (`SOLANA_RPC_URL`) and the facilitator's Solana chain queue (its fee
+ * payer).
+ */
+const planDeps = createServerOnlyFn((): SweepPlanDeps => ({
+  db: createDb(env.DB),
+  readUsdcBalance: readUsdcBalance(),
+  readSolana: rpcSolanaSweepReader(rpcUrlsFrom(env)),
+  solanaQueue: solanaSweepQueue(),
+}));
+
+/**
  * What completing and following Sweeps reads and writes: D1, the MPC
- * signature on NEAR (`NEAR_RPC_URL`), the facilitator's EVM chain queue and
- * each chain's receipts (`<CHAIN>_RPC_URL`).
+ * signature on NEAR (`NEAR_RPC_URL`), the facilitator's chain queues and
+ * each chain's receipts or signature statuses (`<CHAIN>_RPC_URL`).
  */
 const sweepDeps = createServerOnlyFn((): SweepDeps => ({
   db: createDb(env.DB),
   readNearTransaction: nearRpcTransactionReader(env.NEAR_RPC_URL),
   submitSweep: evmSweepSubmitter(),
   readReceipt: rpcEvmReceiptReader(rpcUrlsFrom(env)),
+  readSolana: rpcSolanaSweepReader(rpcUrlsFrom(env)),
+  solanaQueue: solanaSweepQueue(),
 }));
 
 /**
@@ -74,10 +91,11 @@ export const startSweep = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ context, data }) => {
-    const plan = await planSweep(
-      { db: createDb(env.DB), readUsdcBalance: readUsdcBalance() },
-      { providerId: context.session.providerId, env: readHeraldEnv(), ...data },
-    );
+    const plan = await planSweep(planDeps(), {
+      providerId: context.session.providerId,
+      env: readHeraldEnv(),
+      ...data,
+    });
     if (!plan.ok) {
       console.warn(
         JSON.stringify({

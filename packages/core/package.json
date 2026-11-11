@@ -17,6 +17,8 @@
     "@noble/curves": "catalog:",
     "@noble/hashes": "catalog:",
     "@scure/base": "catalog:",
+    "@solana-program/token": "catalog:",
+    "@solana/kit": "catalog:",
     "drizzle-orm": "catalog:",
     "viem": "catalog:",
     "zod": "catalog:"

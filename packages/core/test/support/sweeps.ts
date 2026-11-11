@@ -1,4 +1,8 @@
 import { createDb, providers } from "@herald/db";
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { hexToBytes } from "@noble/curves/utils.js";
+import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
+import { address } from "@solana/kit";
 import { base58, base64 } from "@scure/base";
 import { env } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
@@ -17,30 +21,35 @@ import type {
   MpcSignRequest,
   NearTransactionOutcome,
   NearTransactionReader,
+  SolanaSweepQueue,
+  SolanaSweepReader,
+  SolanaSweepSubmission,
   UsdcBalanceReader,
 } from "../../src/server/index.ts";
 
 const db = () => createDb(env.DB);
 
+/** A fresh ed25519 key and its Solana address. */
+export function solanaKeyPair(): { secretKey: Uint8Array; address: SolanaAddress } {
+  const secretKey = ed25519.utils.randomSecretKey();
+  return { secretKey, address: base58.encode(ed25519.getPublicKey(secretKey)) };
+}
+
 /**
- * A testnet Provider whose EVM Receiving Address belongs to a throwaway key
- * the test holds, standing in for the key the MPC network derives for the
- * Provider Account. Its row is written directly: `registerProvider` would
- * derive an address from the real MPC root key, which no test can sign for.
+ * A testnet Provider whose Receiving Addresses belong to throwaway keys the
+ * test holds (`receivingKey` on EVM, `solanaKey` on Solana), standing in for
+ * the keys the MPC network derives for the Provider Account. Its row is
+ * written directly: `registerProvider` would derive addresses from the real
+ * MPC root keys, which no test can sign for.
  */
 export async function sweepingProvider(accountId: string) {
   const receivingKey = generatePrivateKey();
   const evmAddress = privateKeyToAccount(receivingKey).address.toLowerCase() as EvmAddress;
-  await db()
-    .insert(providers)
-    .values({
-      accountId,
-      evmAddress,
-      solanaAddress: "11111111111111111111111111111112" as SolanaAddress,
-    });
+  const solana = solanaKeyPair();
+  await db().insert(providers).values({ accountId, evmAddress, solanaAddress: solana.address });
   const [row] = await db().select().from(providers).where(eq(providers.accountId, accountId));
   const provider: Provider = ProviderSchema.parse(row);
-  return { provider, receivingKey };
+  return { provider, receivingKey, solanaKey: solana.secretKey };
 }
 
 /** USDC balances keyed by owner address (any network); everyone else holds 0. */
@@ -50,6 +59,12 @@ export function usdcBalances(balances: Record<string, string>): UsdcBalanceReade
 
 /** Like NEAR RPC's `tx` result, the parts Herald reads. */
 type StoredTransaction = NearTransactionOutcome & { senderId: string };
+
+/**
+ * A key the fake MPC network signs with: a secp256k1 private key (hex) for
+ * ECDSA requests, an ed25519 secret key (bytes) for EdDSA ones.
+ */
+type MpcKey = Hex | Uint8Array;
 
 /**
  * A fake NEAR network with the MPC signer contract on it. `sign` plays a
@@ -66,8 +81,8 @@ export class FakeNear {
     signerId: string;
     request: MpcSignRequest;
     /** The key the MPC network signs with, i.e. the one derived for `signerId`. */
-    key: Hex;
-    /** Ask the MPC network to sign this payload instead of the planned one. */
+    key: MpcKey;
+    /** Ask the MPC network to sign this payload (hex) instead of the planned one. */
     payload?: Hex;
     /** Have the signing transaction fail on NEAR. */
     failure?: unknown;
@@ -75,10 +90,13 @@ export class FakeNear {
     pending?: boolean;
   }): Promise<string> {
     const { request } = input;
-    const payload = input.payload ?? (`0x${request.args.request.payload_v2.Ecdsa}` as Hex);
-    const args = {
-      request: { ...request.args.request, payload_v2: { Ecdsa: payload.slice(2) } },
-    };
+    const requested = request.args.request.payload_v2;
+    const scheme = "Ecdsa" in requested ? "Ecdsa" : "Eddsa";
+    const payload =
+      input.payload ?? (`0x${"Ecdsa" in requested ? requested.Ecdsa : requested.Eddsa}` as Hex);
+    const payloadV2 =
+      scheme === "Ecdsa" ? { Ecdsa: payload.slice(2) } : { Eddsa: payload.slice(2) };
+    const args = { request: { ...request.args.request, payload_v2: payloadV2 } };
     const txHash = base58.encode(crypto.getRandomValues(new Uint8Array(32)));
     let status: NearTransactionOutcome["status"];
     if (input.failure) status = { Failure: input.failure };
@@ -107,7 +125,7 @@ export class FakeNear {
   }
 
   /** The MPC network finishes signing a transaction `sign` left pending. */
-  async finish(txHash: string, payload: Hex, key: Hex): Promise<void> {
+  async finish(txHash: string, payload: Hex, key: MpcKey): Promise<void> {
     const stored = this.#transactions.get(txHash);
     if (stored) stored.status = { SuccessValue: await mpcAnswer(payload, key) };
   }
@@ -122,19 +140,29 @@ export class FakeNear {
 }
 
 /**
- * The MPC network's answer to an ECDSA `sign`, base64 JSON as NEAR returns
- * it: `big_r` is R in compressed form, `s` low-s normalized, and
- * `recovery_id` R's y parity. (Shape read from a live
- * `v1.signer-prod.testnet` transaction.)
+ * The MPC network's answer to a `sign` call, base64 JSON as NEAR returns it.
+ * Shapes read from live transactions: `v1.signer-prod.testnet` for ECDSA,
+ * `v1.signer` tx CLhgqus9hkSPMu93UdTw6oUj71Rg9KWbNiPQn1psNAo1 for EdDSA.
+ *
+ * - ECDSA (secp256k1 `key`): `big_r` is R in compressed form, `s` low-s
+ *   normalized, and `recovery_id` R's y parity.
+ * - EdDSA (ed25519 `key`): `signature` is the 64-byte signature of the
+ *   payload bytes, as an array of numbers.
  */
-async function mpcAnswer(payload: Hex, key: Hex): Promise<string> {
-  const signature = await sign({ hash: payload, privateKey: key });
-  const answer = {
-    scheme: "Secp256k1",
-    big_r: { affine_point: `${signature.yParity ? "03" : "02"}${signature.r.slice(2)}` },
-    s: { scalar: signature.s.slice(2) },
-    recovery_id: signature.yParity,
-  };
+async function mpcAnswer(payload: Hex, key: MpcKey): Promise<string> {
+  let answer: unknown;
+  if (typeof key === "string") {
+    const signature = await sign({ hash: payload, privateKey: key });
+    answer = {
+      scheme: "Secp256k1",
+      big_r: { affine_point: `${signature.yParity ? "03" : "02"}${signature.r.slice(2)}` },
+      s: { scalar: signature.s.slice(2) },
+      recovery_id: signature.yParity,
+    };
+  } else {
+    const signature = ed25519.sign(hexToBytes(payload.slice(2)), key);
+    answer = { scheme: "Ed25519", signature: Array.from(signature) };
+  }
   return base64.encode(new TextEncoder().encode(JSON.stringify(answer)));
 }
 
@@ -161,4 +189,97 @@ export class FakeChainQueue {
 export function fakeReceipts(receipts: Record<string, "success" | "reverted"> = {}) {
   const read: EvmReceiptReader = async ({ hash }) => receipts[hash] ?? null;
   return { receipts, read };
+}
+
+/** Solana's System Program, which owns every wallet account. */
+export const SYSTEM_PROGRAM = "11111111111111111111111111111111";
+
+/**
+ * A fake Solana network and Herald's Solana chain queue on it. `reader`
+ * answers what Herald reads from Solana RPC: accounts (by the program that
+ * owns them), the latest blockhash, the block height and signature
+ * statuses. `queue` is the chain queue: its fee payer, and Sweep
+ * submissions, which it records and answers with a transaction signature.
+ */
+export class FakeSolana {
+  readonly feePayer = solanaKeyPair().address;
+  /** The program owning each account that exists, by address. */
+  readonly accounts = new Map<string, string>();
+  /** Signature statuses: transactions not listed haven't landed. */
+  readonly statuses = new Map<string, "success" | "failed">();
+  readonly submissions: SolanaSweepSubmission[] = [];
+  blockHeight = 300_000_000;
+  /** How many blocks past the current height each new blockhash lasts. */
+  blockhashLifetime = 150;
+  /** Fail every RPC read, as when the endpoint is down. */
+  readsFail = false;
+  /** Refuse submissions with this message, as the queue does when preflight fails. */
+  refuseWith: string | null = null;
+  /** Throw instead of answering, as when the queue can't be reached. */
+  queueUnreachable = false;
+
+  /** Creates `owner`'s USDC token account on `mint` and returns its address. */
+  async addTokenAccount(owner: string, mint: string): Promise<string> {
+    const tokenAccount = await tokenAccountOf(owner, mint);
+    this.accounts.set(tokenAccount, TOKEN_PROGRAM_ADDRESS);
+    return tokenAccount;
+  }
+
+  readonly reader: SolanaSweepReader = {
+    latestBlockhash: async () => {
+      this.#read();
+      return {
+        blockhash: base58.encode(crypto.getRandomValues(new Uint8Array(32))),
+        lastValidBlockHeight: this.blockHeight + this.blockhashLifetime,
+      };
+    },
+    accountOwner: async ({ account }) => {
+      this.#read();
+      return this.accounts.get(account) ?? null;
+    },
+    blockHeight: async () => {
+      this.#read();
+      return this.blockHeight;
+    },
+    signatureStatus: async ({ signature }) => {
+      this.#read();
+      return this.statuses.get(signature) ?? null;
+    },
+  };
+
+  readonly queue: SolanaSweepQueue = {
+    feePayer: async () => {
+      if (this.queueUnreachable) throw new Error("The Solana chain queue didn't answer");
+      return this.feePayer;
+    },
+    submitSweep: async (submission) => {
+      if (this.queueUnreachable) throw new Error("The Solana chain queue didn't answer");
+      if (this.refuseWith) return { ok: false, message: this.refuseWith };
+      this.submissions.push(submission);
+      // Like the real queue: the same transaction always gets the same
+      // signature (the fee payer's, which any 64 bytes stand in for).
+      let signature = this.#signatures.get(submission.transaction);
+      if (!signature) {
+        signature = base58.encode(crypto.getRandomValues(new Uint8Array(64)));
+        this.#signatures.set(submission.transaction, signature);
+      }
+      return { ok: true, signature };
+    },
+  };
+
+  readonly #signatures = new Map<string, string>();
+
+  #read() {
+    if (this.readsFail) throw new Error("Solana Devnet RPC request failed (TypeError)");
+  }
+}
+
+/** The USDC token account (associated token account) of `owner`. */
+export async function tokenAccountOf(owner: string, mint: string): Promise<string> {
+  const [tokenAccount] = await findAssociatedTokenPda({
+    owner: address(owner),
+    mint: address(mint),
+    tokenProgram: TOKEN_PROGRAM_ADDRESS,
+  });
+  return tokenAccount;
 }

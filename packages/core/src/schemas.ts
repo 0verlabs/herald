@@ -152,15 +152,8 @@ export type SweepStatus = z.infer<typeof SweepStatusSchema>;
 
 const Hex32Schema = z.string().regex(/^0x[0-9a-f]{64}$/, "Expected 32 bytes of lowercase hex");
 
-/**
- * A Sweep: moving `amount` (base units of `asset`) out of a Provider's
- * Receiving Address on `sourceNetwork`. On EVM it is an EIP-3009
- * `transferWithAuthorization` with `authorizationNonce`, valid strictly
- * between `validAfter` and `validBefore` (Unix seconds), whose EIP-712 hash
- * is `payloadHash`. `packages/db` keeps the `sweeps` table in line with this
- * schema.
- */
-export const SweepSchema = z.object({
+/** What every Sweep records, whatever its source chain. */
+const sweepFields = {
   id: z.number().int().positive(),
   providerId: z.number().int().positive(),
   sourceNetwork: Caip2Schema,
@@ -169,10 +162,7 @@ export const SweepSchema = z.object({
   destinationKind: SweepDestinationKindSchema,
   destinationNetwork: Caip2Schema,
   destinationAddress: z.string().min(1),
-  authorizationNonce: Hex32Schema,
-  validAfter: z.number().int().nonnegative(),
   validBefore: z.number().int().positive(),
-  payloadHash: Hex32Schema,
   nearTxHash: z.string().nullable(),
   sourceTxHash: z.string().nullable(),
   status: SweepStatusSchema,
@@ -180,5 +170,43 @@ export const SweepSchema = z.object({
   createdAt: z.date(),
   updatedAt: z.date(),
   submittedAt: z.date().nullable(),
+};
+
+/**
+ * A Sweep from the EVM Receiving Address: an EIP-3009
+ * `transferWithAuthorization` with `authorizationNonce`, valid strictly
+ * between `validAfter` and `validBefore` (Unix seconds), whose EIP-712 hash
+ * is `payloadHash`. `sourceTxHash` is the transfer's transaction hash.
+ */
+export const EvmSweepSchema = z.object({
+  ...sweepFields,
+  sourceKind: z.literal("evm"),
+  authorizationNonce: Hex32Schema,
+  validAfter: z.number().int().nonnegative(),
+  payloadHash: Hex32Schema,
 });
+export type EvmSweep = z.infer<typeof EvmSweepSchema>;
+
+/**
+ * A Sweep from the Solana Receiving Address: `solanaTransaction`, an
+ * unsigned SPL transfer (base64 wire format) whose fee payer is Herald's
+ * Solana gas wallet. Its message is what the MPC signer signs. It can land
+ * up to block height `lastValidBlockHeight`, which `validBefore` (Unix
+ * seconds) estimates. `sourceTxHash` is the transaction's signature.
+ */
+export const SolanaSweepSchema = z.object({
+  ...sweepFields,
+  sourceKind: z.literal("solana"),
+  solanaTransaction: z.string().min(1),
+  lastValidBlockHeight: z.number().int().nonnegative(),
+});
+export type SolanaSweep = z.infer<typeof SolanaSweepSchema>;
+
+/**
+ * A Sweep: moving `amount` (base units of `asset`) out of a Provider's
+ * Receiving Address on `sourceNetwork`, an EVM or a Solana one
+ * (`sourceKind`). `packages/db` keeps the `sweeps` table in line with this
+ * schema: one table, with the other kind's columns null.
+ */
+export const SweepSchema = z.discriminatedUnion("sourceKind", [EvmSweepSchema, SolanaSweepSchema]);
 export type Sweep = z.infer<typeof SweepSchema>;
