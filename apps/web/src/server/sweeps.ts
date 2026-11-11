@@ -1,0 +1,119 @@
+import { rpcUrlsFrom } from "@herald/core";
+import {
+  completeSweep,
+  getSweepOptions,
+  nearRpcTransactionReader,
+  planSweep,
+  refreshSweeps,
+  rpcEvmReceiptReader,
+  rpcUsdcBalanceReader,
+  type SweepDeps,
+} from "@herald/core/server";
+import { createDb } from "@herald/db";
+import { redirect } from "@tanstack/react-router";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
+import { env } from "cloudflare:workers";
+import { z } from "zod";
+import { requireSession } from "./auth";
+import { evmSweepSubmitter } from "./evm-chain-queue";
+import { readHeraldEnv } from "./herald-env";
+
+// Every `env` read stays inside a server function or `createServerOnlyFn`
+// (see herald-env.ts).
+
+const readUsdcBalance = createServerOnlyFn(() => rpcUsdcBalanceReader(rpcUrlsFrom(env)));
+
+/**
+ * What completing and following Sweeps reads and writes: D1, the MPC
+ * signature on NEAR (`NEAR_RPC_URL`), the facilitator's EVM chain queue and
+ * each chain's receipts (`<CHAIN>_RPC_URL`).
+ */
+const sweepDeps = createServerOnlyFn((): SweepDeps => ({
+  db: createDb(env.DB),
+  readNearTransaction: nearRpcTransactionReader(env.NEAR_RPC_URL),
+  submitSweep: evmSweepSubmitter(),
+  readReceipt: rpcEvmReceiptReader(rpcUrlsFrom(env)),
+}));
+
+/**
+ * The chains the signed-in Provider can Sweep from, with live balances and
+ * minimums, and how much of the daily cap is used.
+ */
+export const getSweepChoices = createServerFn({ method: "GET" })
+  .middleware([requireSession])
+  .handler(async ({ context }) => {
+    const options = await getSweepOptions(
+      { db: createDb(env.DB), readUsdcBalance: readUsdcBalance() },
+      { providerId: context.session.providerId, env: readHeraldEnv() },
+    );
+    if (!options) throw redirect({ to: "/sign-in" });
+    return options;
+  });
+
+/**
+ * The signed-in Provider's latest Sweeps, newest first, after moving each
+ * unfinished one on as far as it goes now.
+ */
+export const listSweeps = createServerFn({ method: "GET" })
+  .middleware([requireSession])
+  .handler(async ({ context }) =>
+    refreshSweeps(sweepDeps(), { providerId: context.session.providerId, env: readHeraldEnv() }),
+  );
+
+/**
+ * Plans a same-chain Sweep and answers the NEAR call the Provider's wallet
+ * sends to have the MPC signer sign it.
+ */
+export const startSweep = createServerFn({ method: "POST" })
+  .middleware([requireSession])
+  .validator(
+    z.object({
+      network: z.string().max(64),
+      amount: z.string().max(40),
+      destination: z.string().max(64),
+    }),
+  )
+  .handler(async ({ context, data }) => {
+    const plan = await planSweep(
+      { db: createDb(env.DB), readUsdcBalance: readUsdcBalance() },
+      { providerId: context.session.providerId, env: readHeraldEnv(), ...data },
+    );
+    if (!plan.ok) {
+      console.warn(
+        JSON.stringify({
+          event: "sweep_plan_rejected",
+          providerId: context.session.providerId,
+          reason: plan.reason,
+        }),
+      );
+      return { ok: false as const, message: plan.message };
+    }
+    console.log(
+      JSON.stringify({
+        event: "sweep_planned",
+        providerId: context.session.providerId,
+        sweepId: plan.sweep.id,
+        network: plan.sweep.sourceNetwork,
+        amount: plan.sweep.amount,
+      }),
+    );
+    return { ok: true as const, sweepId: plan.sweep.id, signRequest: plan.signRequest };
+  });
+
+/**
+ * Takes the hash of the NEAR transaction in which the Provider's wallet had
+ * the MPC signer sign a planned Sweep. Herald reads the signature from that
+ * transaction and submits the transfer.
+ */
+export const finishSweep = createServerFn({ method: "POST" })
+  .middleware([requireSession])
+  .validator(z.object({ sweepId: z.number().int().positive(), nearTxHash: z.string().max(64) }))
+  .handler(async ({ context, data }) => {
+    const result = await completeSweep(sweepDeps(), {
+      providerId: context.session.providerId,
+      env: readHeraldEnv(),
+      ...data,
+    });
+    if (!result.ok) return { ok: false as const, message: result.message };
+    return { ok: true as const, status: result.sweep.status, error: result.sweep.error };
+  });

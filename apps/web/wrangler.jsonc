@@ -20,10 +20,13 @@
 // SESSIONS holds dashboard sessions. SIGN_IN_RATE_LIMITER allows 20 sign-in
 // requests (challenges and signatures) per minute per client IP.
 //
-// SOLANA_CHAIN_QUEUE is the facilitator's Solana chain queue (ADR-0006),
-// bound across Workers with `script_name`: the facilitator Worker of the same
-// environment. Registration queues each Provider's Solana USDC token account
-// there. Locally, run the facilitator with `wrangler dev` alongside.
+// SOLANA_CHAIN_QUEUE and EVM_CHAIN_QUEUE are the facilitator's chain queues
+// (ADR-0006), bound across Workers with `script_name`: the facilitator Worker
+// of the same environment. Registration queues each Provider's Solana USDC
+// token account on the Solana one; Sweeps submit their signed transfers
+// through the EVM one, which pays the gas. Locally, run the facilitator with
+// `wrangler dev` alongside. Sweeps also read the MPC signature from NEAR over
+// NEAR_RPC_URL, and transfer receipts over <CHAIN>_RPC_URL.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "herald-web",
@@ -40,6 +43,11 @@
       {
         "name": "SOLANA_CHAIN_QUEUE",
         "class_name": "SolanaChainQueue",
+        "script_name": "herald-facilitator",
+      },
+      {
+        "name": "EVM_CHAIN_QUEUE",
+        "class_name": "EvmChainQueue",
         "script_name": "herald-facilitator",
       },
     ],
@@ -73,6 +81,11 @@
           {
             "name": "SOLANA_CHAIN_QUEUE",
             "class_name": "SolanaChainQueue",
+            "script_name": "herald-facilitator-testnet",
+          },
+          {
+            "name": "EVM_CHAIN_QUEUE",
+            "class_name": "EvmChainQueue",
             "script_name": "herald-facilitator-testnet",
           },
         ],
@@ -113,6 +126,11 @@
           {
             "name": "SOLANA_CHAIN_QUEUE",
             "class_name": "SolanaChainQueue",
+            "script_name": "herald-facilitator-mainnet",
+          },
+          {
+            "name": "EVM_CHAIN_QUEUE",
+            "class_name": "EvmChainQueue",
             "script_name": "herald-facilitator-mainnet",
           },
         ],

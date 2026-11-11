@@ -18,11 +18,13 @@
     "@noble/hashes": "catalog:",
     "@scure/base": "catalog:",
     "drizzle-orm": "catalog:",
+    "viem": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "catalog:",
     "@types/node": "catalog:",
+    "@x402/evm": "catalog:",
     "near-api-js": "catalog:",
     "typescript": "catalog:",
     "vite-plus": "catalog:",

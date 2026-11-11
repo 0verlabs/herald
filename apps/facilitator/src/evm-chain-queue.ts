@@ -1,9 +1,16 @@
 import type { Caip2 } from "@herald/core";
+import type {
+  EvmChainQueueRpc,
+  EvmSweepSubmission,
+  EvmSweepSubmissionResult,
+} from "@herald/core/server";
 import { eip3009ABI } from "@x402/evm";
 import { DurableObject } from "cloudflare:workers";
 import {
+  BaseError,
   concat,
   createPublicClient,
+  ExecutionRevertedError,
   createWalletClient,
   decodeFunctionData,
   keccak256,
@@ -43,9 +50,10 @@ const RPC_TIMEOUT_MS = 8_000;
  * transaction hash here instead of submitting again.
  *
  * It submits only `transferWithAuthorization` calls, so the gas wallet can't
- * be used for anything else. Settlements use it now; Sweeps will too.
+ * be used for anything else: Buyer settlements, and Providers' Sweeps
+ * (`submitSweep`) from the web Worker.
  */
-export class EvmChainQueue extends DurableObject<CloudflareBindings> {
+export class EvmChainQueue extends DurableObject<CloudflareBindings> implements EvmChainQueueRpc {
   // Tail of the submission queue. Each submission starts after the previous
   // one has been broadcast or has failed.
   #tail: Promise<unknown> = Promise.resolve();
@@ -73,7 +81,26 @@ export class EvmChainQueue extends DurableObject<CloudflareBindings> {
   submitTransferWithAuthorization(
     submission: TransferWithAuthorizationSubmission,
   ): Promise<SubmissionResult> {
-    const run = this.#tail.then(() => this.#submit(submission));
+    return this.#enqueue(submission, "refuse");
+  }
+
+  /**
+   * Signs and broadcasts a Sweep's `transferWithAuthorization`, signed by
+   * the MPC network for a Provider's Receiving Address, from the gas wallet.
+   * The web Worker calls it through its cross-Worker binding. Unlike a
+   * settlement, submitting an authorization again answers the hash it was
+   * first submitted in, without sending anything: a Sweep whose answer was
+   * lost can safely be submitted again.
+   */
+  submitSweep(submission: EvmSweepSubmission): Promise<EvmSweepSubmissionResult> {
+    return this.#enqueue(submission, "answer");
+  }
+
+  #enqueue(
+    submission: TransferWithAuthorizationSubmission,
+    onResubmit: "refuse" | "answer",
+  ): Promise<SubmissionResult> {
+    const run = this.#tail.then(() => this.#submit(submission, onResubmit));
     this.#tail = run.catch(() => undefined);
     return run;
   }
@@ -93,12 +120,10 @@ export class EvmChainQueue extends DurableObject<CloudflareBindings> {
     this.#pending.delete(settlementKey);
   }
 
-  async #submit({
-    network,
-    asset,
-    data,
-    dataSuffix,
-  }: TransferWithAuthorizationSubmission): Promise<SubmissionResult> {
+  async #submit(
+    { network, asset, data, dataSuffix }: TransferWithAuthorizationSubmission,
+    onResubmit: "refuse" | "answer",
+  ): Promise<SubmissionResult> {
     const call = decodeFunctionData({ abi: eip3009ABI, data });
     if (call.functionName !== "transferWithAuthorization") {
       return {
@@ -115,6 +140,7 @@ export class EvmChainQueue extends DurableObject<CloudflareBindings> {
         authorizationKey,
       )
       .toArray();
+    if (previous && onResubmit === "answer") return { ok: true, hash: previous.tx_hash as Hex };
     if (previous) {
       // Worded so the stock mechanism reports `invalid_exact_evm_nonce_already_used`.
       return {
@@ -132,11 +158,25 @@ export class EvmChainQueue extends DurableObject<CloudflareBindings> {
     const wallet = createWalletClient({ account: evmGasAccount(this.env), chain, transport });
 
     const nonce = await this.#nextNonce(client, wallet.account.address);
-    const request = await wallet.prepareTransactionRequest({
-      to: asset,
-      data: dataSuffix ? concat([data, dataSuffix]) : data,
-      nonce,
-    });
+    let request;
+    try {
+      request = await wallet.prepareTransactionRequest({
+        to: asset,
+        data: dataSuffix ? concat([data, dataSuffix]) : data,
+        nonce,
+      });
+    } catch (error) {
+      // A Sweep whose transfer would revert (a bad signature, a balance
+      // that moved) is refused for good, so its Sweep fails instead of
+      // being retried. Settlements keep viem's error for the stock
+      // mechanism to report.
+      const reverted =
+        error instanceof BaseError && error.walk((e) => e instanceof ExecutionRevertedError);
+      if (onResubmit === "answer" && reverted) {
+        return { ok: false, message: `The transfer would revert: ${error.shortMessage}` };
+      }
+      throw error;
+    }
     const serializedTransaction = await wallet.signTransaction(request);
     const hash = keccak256(serializedTransaction);
 

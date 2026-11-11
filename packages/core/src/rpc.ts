@@ -96,3 +96,33 @@ export async function postRpc(
   if (!response.ok) throw new Error(`${what} answered ${response.status}`);
   return response;
 }
+
+/**
+ * Calls a JSON-RPC 2.0 method on a chain's private endpoint and returns its
+ * `result`, giving up after `timeoutMs`. A failed request or an error answer
+ * throws an error naming `label` (e.g. `"Base Sepolia"`) and the method,
+ * never the URL.
+ */
+export async function callJsonRpc(
+  fetchFn: typeof fetch,
+  url: string,
+  label: string,
+  method: string,
+  params: unknown[],
+  timeoutMs: number,
+): Promise<unknown> {
+  const response = await postRpc(
+    fetchFn,
+    url,
+    { jsonrpc: "2.0", id: 1, method, params },
+    `${label} RPC ${method}`,
+    AbortSignal.timeout(timeoutMs),
+  );
+  const body = (await response.json()) as { result?: unknown; error?: { message?: unknown } };
+  if (body.error !== undefined) {
+    const reason =
+      typeof body.error?.message === "string" ? body.error.message : JSON.stringify(body.error);
+    throw new Error(`${label} RPC refused ${method}: ${reason}`);
+  }
+  return body.result;
+}

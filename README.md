@@ -62,7 +62,7 @@ Facilitator secrets per environment:
 | `POLYGON_RPC_URL`, `AVALANCHE_RPC_URL`               | Mainnet only.                                                                                                                 |
 | `NEAR_RPC_URL`                                       | NEAR testnet or mainnet, for the MPC root-key check.                                                                          |
 
-Every RPC endpoint is a private QuickNode URL, which carries the API key, so all of them are secrets. Solana's public endpoints wouldn't work anyway: `api.devnet.solana.com` and `api.mainnet-beta.solana.com` refuse requests from Workers (they block on the `CF-Worker` header, locally too). The web Worker needs `NEAR_RPC_URL` for sign-in and the same `<CHAIN>_RPC_URL` secrets as the facilitator for Overview's live balances.
+Every RPC endpoint is a private QuickNode URL, which carries the API key, so all of them are secrets. Solana's public endpoints wouldn't work anyway: `api.devnet.solana.com` and `api.mainnet-beta.solana.com` refuse requests from Workers (they block on the `CF-Worker` header, locally too). The web Worker needs `NEAR_RPC_URL` for sign-in and for reading Sweep signatures, and the same `<CHAIN>_RPC_URL` secrets as the facilitator for Overview's live balances and Sweep receipts.
 
 To get a Provider and an API key without the dashboard:
 
@@ -89,6 +89,15 @@ Sign-in uses NEP-413 through `@hot-labs/near-connect`:
 4. The first sign-in registers the Provider, stores its Receiving Addresses and queues its Solana USDC token account with the facilitator's `SolanaChainQueue` (the `SOLANA_CHAIN_QUEUE` binding, `script_name` the facilitator Worker). If the queue can't be reached, sign-in still succeeds and the next sign-in tries again. Overview shows the token account's status. Locally, run the facilitator alongside the dashboard. A session goes into the `SESSIONS` KV namespace for 7 days, keyed by the SHA-256 of a random token held in an HTTP-only cookie. Signing out deletes it.
 
 `SIGN_IN_RATE_LIMITER` allows 20 sign-in requests per minute per client IP. The logic lives in `packages/core/src/server` (`sign-in.ts`, `sessions.ts`); `apps/web/src/server/auth.ts` wires it to TanStack Start server functions.
+
+**Sweep** moves USDC from your EVM Receiving Address to any address on the same chain. Pick a chain, enter an amount and a destination, and the page shows what will happen: the destination receives the full amount, with no fee. The button stays disabled below the chain's minimum, above your balance, or once 10 Sweeps went out in the last 24 hours. **Sweep with NEAR wallet** then:
+
+1. Plans the Sweep (`planSweep` in `packages/core/src/server/sweeps.ts`): it checks the minimum in the `sweep_minimums` table, the daily cap and the balance, then builds the EIP-712 hash of an EIP-3009 `transferWithAuthorization` from the Receiving Address to the destination, valid for 10 minutes.
+2. Asks your wallet to call `sign` on the MPC signer (`v1.signer-prod.testnet` on testnet, `v1.signer` on mainnet) with that hash as `payload_v2`, path `ethereum-1`, domain 0, 1 yoctoNEAR and 50 Tgas. The wallet must hold the Provider Account you signed in with.
+3. Sends the NEAR transaction hash to the server (`completeSweep`). Herald reads the signature from that transaction over `NEAR_RPC_URL`, never from the browser, and checks that it recovers to your Receiving Address for the planned payload. A signature that doesn't fails the Sweep.
+4. Submits the signed transfer through the facilitator's `EvmChainQueue` (the `EVM_CHAIN_QUEUE` cross-Worker binding, `submitSweep`), which pays the gas. Submitting the same authorization again answers the same transaction hash without sending anything.
+
+The Sweeps table follows each Sweep through `planned → awaiting_signature → submitted → confirmed | failed`, with links to the NEAR and chain transactions. While one is unfinished the page refreshes every 3 s (`refreshSweeps`): it reads the signature if it wasn't on NEAR yet, then the transfer's receipt over `<CHAIN>_RPC_URL`. A Sweep never signed within its 10 minutes fails, as does one whose transfer reverted or the chain queue refused. Minimums are seeded from `docs/research/stack-and-minimums.md`: 0.15 USDC on Base (1Click's minimum there), 0.001 USDC elsewhere; testnet networks mirror their mainnet counterparts.
 
 ### Pay the example API
 
