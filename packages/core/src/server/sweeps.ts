@@ -3,7 +3,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { base58, base64 } from "@scure/base";
 import { isAddress } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
-import { and, count, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, ne, or } from "drizzle-orm";
 import { encodeFunctionData, hashTypedData, parseAbi, recoverAddress, type Hex } from "viem";
 import { z } from "zod";
 import { explorerTxUrl, networkRegistry, type Caip2, type Network } from "../networks.ts";
@@ -12,7 +12,9 @@ import { mpcSigners, receivingAddressPaths } from "../receiving-addresses.ts";
 import { callJsonRpc, postRpc } from "../rpc.ts";
 import {
   EvmAddressSchema,
+  NEAR_INTENTS_NETWORK,
   ProviderSchema,
+  SweepDestinationKindSchema,
   SweepMinimumSchema,
   SweepSchema,
   type EvmSweep,
@@ -24,6 +26,12 @@ import {
 } from "../schemas.ts";
 import { getProviderBalances, type UsdcBalanceReader } from "./balances.ts";
 import type { Db } from "./db.ts";
+import {
+  oneClickUsdcAsset,
+  type OneClickClient,
+  type OneClickQuote,
+  type OneClickSwap,
+} from "./one-click.ts";
 import {
   buildSolanaSweepTransaction,
   SYSTEM_PROGRAM_ADDRESS,
@@ -80,6 +88,30 @@ export const SWEEP_VALIDITY_SECONDS = 10 * 60;
  */
 export const SOLANA_SWEEP_VALIDITY_SECONDS = 120;
 
+/**
+ * The `deadline` Herald asks 1Click for: past it, 1Click refunds a swap that
+ * hasn't completed, and its deposit address goes inactive (a deposit after
+ * it may be lost).
+ */
+export const ONE_CLICK_DEADLINE_SECONDS = 30 * 60;
+
+/**
+ * How long before a 1Click quote's deadline its transfer must be signed: the
+ * transfer can't execute later (EIP-3009 `validBefore`, or the Solana
+ * blockhash), so it lands well before the deposit address goes inactive.
+ */
+export const ONE_CLICK_DEPOSIT_MARGIN_SECONDS = 10 * 60;
+
+/** A 1Click quote that leaves less than this to sign is refused, and the Provider asks again. */
+const MIN_QUOTE_SIGNING_SECONDS = 30;
+
+/**
+ * The slippage Herald allows 1Click, in basis points. Every route is USDC to
+ * USDC, so the quoted output barely moves; below `minAmountOut`, 1Click
+ * refunds.
+ */
+export const ONE_CLICK_SLIPPAGE_BPS = 50;
+
 // The authorization is valid from a little before it was planned, so a
 // chain whose clock lags the Worker's still accepts it.
 const VALID_AFTER_SKEW_SECONDS = 60;
@@ -121,29 +153,72 @@ export type SweepPlanRejection =
   | "invalid_request"
   | "unknown_provider"
   | "unsupported_network"
+  | "unsupported_destination"
   | "invalid_destination"
   | "below_minimum"
   | "daily_cap_reached"
   | "balance_unavailable"
   | "insufficient_balance"
-  | "chain_unavailable";
+  | "chain_unavailable"
+  | "quote_unavailable"
+  | "quote_refused";
+
+/**
+ * The 1Click quote of a planned `cross_chain` or `intents` Sweep, for the
+ * Provider to check before signing. Amounts are USDC base units: the
+ * Provider sends `amountIn` to 1Click's `depositAddress`, and the
+ * destination receives about `amountOut`, at least `minAmountOut`. `fee` is
+ * what 1Click keeps (`amountIn - amountOut`), `refundFee` what it keeps if
+ * it refunds instead. `minimum` is the least Herald Sweeps from the source
+ * network, 1Click's minimum deposit there. `timeEstimateSeconds` counts
+ * from the transfer's confirmation. The quote must be signed before
+ * `signBy`; after that, ask for a fresh one.
+ */
+export type SweepQuote = {
+  depositAddress: string;
+  amountIn: string;
+  amountOut: string;
+  minAmountOut: string;
+  fee: string;
+  refundFee: string;
+  minimum: string;
+  timeEstimateSeconds: number;
+  signBy: Date;
+};
 
 export type SweepPlan =
-  | { ok: true; sweep: Sweep; signRequest: MpcSignRequest }
+  | { ok: true; sweep: Sweep; signRequest: MpcSignRequest; quote: SweepQuote | null }
   | { ok: false; reason: SweepPlanRejection; message: string };
 
 const SweepPlanInputSchema = z.object({
   network: z.string(),
   amount: z.string().regex(/^\d+$/, "The amount must be a whole number of USDC base units"),
-  destination: z.string(),
+  destinationKind: SweepDestinationKindSchema.default("same_chain"),
+  destinationNetwork: z.string().optional(),
+  destination: z.string().optional(),
 });
 
-/** What planning a Sweep reads: D1, balances, and for Solana the chain and Herald's chain queue. */
+/**
+ * Where a planned Sweep goes: an address on the source network
+ * (`same_chain`, the default), an address on another network
+ * (`cross_chain`), or the Provider Account's NEAR Intents account
+ * (`intents`).
+ */
+export type SweepTarget =
+  | { destinationKind?: "same_chain"; destination: string }
+  | { destinationKind: "cross_chain"; destinationNetwork: string; destination: string }
+  | { destinationKind: "intents" };
+
+/**
+ * What planning a Sweep reads: D1, balances, for Solana the chain and
+ * Herald's chain queue, and 1Click for `cross_chain` and `intents` Sweeps.
+ */
 export type SweepPlanDeps = {
   db: Db;
   readUsdcBalance: UsdcBalanceReader;
   readSolana: SolanaSweepReader;
   solanaQueue: Pick<SolanaSweepQueue, "feePayer">;
+  oneClick: Pick<OneClickClient, "quote">;
 };
 
 const transferWithAuthorizationTypes = {
@@ -158,16 +233,30 @@ const transferWithAuthorizationTypes = {
 } as const;
 
 /**
- * Plans a same-chain Sweep of `amount` USDC (base units) from a Provider's
- * Receiving Address on `network` to `destination` on that network, and
- * records it as `planned`. `signRequest` is the NEAR call that has the MPC
- * signer sign it for the Receiving Address. `now` defaults to the current
- * time.
+ * Plans a Sweep of `amount` USDC (base units) from a Provider's Receiving
+ * Address on `network`, and records it as `planned`. `signRequest` is the
+ * NEAR call that has the MPC signer sign it for the Receiving Address. `now`
+ * defaults to the current time.
+ *
+ * Where it goes (`SweepTarget`):
+ *
+ * - `same_chain`: the transfer goes to `destination` on `network`.
+ * - `cross_chain`: USDC goes to `destination` on `destinationNetwork`.
+ * - `intents`: USDC is credited to the Provider Account inside NEAR
+ *   Intents, as the source network's USDC token.
+ *
+ * For the two 1Click kinds (mainnet only), Herald gets a live 1Click quote
+ * with refunds to the source Receiving Address, the transfer goes to the
+ * quote's deposit address, and `quote` says what the Provider gets. It must
+ * be signed `ONE_CLICK_DEPOSIT_MARGIN_SECONDS` before the quote's deadline
+ * at the latest.
+ *
+ * The transfer:
  *
  * - EVM: an EIP-3009 `transferWithAuthorization` valid for
  *   `SWEEP_VALIDITY_SECONDS`; the MPC signer signs its EIP-712 hash.
  * - Solana: an SPL `TransferChecked` between the USDC token accounts, with
- *   Herald's Solana gas wallet as fee payer, creating the destination's
+ *   Herald's Solana gas wallet as fee payer, creating the recipient's
  *   token account first (Herald paying the rent) if it has none. It uses a
  *   recent blockhash, so it must be signed within about
  *   `SOLANA_SWEEP_VALIDITY_SECONDS`; the MPC signer signs its message.
@@ -179,9 +268,8 @@ export async function planSweep(
     env: HeraldEnv;
     network: string;
     amount: string;
-    destination: string;
     now?: Date;
-  },
+  } & SweepTarget,
 ): Promise<SweepPlan> {
   const parsed = SweepPlanInputSchema.safeParse(input);
   if (!parsed.success) {
@@ -195,21 +283,12 @@ export async function planSweep(
       `${parsed.data.network} is not a network Herald lists on ${input.env}.`,
     );
   }
-  const destination = parseDestination(parsed.data.destination.trim(), network);
-  if (!destination) {
-    return reject(
-      "invalid_request",
-      network.kind === "evm"
-        ? "Enter an EVM address: 0x and 40 hex characters."
-        : "Enter a Solana wallet address.",
-    );
-  }
   const [row] = await deps.db.select().from(providers).where(eq(providers.id, input.providerId));
   if (!row) return reject("unknown_provider", "No Provider has this id.");
   const provider = ProviderSchema.parse(row);
 
-  const destinationProblem = checkDestination(destination, provider, network);
-  if (destinationProblem) return reject("invalid_destination", destinationProblem);
+  const target = resolveTarget(parsed.data, { provider, network, env: input.env });
+  if (!target.ok) return target;
 
   const minimum = await getSweepMinimum(deps.db, network);
   if (!minimum) {
@@ -257,10 +336,21 @@ export async function planSweep(
     );
   }
 
+  let quote: OneClickQuote | null = null;
+  let signBy: number | undefined;
+  if (target.kind !== "same_chain") {
+    const quoted = await requestQuote(deps, { provider, network, amount, target, now });
+    if (!quoted.ok) return quoted;
+    ({ quote, signBy } = quoted);
+  }
+  // Where the transfer goes: the destination itself, or 1Click's deposit address.
+  const recipient = quote?.depositAddress ?? target.address;
+
+  const context = { provider, network, amount, destination: recipient, now, signBy };
   const plan =
     network.kind === "evm"
-      ? planEvmColumns({ provider, network, amount, destination, now })
-      : await planSolanaColumns(deps, { provider, network, amount, destination, now });
+      ? planEvmColumns({ ...context, network })
+      : await planSolanaColumns(deps, { ...context, network });
   if (!plan.ok) return plan;
 
   const [inserted] = await deps.db
@@ -270,17 +360,244 @@ export async function planSweep(
       sourceNetwork: network.caip2,
       asset: network.usdc.address,
       amount,
-      destinationKind: "same_chain",
-      destinationNetwork: network.caip2,
-      destinationAddress: destination,
+      destinationKind: target.kind,
+      destinationNetwork: target.network,
+      destinationAddress: target.address,
       status: "planned",
       createdAt: now,
       updatedAt: now,
       ...plan.row,
+      ...(quote && target.kind !== "same_chain"
+        ? {
+            destinationAsset: target.destinationAsset,
+            oneClickQuoteId: quote.quoteId,
+            oneClickDepositAddress: quote.depositAddress,
+            oneClickSignature: quote.signature,
+            quoteAmountOut: quote.amountOut,
+            quoteMinAmountOut: quote.minAmountOut,
+            quoteRefundFee: quote.refundFee,
+            quoteTimeEstimate: Math.ceil(quote.timeEstimate),
+            quoteDeadline: quote.deadline,
+          }
+        : {}),
     })
     .returning();
   const sweep = SweepSchema.parse(inserted);
-  return { ok: true, sweep, signRequest: signRequestFor(input.env, sweep) };
+  return {
+    ok: true,
+    sweep,
+    signRequest: signRequestFor(input.env, sweep),
+    quote: quote && {
+      depositAddress: quote.depositAddress,
+      amountIn: quote.amountIn,
+      amountOut: quote.amountOut,
+      minAmountOut: quote.minAmountOut,
+      // Both sides are USDC with 6 decimals.
+      fee:
+        BigInt(quote.amountOut) < BigInt(amount)
+          ? String(BigInt(amount) - BigInt(quote.amountOut))
+          : "0",
+      refundFee: quote.refundFee,
+      minimum: minimum.minimum,
+      timeEstimateSeconds: Math.ceil(quote.timeEstimate),
+      signBy: new Date(sweep.validBefore * 1000),
+    },
+  };
+}
+
+/**
+ * Where a planned Sweep's funds end up: an address on `network` (the
+ * source network for `same_chain`), or for `intents` the Provider Account
+ * inside NEAR Intents. The 1Click kinds carry 1Click's asset ids.
+ */
+type ResolvedTarget =
+  | { kind: "same_chain"; network: Caip2; address: string }
+  | {
+      kind: "cross_chain";
+      network: Caip2;
+      address: string;
+      label: string;
+      originAsset: string;
+      destinationAsset: string;
+    }
+  | {
+      kind: "intents";
+      network: Caip2;
+      address: string;
+      label: string;
+      originAsset: string;
+      destinationAsset: string;
+    };
+
+type OneClickTarget = Exclude<ResolvedTarget, { kind: "same_chain" }>;
+
+const enterAddress = (network: Network) =>
+  network.kind === "evm"
+    ? "Enter an EVM address: 0x and 40 hex characters."
+    : "Enter a Solana wallet address.";
+
+/** Checks where a Sweep goes, or says why it can't go there. */
+function resolveTarget(
+  input: z.infer<typeof SweepPlanInputSchema>,
+  { provider, network, env }: { provider: Provider; network: Network; env: HeraldEnv },
+): ({ ok: true } & ResolvedTarget) | { ok: false; reason: SweepPlanRejection; message: string } {
+  if (input.destinationKind === "same_chain") {
+    const address = parseDestination(input.destination?.trim() ?? "", network);
+    if (!address) return reject("invalid_request", enterAddress(network));
+    if (isReceivingAddress(address, provider, network)) {
+      return reject(
+        "invalid_destination",
+        "That's your Receiving Address. Sweep to another address.",
+      );
+    }
+    const lost = lostDestination(address, network);
+    if (lost) return reject("invalid_destination", lost);
+    return { ok: true, kind: "same_chain", network: network.caip2, address };
+  }
+
+  // 1Click's asset ids are mainnet ones, so on testnet there are none.
+  const originAsset = oneClickUsdcAsset(network.caip2);
+  if (env !== "mainnet" || !originAsset) {
+    return reject(
+      "unsupported_destination",
+      env !== "mainnet"
+        ? "1Click runs on mainnet only, so Herald Sweeps across chains and into NEAR Intents on mainnet only."
+        : `1Click doesn't take USDC from ${network.label}.`,
+    );
+  }
+
+  if (input.destinationKind === "intents") {
+    return {
+      ok: true,
+      kind: "intents",
+      network: NEAR_INTENTS_NETWORK,
+      address: provider.accountId,
+      label: "NEAR Intents",
+      originAsset,
+      destinationAsset: originAsset,
+    };
+  }
+
+  if (!input.destinationNetwork) return reject("invalid_request", "Choose the chain to Sweep to.");
+  const destinationNetwork = networkRegistry[env].find((n) => n.caip2 === input.destinationNetwork);
+  if (!destinationNetwork) {
+    return reject(
+      "unsupported_network",
+      `${input.destinationNetwork} is not a network Herald lists on ${env}.`,
+    );
+  }
+  if (destinationNetwork.caip2 === network.caip2) {
+    return reject(
+      "invalid_destination",
+      `That's the chain you Sweep from. Sweep on ${network.label} itself instead.`,
+    );
+  }
+  const destinationAsset = oneClickUsdcAsset(destinationNetwork.caip2);
+  if (!destinationAsset) {
+    return reject(
+      "unsupported_destination",
+      `1Click doesn't deliver USDC to ${destinationNetwork.label}.`,
+    );
+  }
+  const address = parseDestination(input.destination?.trim() ?? "", destinationNetwork);
+  if (!address) return reject("invalid_request", enterAddress(destinationNetwork));
+  // A Receiving Address on another chain is fine: that's consolidating.
+  const lost = lostDestination(address, destinationNetwork);
+  if (lost) return reject("invalid_destination", lost);
+  return {
+    ok: true,
+    kind: "cross_chain",
+    network: destinationNetwork.caip2,
+    address,
+    label: destinationNetwork.label,
+    originAsset,
+    destinationAsset,
+  };
+}
+
+/**
+ * Asks 1Click for a live quote of a `cross_chain` or `intents` Sweep, with
+ * refunds to the source Receiving Address, and checks it: it must take
+ * exactly `amount`, to a deposit address on the source network that isn't
+ * one to lose USDC at. `signBy` (Unix seconds) is when the transfer must be
+ * signed by, `ONE_CLICK_DEPOSIT_MARGIN_SECONDS` before the quote's deadline
+ * and no later than its deposit address goes cold.
+ */
+async function requestQuote(
+  deps: Pick<SweepPlanDeps, "oneClick">,
+  {
+    provider,
+    network,
+    amount,
+    target,
+    now,
+  }: { provider: Provider; network: Network; amount: string; target: OneClickTarget; now: Date },
+): Promise<
+  | { ok: true; quote: OneClickQuote; signBy: number }
+  | { ok: false; reason: SweepPlanRejection; message: string }
+> {
+  const log = (event: string, details: Record<string, unknown>) =>
+    console.warn(
+      JSON.stringify({ event, providerId: provider.id, network: network.caip2, ...details }),
+    );
+  let result;
+  try {
+    result = await deps.oneClick.quote({
+      originAsset: target.originAsset,
+      destinationAsset: target.destinationAsset,
+      amount,
+      refundTo: receivingAddressOn(provider, network),
+      recipient: target.address,
+      recipientType: target.kind === "intents" ? "INTENTS" : "DESTINATION_CHAIN",
+      slippageTolerance: ONE_CLICK_SLIPPAGE_BPS,
+      deadline: new Date(now.getTime() + ONE_CLICK_DEADLINE_SECONDS * 1000),
+    });
+  } catch (error) {
+    log("sweep_quote_failed", { error: String(error) });
+    return reject("quote_unavailable", "Herald couldn't get a quote from 1Click. Try again later.");
+  }
+  if (!result.ok) {
+    log("sweep_quote_refused", { reason: result.reason, message: result.message });
+    if (result.reason === "below_minimum") {
+      return reject(
+        "below_minimum",
+        result.minimum
+          ? `1Click's minimum from ${network.label} to ${target.label} is ${formatUsdc(result.minimum)} USDC.`
+          : `1Click says the amount is too low from ${network.label} to ${target.label}.`,
+      );
+    }
+    return reject("quote_refused", `1Click refused the quote: ${result.message}`);
+  }
+
+  const { quote } = result;
+  const depositAddress = parseDestination(quote.depositAddress, network);
+  const unusable =
+    quote.amountIn !== amount
+      ? `it quoted ${formatUsdc(quote.amountIn)} USDC instead of ${formatUsdc(amount)}`
+      : !depositAddress ||
+          isReceivingAddress(depositAddress, provider, network) ||
+          lostDestination(depositAddress, network)
+        ? `its deposit address ${quote.depositAddress} isn't one Herald can send to on ${network.label}`
+        : null;
+  if (unusable || !depositAddress) {
+    log("sweep_quote_unusable", { quoteId: quote.quoteId, problem: unusable });
+    return reject("quote_refused", `Herald can't use 1Click's quote: ${unusable}.`);
+  }
+
+  const nowSeconds = Math.floor(now.getTime() / 1000);
+  const deadline = Math.floor(quote.deadline.getTime() / 1000);
+  const cold = quote.timeWhenInactive
+    ? Math.floor(quote.timeWhenInactive.getTime() / 1000)
+    : Infinity;
+  const signBy = Math.min(deadline - ONE_CLICK_DEPOSIT_MARGIN_SECONDS, cold);
+  if (signBy - nowSeconds < MIN_QUOTE_SIGNING_SECONDS) {
+    log("sweep_quote_too_short", { quoteId: quote.quoteId, deadline: quote.deadline });
+    return reject(
+      "quote_unavailable",
+      "1Click's quote expires too soon to sign. Ask for a fresh one.",
+    );
+  }
+  return { ok: true, quote: { ...quote, depositAddress }, signBy };
 }
 
 /** A Sweep's chain-specific columns, as planning fills them in. */
@@ -307,8 +624,11 @@ type PlanContext<N extends Network> = {
   provider: Provider;
   network: N;
   amount: string;
+  /** Who the transfer pays: the destination, or 1Click's deposit address. */
   destination: string;
   now: Date;
+  /** Unix seconds: the transfer must expire by then (a 1Click quote's signing limit). */
+  signBy?: number;
 };
 
 function planEvmColumns({
@@ -317,10 +637,11 @@ function planEvmColumns({
   amount,
   destination,
   now,
+  signBy = Infinity,
 }: PlanContext<EvmNetwork>): PlannedRow {
   const nowSeconds = Math.floor(now.getTime() / 1000);
   const validAfter = nowSeconds - VALID_AFTER_SKEW_SECONDS;
-  const validBefore = nowSeconds + SWEEP_VALIDITY_SECONDS;
+  const validBefore = Math.min(nowSeconds + SWEEP_VALIDITY_SECONDS, signBy);
   const { nonce, hash } = authorizationPayload(network, {
     from: provider.evmAddress,
     to: destination,
@@ -347,7 +668,7 @@ function planEvmColumns({
  */
 async function planSolanaColumns(
   deps: Pick<SweepPlanDeps, "readSolana" | "solanaQueue">,
-  { provider, network, amount, destination, now }: PlanContext<SolanaNetwork>,
+  { provider, network, amount, destination, now, signBy = Infinity }: PlanContext<SolanaNetwork>,
 ): Promise<PlannedRow> {
   let feePayer: string;
   let destinationOwner: string | null;
@@ -405,7 +726,10 @@ async function planSolanaColumns(
       sourceKind: "solana",
       solanaTransaction,
       lastValidBlockHeight: blockhash.lastValidBlockHeight,
-      validBefore: Math.floor(now.getTime() / 1000) + SOLANA_SWEEP_VALIDITY_SECONDS,
+      validBefore: Math.min(
+        Math.floor(now.getTime() / 1000) + SOLANA_SWEEP_VALIDITY_SECONDS,
+        signBy,
+      ),
     },
   };
 }
@@ -506,6 +830,8 @@ export type SweepDeps = {
   /** Solana: the chain, and Herald's chain queue. */
   readSolana: SolanaSweepReader;
   solanaQueue: Pick<SolanaSweepQueue, "submitSweep">;
+  /** `cross_chain` and `intents` Sweeps: 1Click's swap status. */
+  oneClick: Pick<OneClickClient, "status">;
 };
 
 export type SweepCompletionRejection = "invalid_request" | "unknown_sweep" | "near_tx_mismatch";
@@ -591,7 +917,9 @@ export async function completeSweep(
  * One chain a Provider can Sweep from: its Receiving Address there (the
  * EVM one on every EVM chain), the USDC balance there (or why it couldn't
  * be read), and the minimum Sweep in base units, null if Herald has none
- * for the chain (it can't Sweep there).
+ * for the chain (it can't Sweep there). `oneClick` says whether 1Click
+ * takes and delivers its USDC, for `cross_chain` and `intents` Sweeps
+ * (mainnet only).
  */
 export type SweepChainOption = {
   network: Caip2;
@@ -600,6 +928,7 @@ export type SweepChainOption = {
   address: string;
   balance: { ok: true; amount: string } | { ok: false; message: string };
   minimum: string | null;
+  oneClick: boolean;
 };
 
 export type SweepOptions = {
@@ -633,6 +962,7 @@ export async function getSweepOptions(
       address: read.address,
       balance: read.ok ? { ok: true, amount: read.amount } : { ok: false, message: read.message },
       minimum: minimum?.minimum ?? null,
+      oneClick: input.env === "mainnet" && oneClickUsdcAsset(network.caip2) !== undefined,
     });
   }
   return {
@@ -650,14 +980,20 @@ export async function getSweepOptions(
 export const SWEEP_LIST_LIMIT = 20;
 
 /**
- * One of a Provider's Sweeps with its network's name and block explorer
- * links: `sourceTxUrl` for the transfer, `nearTxUrl` for the NEAR signing
- * transaction. Each is null until the transaction exists.
+ * One of a Provider's Sweeps with its networks' names and links:
+ * `sourceTxUrl` for the transfer, `nearTxUrl` for the NEAR signing
+ * transaction, `deliveryTxUrl` for 1Click's delivery on the destination
+ * network and `oneClickUrl` for the 1Click swap on the NEAR Intents
+ * explorer. Each is null until it exists. `destinationLabel` names where the
+ * funds go: the destination network, or NEAR Intents.
  */
 export type SweepEntry = Sweep & {
   label: string;
+  destinationLabel: string;
   sourceTxUrl: string | null;
   nearTxUrl: string | null;
+  deliveryTxUrl: string | null;
+  oneClickUrl: string | null;
 };
 
 /**
@@ -671,6 +1007,9 @@ export type SweepEntry = Sweep & {
  * - `submitted` reads the transfer's receipt: `confirmed` if it succeeded,
  *   `failed` if it reverted, or if it still has none well after the
  *   authorization expired (it can no longer execute).
+ * - A `cross_chain` or `intents` Sweep that is `confirmed` or `delivering`
+ *   reads 1Click's status: `delivering`, then `delivered`, `refunded` or
+ *   `failed`.
  *
  * A chain or NEAR read that fails leaves the Sweep as it is for the next
  * refresh. `now` defaults to the current time.
@@ -691,7 +1030,11 @@ export async function refreshSweeps(
     .where(
       and(
         eq(sweeps.providerId, provider.id),
-        inArray(sweeps.status, ["planned", "awaiting_signature", "submitted"]),
+        or(
+          inArray(sweeps.status, ["planned", "awaiting_signature", "submitted", "delivering"]),
+          // A 1Click Sweep whose transfer landed is still on its way.
+          and(eq(sweeps.status, "confirmed"), ne(sweeps.destinationKind, "same_chain")),
+        ),
       ),
     );
   for (const row of unfinished) {
@@ -717,14 +1060,28 @@ const nearTxExplorers = {
   mainnet: "https://nearblocks.io/txns/",
 } as const satisfies Record<HeraldEnv, string>;
 
+const ONE_CLICK_EXPLORER = "https://explorer.near-intents.org/transactions/";
+
 function sweepEntry(env: HeraldEnv, sweep: Sweep): SweepEntry {
   const network = networkRegistry[env].find((n) => n.caip2 === sweep.sourceNetwork);
+  const destination = networkRegistry[env].find((n) => n.caip2 === sweep.destinationNetwork);
   return {
     ...sweep,
     label: network?.label ?? sweep.sourceNetwork,
+    destinationLabel:
+      sweep.destinationKind === "intents"
+        ? "NEAR Intents"
+        : (destination?.label ?? sweep.destinationNetwork),
     sourceTxUrl: network && sweep.sourceTxHash ? explorerTxUrl(network, sweep.sourceTxHash) : null,
     nearTxUrl: sweep.nearTxHash
       ? `${nearTxExplorers[env]}${encodeURIComponent(sweep.nearTxHash)}`
+      : null,
+    deliveryTxUrl:
+      sweep.destinationKind === "cross_chain" && destination && sweep.deliveryTxHash
+        ? explorerTxUrl(destination, sweep.deliveryTxHash)
+        : null,
+    oneClickUrl: sweep.oneClickDepositAddress
+      ? `${ONE_CLICK_EXPLORER}${encodeURIComponent(sweep.oneClickDepositAddress)}`
       : null,
   };
 }
@@ -773,14 +1130,100 @@ async function advance(deps: SweepDeps, context: SweepContext): Promise<Sweep> {
       return sweep.sourceKind === "evm"
         ? awaitReceipt(deps, { ...context, sweep }, nowSeconds)
         : awaitSolanaTransaction(deps, { ...context, sweep });
+    case "confirmed":
+    case "delivering":
+      return sweep.destinationKind === "same_chain" ? sweep : followOneClick(deps, context);
     default:
       return sweep;
   }
 }
 
+/** Who a Sweep's transfer pays: 1Click's deposit address for the 1Click kinds, else the destination. */
+function transferRecipient(sweep: Sweep): string {
+  return sweep.oneClickDepositAddress ?? sweep.destinationAddress;
+}
+
 /** What `validBefore` is the expiry of, for messages. */
 function expiryOf(sweep: Sweep): string {
+  if (sweep.destinationKind !== "same_chain") return "1Click quote";
   return sweep.sourceKind === "evm" ? "authorization" : "transaction's blockhash";
+}
+
+/**
+ * Follows a `cross_chain` or `intents` Sweep whose transfer landed, through
+ * 1Click's status for its deposit address: `delivering` once 1Click has the
+ * deposit, then `delivered` or `refunded` (to the source Receiving
+ * Address), or `failed` if 1Click gave up. A status 1Click can't give yet,
+ * or that can't be read, leaves the Sweep as it is.
+ */
+async function followOneClick(deps: SweepDeps, { sweep, env }: SweepContext): Promise<Sweep> {
+  const depositAddress = sweep.oneClickDepositAddress;
+  if (!depositAddress) return sweep;
+  let swap: OneClickSwap | null;
+  try {
+    swap = await deps.oneClick.status(depositAddress);
+  } catch (error) {
+    logSweep("sweep_one_click_status_failed", sweep, { error: String(error) }, "warn");
+    return sweep;
+  }
+  // Not seen yet: 1Click picks the deposit up from the chain.
+  if (!swap || swap.status === "PENDING_DEPOSIT") return sweep;
+  const source = networkRegistry[env].find((n) => n.caip2 === sweep.sourceNetwork);
+  const sourceLabel = source?.label ?? sweep.sourceNetwork;
+  const now = new Date();
+  const guard = and(eq(sweeps.id, sweep.id), eq(sweeps.status, sweep.status));
+
+  switch (swap.status) {
+    case "KNOWN_DEPOSIT_TX":
+    case "PROCESSING":
+    // Below the quote, which Herald's exact transfers never are: 1Click
+    // refunds it, and reports `REFUNDED` once it has.
+    case "INCOMPLETE_DEPOSIT":
+      if (sweep.status === "delivering") return sweep;
+      await deps.db.update(sweeps).set({ status: "delivering", updatedAt: now }).where(guard);
+      logSweep("sweep_delivering", sweep, { oneClickStatus: swap.status });
+      return readSweep(deps.db, sweep.id);
+    case "SUCCESS":
+      await deps.db
+        .update(sweeps)
+        .set({
+          status: "delivered",
+          deliveredAmount: swap.amountOut,
+          deliveryTxHash: swap.destinationTxHashes.at(-1) ?? null,
+          updatedAt: now,
+        })
+        .where(guard);
+      logSweep("sweep_delivered", sweep, { amountOut: swap.amountOut });
+      return readSweep(deps.db, sweep.id);
+    case "REFUNDED": {
+      const amount = swap.refundedAmount
+        ? `${formatUsdc(swap.refundedAmount)} USDC`
+        : "the deposit";
+      const reason = swap.refundReason ? ` (${swap.refundReason})` : "";
+      await deps.db
+        .update(sweeps)
+        .set({
+          status: "refunded",
+          refundedAmount: swap.refundedAmount,
+          error: `1Click refunded ${amount} to your Receiving Address on ${sourceLabel}${reason}.`,
+          updatedAt: now,
+        })
+        .where(guard);
+      logSweep(
+        "sweep_refunded",
+        sweep,
+        { refundedAmount: swap.refundedAmount, reason: swap.refundReason },
+        "warn",
+      );
+      return readSweep(deps.db, sweep.id);
+    }
+    case "FAILED":
+      return fail(
+        deps.db,
+        sweep,
+        `1Click reports it couldn't deliver this Sweep. Follow its deposit on the NEAR Intents explorer.`,
+      );
+  }
 }
 
 async function awaitReceipt(
@@ -912,7 +1355,7 @@ async function submitEvmSweep(
     functionName: "transferWithAuthorization",
     args: [
       provider.evmAddress as Hex,
-      sweep.destinationAddress as Hex,
+      transferRecipient(sweep) as Hex,
       BigInt(sweep.amount),
       BigInt(sweep.validAfter),
       BigInt(sweep.validBefore),
@@ -1165,35 +1608,27 @@ export function rpcEvmReceiptReader(
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
+/** Whether `address` is the Provider's own Receiving Address on `network`. */
+function isReceivingAddress(address: string, provider: Provider, network: Network): boolean {
+  // EVM addresses are case-insensitive; Solana's base58 ones aren't.
+  return network.kind === "evm"
+    ? address.toLowerCase() === provider.evmAddress.toLowerCase()
+    : address === provider.solanaAddress;
+}
+
 /**
- * Why `destination` can't receive a Sweep on `network`, or null if it can.
- * Sending to the Receiving Address itself does nothing. On EVM, USDC sent
- * to the zero address or the USDC contract is lost; on Solana, so is USDC
- * sent to the USDC mint or the System Program. (Planning a Solana Sweep
- * also refuses token accounts and Herald's fee payer, which it reads from
- * the chain.)
+ * Why USDC sent to `address` on `network` is lost, or null if it isn't: on
+ * EVM, the zero address or the USDC contract; on Solana, the USDC mint or
+ * the System Program. (Planning a Solana Sweep also refuses token accounts
+ * and Herald's fee payer, which it reads from the chain.)
  */
-function checkDestination(
-  destination: string,
-  provider: Provider,
-  network: Network,
-): string | null {
-  const lost = `USDC sent to ${destination} on ${network.label} is lost. Sweep to an address you control.`;
+function lostDestination(address: string, network: Network): string | null {
+  const lost = `USDC sent to ${address} on ${network.label} is lost. Sweep to an address you control.`;
   if (network.kind === "solana") {
-    if (destination === provider.solanaAddress) {
-      return "That's your Receiving Address. Sweep to another address.";
-    }
-    if (destination === network.usdc.address || destination === SYSTEM_PROGRAM_ADDRESS) {
-      return lost;
-    }
-    return null;
+    return address === network.usdc.address || address === SYSTEM_PROGRAM_ADDRESS ? lost : null;
   }
-  const to = destination.toLowerCase();
-  if (to === provider.evmAddress.toLowerCase()) {
-    return "That's your Receiving Address. Sweep to another address.";
-  }
-  if (to === ZERO_ADDRESS || to === network.usdc.address.toLowerCase()) return lost;
-  return null;
+  const to = address.toLowerCase();
+  return to === ZERO_ADDRESS || to === network.usdc.address.toLowerCase() ? lost : null;
 }
 
 /**

@@ -31,6 +31,7 @@ import {
 import {
   FakeChainQueue,
   FakeNear,
+  FakeOneClick,
   FakeSolana,
   fakeReceipts,
   solanaKeyPair,
@@ -57,6 +58,7 @@ async function solanaProvider(accountId: string, balance = "5000000") {
     readUsdcBalance: usdcBalances({ [context.provider.solanaAddress]: balance }),
     readSolana: solana.reader,
     solanaQueue: solana.queue,
+    oneClick: new FakeOneClick().client,
   };
   return { ...context, solana, destination, deps };
 }
@@ -303,6 +305,7 @@ async function plannedSolanaSweep(accountId: string) {
     readReceipt: fakeReceipts().read,
     readSolana: context.solana.reader,
     solanaQueue: context.solana.queue,
+    oneClick: new FakeOneClick().client,
   };
   const sign = (options: { key?: Uint8Array; payload?: Hex; pending?: boolean } = {}) =>
     near.sign({
@@ -534,6 +537,7 @@ describe("the daily cap", () => {
       readReceipt: fakeReceipts().read,
       readSolana: context.solana.reader,
       solanaQueue: context.solana.queue,
+      oneClick: new FakeOneClick().client,
     };
     const planOne = () =>
       planSweep(context.deps, {

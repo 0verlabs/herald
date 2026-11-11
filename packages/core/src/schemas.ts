@@ -124,11 +124,20 @@ export const SweepMinimumSchema = z.object({
 export type SweepMinimum = z.infer<typeof SweepMinimumSchema>;
 
 /**
- * Where a Sweep sends funds. `same_chain`: any address on the source
- * network.
+ * Where a Sweep sends funds:
+ *
+ * - `same_chain`: any address on the source network.
+ * - `cross_chain`: USDC at an address on another network, through 1Click.
+ * - `intents`: the Provider Account's NEAR Intents account, through 1Click.
+ *
+ * The 1Click kinds transfer to the quote's deposit address, and 1Click
+ * delivers from there. 1Click runs on mainnet only.
  */
-export const SweepDestinationKindSchema = z.enum(["same_chain"]);
+export const SweepDestinationKindSchema = z.enum(["same_chain", "cross_chain", "intents"]);
 export type SweepDestinationKind = z.infer<typeof SweepDestinationKindSchema>;
+
+/** The `destinationNetwork` of an `intents` Sweep: NEAR mainnet, where `intents.near` lives. */
+export const NEAR_INTENTS_NETWORK = "near:mainnet";
 
 /**
  * Where a Sweep stands:
@@ -138,7 +147,11 @@ export type SweepDestinationKind = z.infer<typeof SweepDestinationKindSchema>;
  *   asking the MPC signer to sign it; Herald waits for the signature.
  * - `submitted`: Herald submitted the signed transfer through the chain
  *   queue.
- * - `confirmed`: the transfer landed on-chain.
+ * - `confirmed`: the transfer landed on-chain. A same-chain Sweep is done.
+ * - `delivering`: 1Click has the deposit and is delivering it.
+ * - `delivered`: 1Click delivered to the destination (`deliveredAmount`).
+ * - `refunded`: 1Click refunded the deposit to the source Receiving
+ *   Address (`refundedAmount`); `error` says why.
  * - `failed`: it didn't, and won't; `error` says why.
  */
 export const SweepStatusSchema = z.enum([
@@ -146,22 +159,50 @@ export const SweepStatusSchema = z.enum([
   "awaiting_signature",
   "submitted",
   "confirmed",
+  "delivering",
+  "delivered",
+  "refunded",
   "failed",
 ]);
 export type SweepStatus = z.infer<typeof SweepStatusSchema>;
 
 const Hex32Schema = z.string().regex(/^0x[0-9a-f]{64}$/, "Expected 32 bytes of lowercase hex");
 
-/** What every Sweep records, whatever its source chain. */
+const BaseUnitsSchema = z.string().regex(/^\d+$/);
+
+/**
+ * What every Sweep records, whatever its source chain.
+ *
+ * `destinationAddress` is where the funds end up: an address on
+ * `destinationNetwork`, or for an `intents` Sweep the NEAR Intents account.
+ * The `oneClick*` and `quote*` fields are the 1Click quote of a
+ * `cross_chain` or `intents` Sweep, null for a `same_chain` one: the
+ * transfer goes to `oneClickDepositAddress` instead, and 1Click delivers
+ * `destinationAsset` (its asset id). `quoteAmountOut` is what the quote
+ * expected to deliver, `deliveredAmount` and `refundedAmount` what 1Click
+ * reported, and `deliveryTxHash` its delivery on the destination chain.
+ */
 const sweepFields = {
   id: z.number().int().positive(),
   providerId: z.number().int().positive(),
   sourceNetwork: Caip2Schema,
   asset: z.string().min(1),
-  amount: z.string().regex(/^\d+$/),
+  amount: BaseUnitsSchema,
   destinationKind: SweepDestinationKindSchema,
   destinationNetwork: Caip2Schema,
   destinationAddress: z.string().min(1),
+  destinationAsset: z.string().min(1).nullable(),
+  oneClickQuoteId: z.string().min(1).nullable(),
+  oneClickDepositAddress: z.string().min(1).nullable(),
+  oneClickSignature: z.string().min(1).nullable(),
+  quoteAmountOut: BaseUnitsSchema.nullable(),
+  quoteMinAmountOut: BaseUnitsSchema.nullable(),
+  quoteRefundFee: BaseUnitsSchema.nullable(),
+  quoteTimeEstimate: z.number().int().nonnegative().nullable(),
+  quoteDeadline: z.date().nullable(),
+  deliveredAmount: BaseUnitsSchema.nullable(),
+  refundedAmount: BaseUnitsSchema.nullable(),
+  deliveryTxHash: z.string().min(1).nullable(),
   validBefore: z.number().int().positive(),
   nearTxHash: z.string().nullable(),
   sourceTxHash: z.string().nullable(),

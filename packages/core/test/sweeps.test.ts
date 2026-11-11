@@ -21,6 +21,7 @@ import {
 import {
   FakeChainQueue,
   FakeNear,
+  FakeOneClick,
   FakeSolana,
   fakeReceipts,
   sweepingProvider,
@@ -264,6 +265,7 @@ describe("getSweepOptions", () => {
           address: provider.evmAddress,
           balance: { ok: true, amount: "2500000" },
           minimum: "150000",
+          oneClick: false,
         },
         {
           network: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
@@ -272,6 +274,7 @@ describe("getSweepOptions", () => {
           address: provider.solanaAddress,
           balance: { ok: true, amount: "700000" },
           minimum: "1000",
+          oneClick: false,
         },
         {
           network: "eip155:421614",
@@ -280,6 +283,7 @@ describe("getSweepOptions", () => {
           address: provider.evmAddress,
           balance: { ok: true, amount: "2500000" },
           minimum: "1000",
+          oneClick: false,
         },
       ],
       submittedToday: 0,
@@ -672,10 +676,16 @@ describe("refreshSweeps", () => {
   });
 });
 
-/** Planning's deps: D1, the given balances, and a Solana that EVM Sweeps never touch. */
+/** Planning's deps: D1, the given balances, and a Solana and a 1Click that same-chain EVM Sweeps never touch. */
 function planDeps(readUsdcBalance: UsdcBalanceReader) {
   const solana = new FakeSolana();
-  return { db: db(), readUsdcBalance, readSolana: solana.reader, solanaQueue: solana.queue };
+  return {
+    db: db(),
+    readUsdcBalance,
+    readSolana: solana.reader,
+    solanaQueue: solana.queue,
+    oneClick: new FakeOneClick().client,
+  };
 }
 
 function sweepDeps(near: FakeNear, queue: FakeChainQueue, receipts = fakeReceipts()) {
@@ -687,5 +697,6 @@ function sweepDeps(near: FakeNear, queue: FakeChainQueue, receipts = fakeReceipt
     readReceipt: receipts.read,
     readSolana: solana.reader,
     solanaQueue: solana.queue,
+    oneClick: new FakeOneClick().client,
   };
 }

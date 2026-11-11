@@ -113,6 +113,9 @@ export const sweepMinimums = sqliteTable(
  *
  * The Provider's NEAR wallet asks the MPC signer to sign the payload in the
  * NEAR transaction `near_tx_hash`.
+ *
+ * A `cross_chain` or `intents` Sweep goes through 1Click: its transfer goes
+ * to `one_click_deposit_address`, and the `quote_*` columns hold the quote.
  */
 export const sweeps = sqliteTable(
   "sweeps",
@@ -126,9 +129,35 @@ export const sweeps = sqliteTable(
     asset: text().notNull(),
     /** Base units of `asset`, as a decimal string. */
     amount: text().notNull(),
-    destinationKind: text("destination_kind", { enum: ["same_chain"] }).notNull(),
+    destinationKind: text("destination_kind", {
+      enum: ["same_chain", "cross_chain", "intents"],
+    }).notNull(),
     destinationNetwork: text("destination_network").notNull(),
     destinationAddress: text("destination_address").notNull(),
+    /** 1Click kinds: the 1Click asset id 1Click delivers. */
+    destinationAsset: text("destination_asset"),
+    /** 1Click kinds: the quote's correlation id. */
+    oneClickQuoteId: text("one_click_quote_id"),
+    /** 1Click kinds: where the transfer goes, on the source network. */
+    oneClickDepositAddress: text("one_click_deposit_address"),
+    /** 1Click kinds: 1Click's signature of the quote, kept for disputes. */
+    oneClickSignature: text("one_click_signature"),
+    /** 1Click kinds: what the quote expected to deliver, base units of `destination_asset`. */
+    quoteAmountOut: text("quote_amount_out"),
+    /** 1Click kinds: the least it delivers after slippage. */
+    quoteMinAmountOut: text("quote_min_amount_out"),
+    /** 1Click kinds: what 1Click keeps if it refunds, base units of `asset`. */
+    quoteRefundFee: text("quote_refund_fee"),
+    /** 1Click kinds: seconds from the deposit's confirmation to delivery. */
+    quoteTimeEstimate: integer("quote_time_estimate"),
+    /** 1Click kinds: the deposit address goes inactive then; deposits after it may be lost. */
+    quoteDeadline: integer("quote_deadline", { mode: "timestamp_ms" }),
+    /** 1Click kinds: what 1Click reports it delivered. */
+    deliveredAmount: text("delivered_amount"),
+    /** 1Click kinds: what 1Click reports it refunded to the source Receiving Address. */
+    refundedAmount: text("refunded_amount"),
+    /** 1Click kinds: the delivery's transaction on the destination network. */
+    deliveryTxHash: text("delivery_tx_hash"),
     /** EVM: the EIP-3009 authorization nonce, 32 bytes as 0x-prefixed hex. */
     authorizationNonce: text("authorization_nonce"),
     /** EVM: Unix seconds; the authorization is valid strictly between this and `valid_before`. */
@@ -148,7 +177,16 @@ export const sweeps = sqliteTable(
     nearTxHash: text("near_tx_hash").unique(),
     sourceTxHash: text("source_tx_hash"),
     status: text({
-      enum: ["planned", "awaiting_signature", "submitted", "confirmed", "failed"],
+      enum: [
+        "planned",
+        "awaiting_signature",
+        "submitted",
+        "confirmed",
+        "delivering",
+        "delivered",
+        "refunded",
+        "failed",
+      ],
     })
       .notNull()
       .default("planned"),
