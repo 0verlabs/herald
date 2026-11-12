@@ -178,6 +178,7 @@ export const startSweepAll = createServerFn({ method: "POST" })
         destinationKind: z.literal("same_chain"),
         evmDestination: AddressInputSchema.optional(),
         solanaDestination: AddressInputSchema.optional(),
+        nearDestination: AddressInputSchema.optional(),
       }),
       z.object({
         destinationKind: z.literal("cross_chain"),
