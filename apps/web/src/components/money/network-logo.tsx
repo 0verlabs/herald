@@ -1,4 +1,4 @@
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -11,10 +11,14 @@ const sizes = {
 type Size = keyof typeof sizes;
 
 /**
- * A network's logo, as a round avatar. PLACEHOLDER: the first two letters
- * of its name, until the real logo files are added (add an `AvatarImage`
- * here, one file per network).
+ * A network's logo file in public/logos/networks, from its label: the first
+ * word, lowercased ("Base Sepolia" is base.svg). A network without a file
+ * falls back to the first two letters of its name.
  */
+const logoOf = (label: string) =>
+  `/logos/networks/${label.split(" ")[0]?.toLowerCase() ?? ""}.svg`;
+
+/** A network's logo, as a round avatar. */
 export function NetworkLogo({
   label,
   size = "sm",
@@ -27,9 +31,9 @@ export function NetworkLogo({
   return (
     <Avatar
       aria-hidden="true"
-      data-placeholder="network-logo"
       className={cn(sizes[size], className)}
     >
+      <AvatarImage src={logoOf(label)} alt="" />
       <AvatarFallback className="bg-secondary font-semibold text-secondary-foreground">
         {label.slice(0, 2)}
       </AvatarFallback>

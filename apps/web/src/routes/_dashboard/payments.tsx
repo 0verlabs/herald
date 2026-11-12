@@ -65,22 +65,19 @@ function Payments() {
               </EmptyContent>
             </Empty>
           ) : (
-            <Empty className="border border-dashed py-16">
-              <EmptyHeader className="max-w-md gap-3">
-                <EmptyMedia
-                  variant="icon"
-                  className="mb-3 size-14 rounded-2xl [&_svg:not([class*='size-'])]:size-7"
-                >
+            <Empty className="border border-dashed">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
                   <ReceiptTextIcon />
                 </EmptyMedia>
-                <EmptyTitle className="text-3xl">No payments yet</EmptyTitle>
-                <EmptyDescription className="text-base">
+                <EmptyTitle>No payments yet</EmptyTitle>
+                <EmptyDescription>
                   Payments show up here the moment a customer pays. Connect your API to take your
                   first one.
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
-                <Button size="lg" nativeButton={false} render={<Link to="/integration" />}>
+                <Button nativeButton={false} render={<Link to="/integration" />}>
                   Connect your API
                   <ArrowRightIcon data-icon="inline-end" />
                 </Button>
