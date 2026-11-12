@@ -1,5 +1,6 @@
 import {
   EvmAddressSchema,
+  NearAccountIdSchema,
   SolanaAddressSchema,
   unhandledKind,
   type SweepStatus,
@@ -23,6 +24,8 @@ export function addressProblem(address: string, kind: SweepChainOption["kind"]):
       return SolanaAddressSchema.safeParse(address).success
         ? null
         : "Enter a Solana wallet address.";
+    case "near":
+      return NearAccountIdSchema.safeParse(address).success ? null : "Enter a NEAR account id.";
     default:
       return unhandledKind(kind);
   }
@@ -30,13 +33,15 @@ export function addressProblem(address: string, kind: SweepChainOption["kind"]):
 
 /**
  * Whether two addresses on a network of this kind are the same. EVM
- * addresses are case-insensitive; Solana's base58 ones aren't.
+ * addresses are case-insensitive; Solana's base58 ones and NEAR account ids
+ * aren't.
  */
 export function sameAddress(a: string, b: string, kind: SweepChainOption["kind"]): boolean {
   switch (kind) {
     case "evm":
       return a.toLowerCase() === b.toLowerCase();
     case "solana":
+    case "near":
       return a === b;
     default:
       return unhandledKind(kind);
@@ -50,6 +55,8 @@ export function addressPlaceholder(kind: SweepChainOption["kind"]): string {
       return "0x…";
     case "solana":
       return "Solana wallet address";
+    case "near":
+      return "NEAR account id";
     default:
       return unhandledKind(kind);
   }

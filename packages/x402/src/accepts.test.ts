@@ -68,9 +68,12 @@ describe("accepts() on mainnet", () => {
 // (`derived_public_key`) for `herald-test.near`, 2026-11-10.
 const testnetEvm = "0xddd22895f299b4aed54ebd6468a273e857d83296";
 const testnetSolana = "6hNg2qo9BhiG87haavYeqTEjqA4GgWZbAhEKihUqumPL";
+// `derived_public_key` on path `near-1`, domain 1, as hex: an implicit
+// account. Recorded from `v1.signer-prod.testnet`, 2026-11-12.
+const testnetNear = "dd8a6fceebf4d64665a1f0ee59ebdc07ac150515abdcb85640fe6ecb0033b73e";
 
 describe("accepts() on testnet", () => {
-  test("offers Base Sepolia, Solana devnet and Arbitrum Sepolia, without Polygon or Avalanche", () => {
+  test("offers NEAR Testnet first, then Base Sepolia, Solana devnet and Arbitrum Sepolia, without Polygon or Avalanche", () => {
     const options = accepts({
       providerAccount: "herald-test.near",
       price: "$0.01",
@@ -78,6 +81,17 @@ describe("accepts() on testnet", () => {
     });
 
     expect(options).toEqual([
+      {
+        scheme: "exact",
+        network: "near:testnet",
+        payTo: testnetNear,
+        // Circle's NEP-141 USDC, without an EIP-712 domain.
+        price: {
+          asset: "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+          amount: "10000",
+        },
+        maxTimeoutSeconds: 300,
+      },
       {
         scheme: "exact",
         network: "eip155:84532",
@@ -144,6 +158,27 @@ describe("accepts() networks filter", () => {
     expect(options.map((o) => o.network)).toEqual(["eip155:421614"]);
   });
 
+  test("can include or exclude NEAR Testnet", () => {
+    const only = accepts({
+      providerAccount: "herald-test.near",
+      price: "$0.01",
+      env: "testnet",
+      networks: ["eip155:84532", "near:testnet"],
+    });
+    const without = accepts({
+      providerAccount: "herald-test.near",
+      price: "$0.01",
+      env: "testnet",
+      networks: ["eip155:84532", "eip155:421614"],
+    });
+
+    expect(only.map((o) => [o.network, o.payTo])).toEqual([
+      ["near:testnet", testnetNear],
+      ["eip155:84532", testnetEvm],
+    ]);
+    expect(without.map((o) => o.network)).toEqual(["eip155:84532", "eip155:421614"]);
+  });
+
   test("rejects a network Herald doesn't list in that environment", () => {
     // Polygon has no Herald testnet.
     expect(() =>
@@ -154,7 +189,7 @@ describe("accepts() networks filter", () => {
         networks: ["eip155:421614", "eip155:137"],
       }),
     ).toThrow(
-      "accepts(): eip155:137 is not a Herald network on testnet (testnet lists eip155:84532, solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1, eip155:421614)",
+      "accepts(): eip155:137 is not a Herald network on testnet (testnet lists near:testnet, eip155:84532, solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1, eip155:421614)",
     );
     // A mainnet id on testnet is a mix-up, not something to skip.
     expect(() =>

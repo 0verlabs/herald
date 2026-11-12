@@ -26,7 +26,10 @@ export const Route = createFileRoute("/_dashboard/integration")({
   component: Integration,
 });
 
-const kindLabels = { evm: "EVM", solana: "Solana" } as const satisfies Record<NetworkKind, string>;
+const kindLabels = { evm: "EVM", solana: "Solana", near: "NEAR" } as const satisfies Record<
+  NetworkKind,
+  string
+>;
 
 const runtimeOptions = Object.entries(runtimes) as [Runtime, (typeof runtimes)[Runtime]][];
 

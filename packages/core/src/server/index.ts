@@ -4,6 +4,7 @@ export * from "./admin.ts";
 export * from "./api-keys.ts";
 export * from "./balances.ts";
 export type { Db } from "./db.ts";
+export * from "./near-chain-queue.ts";
 export * from "./one-click.ts";
 export * from "./payments.ts";
 export * from "./providers.ts";

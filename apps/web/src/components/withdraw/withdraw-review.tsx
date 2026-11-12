@@ -101,6 +101,7 @@ export function WithdrawSummary(props: {
 function sameChainFees(chain: SweepChainOption): string {
   switch (chain.kind) {
     case "evm":
+    case "near":
       return `None. Herald pays the network fee on ${chain.label}.`;
     case "solana":
       return `None. Herald pays the network fee on ${chain.label}, and opens a USDC account for the wallet if it needs one.`;
@@ -113,6 +114,7 @@ function sameChainFees(chain: SweepChainOption): string {
 function approval(chain: SweepChainOption): string {
   switch (chain.kind) {
     case "evm":
+    case "near":
       return approveOnce;
     case "solana":
       return `${approveOnce} Approve it right away: on Solana it expires about a minute after you start.`;
@@ -125,6 +127,7 @@ function approval(chain: SweepChainOption): string {
 function quoteHeadsUp(chain: SweepChainOption): string | null {
   switch (chain.kind) {
     case "evm":
+    case "near":
       return null;
     case "solana":
       return "On Solana the transfer expires about a minute after the quote.";

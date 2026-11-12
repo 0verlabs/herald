@@ -44,13 +44,15 @@ Both Workers need their secrets locally: copy `apps/facilitator/.dev.vars.exampl
 
 | Endpoint         | Auth                         | What it does                                                                                                                                                                          |
 | ---------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /supported` | none                         | Lists every network Herald has in its environment, Solana with Herald's fee payer.                                                                                                    |
+| `GET /supported` | none                         | Lists every network Herald has in its environment, Solana with Herald's fee payer, and Herald's NEAR relayer under `signers["near:*"]`.                                               |
 | `POST /verify`   | `Authorization: Bearer hk_…` | Verifies a payment into the key's Provider's own Receiving Address. 120 requests per minute per key.                                                                                  |
 | `POST /settle`   | `Authorization: Bearer hk_…` | Settles it with Herald paying gas, and records the payment. 60 requests per minute per key, counted before the body is checked. Refused if the MPC root keys don't match `v1.signer`. |
 
 Refusals come back as `{ "error": "…", "message": "…" }` with 400, 401 (missing, unknown, revoked or wrong-environment key), 403 (`payTo` isn't the Provider's), 429 or 503. EVM transactions go through one `EvmChainQueue` Durable Object per network, which owns the gas wallet's nonce and never submits the same EIP-3009 authorization twice. It also keeps settlements whose receipt didn't arrive within `SETTLE_RECEIPT_TIMEOUT_MS` (30 s), so the stock resource server's single `settlement_pending` retry, on any isolate, waits for the same transaction instead of failing.
 
 Solana payments settle with the stock `@x402/svm` `exact` mechanism. The Buyer signs a USDC transfer with Herald's gas wallet as fee payer, and one `SolanaChainQueue` Durable Object per network adds the fee payer's signature and sends it. It signs only as fee payer, never a transaction whose instructions use the gas wallet's account, and never sends the same transaction signature twice. A payment only lands in a Receiving Address that has a USDC token account, so the same queue creates one per Provider when it registers (paying the rent) and records the result on the Provider (`solana_token_account_status`: `not_queued`, `queued`, `created` or `failed`). The web Worker queues it through a cross-Worker Durable Object binding. Until it exists, `/verify` and `/settle` answer `invalid_exact_svm_recipient_ata_missing` and nothing is sent.
+
+NEAR payments (NEAR Testnet, listed first; NEAR mainnet comes once its relayer is funded) settle with the stock `@x402/near` `exact` mechanism. The Buyer signs a NEP-366 delegate action holding one USDC `ft_transfer` into the Provider's NEAR Receiving Address (an implicit account derived on `near-1`, ADR-0009), and needs no NEAR. One `NearChainQueue` Durable Object per network holds the relayer key, wraps the delegate action in a relayer transaction with the next relayer nonce, sends it and waits until it is final (up to `SETTLE_RECEIPT_TIMEOUT_MS`), outside the nonce lock. It remembers every signed delegate action it was given, so presenting one again, from any isolate, is refused instead of relayed. The payment is recorded with the Buyer's NEAR account and the relayer transaction's hash. A Receiving Address must be registered on USDC (`storage_deposit`) before payments into it pass `/verify`; until then they answer `invalid_exact_near_recipient_not_registered_for_storage`.
 
 Facilitator secrets per environment:
 
@@ -60,7 +62,8 @@ Facilitator secrets per environment:
 | `SOLANA_GAS_KEY`                                     | base58 64-byte secret key, funded with SOL for fees and token account rent.                                                   |
 | `BASE_RPC_URL`, `SOLANA_RPC_URL`, `ARBITRUM_RPC_URL` | JSON-RPC endpoint of each chain, for the environment's network (Base Sepolia, Solana Devnet and Arbitrum Sepolia on testnet). |
 | `POLYGON_RPC_URL`, `AVALANCHE_RPC_URL`               | Mainnet only.                                                                                                                 |
-| `NEAR_RPC_URL`                                       | NEAR testnet or mainnet, for the MPC root-key check.                                                                          |
+| `NEAR_RPC_URL`                                       | NEAR testnet or mainnet, for the MPC root-key check and NEAR settlements.                                                     |
+| `NEAR_RELAYER_KEY`                                   | `ed25519:` and a base58 64-byte secret key: the NEAR relayer, an implicit account. `scripts/near-relayer-wizard.sh` makes it. |
 
 Every RPC endpoint is a private QuickNode URL, which carries the API key, so all of them are secrets. Solana's public endpoints wouldn't work anyway: `api.devnet.solana.com` and `api.mainnet-beta.solana.com` refuse requests from Workers (they block on the `CF-Worker` header, locally too). The web Worker needs `NEAR_RPC_URL` for sign-in and for reading Sweep signatures, and the same `<CHAIN>_RPC_URL` secrets as the facilitator for Overview's live balances and for following Sweeps (EVM receipts; Solana blockhashes, accounts and signature statuses).
 
@@ -152,7 +155,7 @@ For mainnet use `db:migrate:production` and `deploy:production`. Inside an app, 
 
 Secrets (gas wallet keys, RPC endpoints, the 1Click JWT) never go in the repo. Set them per environment with `CLOUDFLARE_ENV=<testnet|production> npx wrangler secret put <NAME>` from the Worker's directory, and keep local values in a gitignored `.dev.vars`.
 
-The NEAR relayer's key (`NEAR_RELAYER_KEY` on the facilitator) comes from a wizard that creates the relayer, funds it and sets the secret: `scripts/near-relayer-wizard.sh testnet`, or `production` for mainnet, which spends real NEAR and asks for a typed confirmation first.
+The NEAR relayer's key (`NEAR_RELAYER_KEY` on the facilitator) comes from a wizard that creates the relayer, funds it and sets the secret: `scripts/near-relayer-wizard.sh testnet`, or `production` for mainnet, which spends real NEAR and asks for a typed confirmation first. The facilitator requires it only where Herald lists a NEAR network (testnet for now). If it is missing or invalid, the facilitator still serves every other chain: NEAR stays in `/supported`, NEAR payments are refused with `invalid_exact_near_no_relayer_configured`, and each request logs `near_relayer_unavailable`.
 
 ### Known workarounds
 

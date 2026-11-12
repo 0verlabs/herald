@@ -10,8 +10,9 @@ import {
 } from "../networks.ts";
 import { decimalToBaseUnits } from "../price.ts";
 import { callJsonRpc } from "../rpc.ts";
-import { ProviderSchema, type HeraldEnv, type Provider } from "../schemas.ts";
+import type { HeraldEnv, Provider } from "../schemas.ts";
 import type { Db } from "./db.ts";
+import { providerFromRow } from "./providers.ts";
 
 /**
  * Reads how much USDC `owner` holds on `network`, in base units as a decimal
@@ -47,7 +48,7 @@ export async function getProviderBalances(
 ): Promise<ChainBalance[] | null> {
   const [row] = await deps.db.select().from(providers).where(eq(providers.id, input.providerId));
   if (!row) return null;
-  const provider = ProviderSchema.parse(row);
+  const provider = await providerFromRow(deps.db, row, input.env);
   const timeoutMs = deps.timeoutMs ?? BALANCE_READ_TIMEOUT_MS;
   return Promise.all(
     networkRegistry[input.env].map(async (network): Promise<ChainBalance> => {
@@ -85,6 +86,8 @@ function receivingAddressOn(provider: Provider, network: Network): string {
       return provider.evmAddress;
     case "solana":
       return provider.solanaAddress;
+    case "near":
+      return provider.nearAddress;
     default:
       return unhandledKind(network);
   }
@@ -150,6 +153,9 @@ export function rpcUsdcBalanceReader(
         }
         return total.toString();
       }
+      case "near":
+        // Read with `ft_balance_of` once the dashboard shows NEAR (#34).
+        throw new Error(`Herald doesn't read USDC balances on ${network.label} yet`);
       default:
         return unhandledKind(network);
     }
@@ -335,6 +341,9 @@ export function rpcNativeBalanceReader(
         }
         return BigInt(lamports).toString();
       }
+      case "near":
+        // Read with `view_account` once the fee-wallet view shows the relayer (#34).
+        throw new Error(`Herald doesn't read NEAR balances on ${network.label} yet`);
       default:
         return unhandledKind(network);
     }

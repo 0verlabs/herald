@@ -32,10 +32,11 @@ export async function checkMpcRootKeys(
   readRootKey: MpcRootKeyReader,
 ): Promise<MpcRootKeyCheck> {
   const { contractId, rootKeys } = mpcSigners[env];
-  const domains = Object.values(receivingAddressPaths).map(({ domainId, curve }) => ({
-    domainId,
-    pinned: rootKeys[curve],
-  }));
+  // Solana and NEAR both derive on domain 1: each domain is read once.
+  const curves = new Map(
+    Object.values(receivingAddressPaths).map(({ domainId, curve }) => [domainId, curve]),
+  );
+  const domains = [...curves].map(([domainId, curve]) => ({ domainId, pinned: rootKeys[curve] }));
   const results = await Promise.all(
     domains.map(async ({ domainId, pinned }) => ({
       contractId,

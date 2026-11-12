@@ -72,6 +72,7 @@ try {
       `Provider ${provider.accountId} (id ${provider.id}) on ${values.env}`,
       `  EVM Receiving Address:    ${provider.evmAddress}`,
       `  Solana Receiving Address: ${provider.solanaAddress}`,
+      `  NEAR Receiving Address:   ${provider.nearAddress}`,
       `  Solana USDC token account: ${provider.solanaTokenAccountStatus}`,
       `API key ${apiKey.prefix}… (id ${apiKey.id}), shown once:`,
       `  ${secret}`,

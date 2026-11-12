@@ -1,5 +1,5 @@
 import { providers } from "@herald/db/schema";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import { networkRegistry, type Caip2, type Network } from "../networks.ts";
 import { deriveReceivingAddresses } from "../receiving-addresses.ts";
 import {
@@ -89,7 +89,8 @@ export async function ensureSolanaTokenAccountQueued(
     await db.update(providers).set({ solanaTokenAccountStatus: "not_queued" }).where(notCreated);
   }
   const [row] = await db.select().from(providers).where(eq(providers.id, provider.id));
-  return ProviderSchema.parse(row);
+  if (!row) throw new Error(`Provider ${provider.id} disappeared`);
+  return providerFromRow(db, row, input.env);
 }
 
 /**
@@ -120,10 +121,37 @@ export async function registerProvider(
   const addresses = deriveReceivingAddresses(accountId, input.env);
   await db
     .insert(providers)
-    .values({ accountId, evmAddress: addresses.evm, solanaAddress: addresses.solana })
+    .values({
+      accountId,
+      evmAddress: addresses.evm,
+      solanaAddress: addresses.solana,
+      nearAddress: addresses.near,
+    })
     .onConflictDoNothing({ target: providers.accountId });
   const [row] = await db.select().from(providers).where(eq(providers.accountId, accountId));
-  return ProviderSchema.parse(row);
+  if (!row) throw new Error(`Provider ${accountId} wasn't stored`);
+  return providerFromRow(db, row, input.env);
+}
+
+/**
+ * Parses a `providers` row read from the database of Herald environment
+ * `env`. A row from before NEAR has no `near_address` (SQL can't derive it,
+ * see its migration): it is derived here and stored, once, so every Provider
+ * read through core has one. Every read of `providers` in core goes through
+ * this.
+ */
+export async function providerFromRow(
+  db: Db,
+  row: typeof providers.$inferSelect,
+  env: HeraldEnv,
+): Promise<Provider> {
+  if (row.nearAddress !== null) return ProviderSchema.parse(row);
+  const nearAddress = deriveReceivingAddresses(NearAccountIdSchema.parse(row.accountId), env).near;
+  await db
+    .update(providers)
+    .set({ nearAddress })
+    .where(and(eq(providers.id, row.id), isNull(providers.nearAddress)));
+  return ProviderSchema.parse({ ...row, nearAddress });
 }
 
 /** A Receiving Address and the labels of the networks Buyers pay it on. */
@@ -146,7 +174,7 @@ export async function getProviderOverview(
 ): Promise<ProviderOverview | null> {
   const [row] = await db.select().from(providers).where(eq(providers.id, input.providerId));
   if (!row) return null;
-  const provider = ProviderSchema.parse(row);
+  const provider = await providerFromRow(db, row, input.env);
   const networksOf = (kind: Network["kind"]) =>
     networkRegistry[input.env].filter((n) => n.kind === kind).map((n) => n.label);
   return {

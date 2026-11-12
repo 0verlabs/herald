@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
+import { unhandledKind } from "../src/index.ts";
 import {
   getGasWallets,
   type GasWalletAddressReader,
@@ -7,10 +8,21 @@ import {
 
 const EVM_GAS = "0x0000000000000000000000000000000000009a5e";
 const SOLANA_GAS = "GasWa11et1111111111111111111111111111111111";
+const NEAR_RELAYER = "ab".repeat(32);
 
-/** Herald's gas wallets as the chain queues answer them: one EVM, one Solana. */
-const gasWallets: GasWalletAddressReader = async (network) =>
-  network.kind === "evm" ? EVM_GAS : SOLANA_GAS;
+/** Herald's gas wallets as the chain queues answer them: one EVM, one Solana, the NEAR relayer. */
+const gasWallets: GasWalletAddressReader = async (network) => {
+  switch (network.kind) {
+    case "evm":
+      return EVM_GAS;
+    case "solana":
+      return SOLANA_GAS;
+    case "near":
+      return NEAR_RELAYER;
+    default:
+      return unhandledKind(network);
+  }
+};
 
 /**
  * Fake chains: native balances in base units keyed by `<network>/<owner>`.
@@ -26,6 +38,8 @@ function fakeChains(balances: Record<string, string>, failing: string[] = []): N
 describe("getGasWallets", () => {
   test("shows each chain's gas wallet and native balance, warning below its threshold", async () => {
     const readNativeBalance = fakeChains({
+      // 0.4 NEAR, below a 0.5 threshold.
+      [`near:testnet/${NEAR_RELAYER}`]: "400000000000000000000000",
       // 0.01 ETH, above a 0.005 threshold.
       [`eip155:84532/${EVM_GAS}`]: "10000000000000000",
       // 0.02 SOL, below a 0.05 threshold.
@@ -39,6 +53,7 @@ describe("getGasWallets", () => {
       {
         env: "testnet",
         lowBalanceThresholds: {
+          "near:testnet": "0.5",
           "eip155:84532": "0.005",
           "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "0.05",
           "eip155:421614": "0.005",
@@ -47,6 +62,17 @@ describe("getGasWallets", () => {
     );
 
     expect(wallets).toEqual([
+      {
+        network: "near:testnet",
+        label: "NEAR Testnet",
+        symbol: "NEAR",
+        decimals: 24,
+        threshold: "500000000000000000000000",
+        address: NEAR_RELAYER,
+        ok: true,
+        balance: "400000000000000000000000",
+        low: true,
+      },
       {
         network: "eip155:84532",
         label: "Base Sepolia",
@@ -120,11 +146,12 @@ describe("getGasWallets", () => {
     );
 
     expect(wallets).toMatchObject([
+      { label: "NEAR Testnet", ok: true, address: EVM_GAS, balance: "0" },
       { label: "Base Sepolia", ok: true, address: EVM_GAS, balance: "0" },
       { label: "Solana Devnet", ok: false, address: null },
       { label: "Arbitrum Sepolia", ok: false, address: EVM_GAS },
     ]);
-    const arbitrum = wallets[2];
+    const arbitrum = wallets[3];
     expect(arbitrum?.ok === false && arbitrum.message).toContain("Arbitrum Sepolia");
   });
 
@@ -139,7 +166,7 @@ describe("getGasWallets", () => {
       { env: "testnet", lowBalanceThresholds: {} },
     );
 
-    expect(wallets.map((w) => w.ok)).toEqual([true, false, true]);
+    expect(wallets.map((w) => w.ok)).toEqual([true, true, false, true]);
   });
 
   test("rejects thresholds that aren't amounts of the chain's native token", async () => {
@@ -159,6 +186,7 @@ describe("getGasWallets", () => {
     ).rejects.toThrow();
     // A JSON string, as `.dev.vars` sets it, reads like the object.
     expect(await read('{"eip155:84532":"0.5"}')).toMatchObject([
+      { threshold: null },
       { threshold: "500000000000000000" },
       { threshold: null },
       { threshold: null },

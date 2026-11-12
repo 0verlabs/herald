@@ -38,6 +38,7 @@
     "@solana/kit": "catalog:",
     "@x402/core": "catalog:",
     "@x402/evm": "catalog:",
+    "@x402/near": "catalog:",
     "@x402/svm": "catalog:",
     "typescript": "catalog:",
     "viem": "catalog:",

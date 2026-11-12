@@ -36,8 +36,9 @@ export type AcceptsOptions = {
   env?: HeraldEnv;
   /**
    * Only offer these CAIP-2 networks, e.g. `["eip155:8453"]`. Each must be
-   * one Herald lists in `env`. Order is always Herald's (Base, Solana,
-   * Arbitrum, Polygon, Avalanche).
+   * one Herald lists in `env`. Order is always Herald's (on testnet NEAR,
+   * Base, Solana, Arbitrum; on mainnet Base, Solana, Arbitrum, Polygon,
+   * Avalanche).
    */
   networks?: Caip2[];
 };
@@ -99,6 +100,7 @@ function extraFor(network: Network): { extra?: { name: string; version: string }
     case "evm":
       return { extra: { ...network.usdc.eip712 } };
     case "solana":
+    case "near":
       return {};
     default:
       return unhandledKind(network);

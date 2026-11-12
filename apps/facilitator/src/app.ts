@@ -106,8 +106,9 @@ export function createApp() {
         asset: paymentRequirements.asset,
         amount: result.amount ?? paymentRequirements.amount,
         // The stock mechanisms report the payer: the authorization's `from`
-        // on EVM, the transfer's signing owner on Solana. The EVM payload
-        // is the fallback.
+        // on EVM, the transfer's signing owner on Solana, the delegate
+        // action's sender (the Buyer's NEAR account) on NEAR. The EVM
+        // payload is the fallback.
         buyerAddress: result.payer ?? payerOf(paymentPayload),
         txHash: result.transaction,
         resourceUrl: paymentPayload.resource?.url ?? null,

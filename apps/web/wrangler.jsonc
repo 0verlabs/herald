@@ -20,9 +20,10 @@
 // SESSIONS holds dashboard sessions. SIGN_IN_RATE_LIMITER allows 20 sign-in
 // requests (challenges and signatures) per minute per client IP.
 //
-// SOLANA_CHAIN_QUEUE and EVM_CHAIN_QUEUE are the facilitator's chain queues
-// (ADR-0006), bound across Workers with `script_name`: the facilitator Worker
-// of the same environment. Registration queues each Provider's Solana USDC
+// SOLANA_CHAIN_QUEUE, EVM_CHAIN_QUEUE and NEAR_CHAIN_QUEUE are the
+// facilitator's chain queues (ADR-0006), bound across Workers with
+// `script_name`: the facilitator Worker of the same environment. The NEAR one
+// names Herald's NEAR relayer for the admin page. Registration queues each Provider's Solana USDC
 // token account on the Solana one; Sweeps submit their signed transfers
 // through the queue of their chain, which pays the gas (on Solana, as the
 // transaction's fee payer). Locally, run the facilitator with `wrangler dev`
@@ -75,6 +76,11 @@
         "class_name": "EvmChainQueue",
         "script_name": "herald-facilitator",
       },
+      {
+        "name": "NEAR_CHAIN_QUEUE",
+        "class_name": "NearChainQueue",
+        "script_name": "herald-facilitator",
+      },
     ],
   },
   "d1_databases": [
@@ -119,6 +125,11 @@
           {
             "name": "EVM_CHAIN_QUEUE",
             "class_name": "EvmChainQueue",
+            "script_name": "herald-facilitator-testnet",
+          },
+          {
+            "name": "NEAR_CHAIN_QUEUE",
+            "class_name": "NearChainQueue",
             "script_name": "herald-facilitator-testnet",
           },
         ],
@@ -174,6 +185,11 @@
           {
             "name": "EVM_CHAIN_QUEUE",
             "class_name": "EvmChainQueue",
+            "script_name": "herald-facilitator-mainnet",
+          },
+          {
+            "name": "NEAR_CHAIN_QUEUE",
+            "class_name": "NearChainQueue",
             "script_name": "herald-facilitator-mainnet",
           },
         ],

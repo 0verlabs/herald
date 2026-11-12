@@ -18,6 +18,7 @@
     "@x402/evm": "catalog:",
     "@x402/fetch": "catalog:",
     "@x402/hono": "catalog:",
+    "@x402/near": "catalog:",
     "@x402/svm": "catalog:",
     "hono": "catalog:",
     "viem": "catalog:"

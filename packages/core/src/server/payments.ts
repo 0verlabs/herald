@@ -62,18 +62,22 @@ function receivingAddressOn(network: Network, provider: Provider): string {
       return provider.evmAddress;
     case "solana":
       return provider.solanaAddress;
+    case "near":
+      return provider.nearAddress;
     default:
       return unhandledKind(network);
   }
 }
 
 // EVM addresses compare case-insensitively (checksum casing is optional);
-// Solana's base58 addresses are case-sensitive.
+// Solana's base58 addresses are case-sensitive, and NEAR account ids are
+// lowercase, so both compare exactly.
 function sameAddress(network: Network, a: string, b: string): boolean {
   switch (network.kind) {
     case "evm":
       return a.toLowerCase() === b.toLowerCase();
     case "solana":
+    case "near":
       return a === b;
     default:
       return unhandledKind(network);

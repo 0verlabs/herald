@@ -7,7 +7,9 @@
 // environment declares its own.
 //
 // SETTLE_RECEIPT_TIMEOUT_MS bounds the receipt wait in /settle; past it the
-// answer is `settlement_pending` and the resource server retries once.
+// answer is `settlement_pending` and the resource server retries once. On
+// NEAR, which has no pending answer, it bounds the wait for the relayer
+// transaction to be final.
 //
 // Secrets (declared in `secrets.required` at the top level and in each
 // environment, since `secrets` is not inherited), never their values in this
@@ -22,8 +24,16 @@
 //   only), for that environment's network: Base Sepolia and Solana Devnet on
 //   testnet. They are private QuickNode endpoints whose URL carries the API
 //   key. Solana's public endpoints refuse requests from Workers anyway.
-// - NEAR_RPC_URL: the NEAR endpoint for the MPC root-key check before
-//   settling (NEAR testnet or mainnet).
+// - NEAR_RPC_URL: the NEAR endpoint (NEAR testnet or mainnet) for the MPC
+//   root-key check before settling, and for NEAR settlements.
+// - NEAR_RELAYER_KEY: near-cli private key (`ed25519:<base58 64-byte secret
+//   key>`) of the NEAR relayer, an implicit account (its id is the hex of
+//   the public key). It pays the gas of NEAR settlements; only the
+//   NearChainQueue Durable Object uses it. scripts/near-relayer-wizard.sh
+//   creates it. Required only where Herald lists a NEAR network (local and
+//   testnet; production once NEAR mainnet is listed). Without a usable key,
+//   NEAR payments are refused with `invalid_exact_near_no_relayer_configured`
+//   and the other chains keep working.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "herald-facilitator",
@@ -39,11 +49,13 @@
       "SOLANA_RPC_URL",
       "ARBITRUM_RPC_URL",
       "NEAR_RPC_URL",
+      "NEAR_RELAYER_KEY",
     ],
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["EvmChainQueue"] },
     { "tag": "v2", "new_sqlite_classes": ["SolanaChainQueue"] },
+    { "tag": "v3", "new_sqlite_classes": ["NearChainQueue"] },
   ],
   "vars": {
     "HERALD_ENV": "testnet",
@@ -53,6 +65,7 @@
     "bindings": [
       { "name": "EVM_CHAIN_QUEUE", "class_name": "EvmChainQueue" },
       { "name": "SOLANA_CHAIN_QUEUE", "class_name": "SolanaChainQueue" },
+      { "name": "NEAR_CHAIN_QUEUE", "class_name": "NearChainQueue" },
     ],
   },
   // Per API key: 60 settle and 120 verify requests per minute.
@@ -88,6 +101,7 @@
           "SOLANA_RPC_URL",
           "ARBITRUM_RPC_URL",
           "NEAR_RPC_URL",
+          "NEAR_RELAYER_KEY",
         ],
       },
       "vars": {
@@ -98,6 +112,7 @@
         "bindings": [
           { "name": "EVM_CHAIN_QUEUE", "class_name": "EvmChainQueue" },
           { "name": "SOLANA_CHAIN_QUEUE", "class_name": "SolanaChainQueue" },
+          { "name": "NEAR_CHAIN_QUEUE", "class_name": "NearChainQueue" },
         ],
       },
       "ratelimits": [
@@ -147,6 +162,7 @@
         "bindings": [
           { "name": "EVM_CHAIN_QUEUE", "class_name": "EvmChainQueue" },
           { "name": "SOLANA_CHAIN_QUEUE", "class_name": "SolanaChainQueue" },
+          { "name": "NEAR_CHAIN_QUEUE", "class_name": "NearChainQueue" },
         ],
       },
       "ratelimits": [
