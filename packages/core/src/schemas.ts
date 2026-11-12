@@ -298,10 +298,33 @@ export const SolanaSweepSchema = z.object({
 export type SolanaSweep = z.infer<typeof SolanaSweepSchema>;
 
 /**
- * A Sweep: moving `amount` (base units of `asset`) out of a Provider's
- * Receiving Address on `sourceNetwork`, an EVM or a Solana one
- * (`sourceKind`). `packages/db` keeps the `sweeps` table in line with this
- * schema: one table, with the other kind's columns null.
+ * A Sweep from the NEAR Receiving Address: `nearDelegateAction`, an
+ * unsigned NEP-366 delegate action (base64 Borsh, without the NEP-461
+ * prefix) holding one USDC `ft_transfer`, with the access-key nonce
+ * `nearNonce`, landing up to block `nearMaxBlockHeight`, which
+ * `validBefore` (Unix seconds) estimates. `payloadHash` is its NEP-461
+ * hash, what the MPC signer signs. `sourceTxHash` is the relayer
+ * transaction that carries it.
  */
-export const SweepSchema = z.discriminatedUnion("sourceKind", [EvmSweepSchema, SolanaSweepSchema]);
+export const NearSweepSchema = z.object({
+  ...sweepFields,
+  sourceKind: z.literal("near"),
+  nearDelegateAction: z.string().min(1),
+  nearNonce: z.number().int().nonnegative(),
+  nearMaxBlockHeight: z.number().int().nonnegative(),
+  payloadHash: Hex32Schema,
+});
+export type NearSweep = z.infer<typeof NearSweepSchema>;
+
+/**
+ * A Sweep: moving `amount` (base units of `asset`) out of a Provider's
+ * Receiving Address on `sourceNetwork`, an EVM, Solana or NEAR one
+ * (`sourceKind`). `packages/db` keeps the `sweeps` table in line with this
+ * schema: one table, with the other kinds' columns null.
+ */
+export const SweepSchema = z.discriminatedUnion("sourceKind", [
+  EvmSweepSchema,
+  SolanaSweepSchema,
+  NearSweepSchema,
+]);
 export type Sweep = z.infer<typeof SweepSchema>;

@@ -28,6 +28,33 @@ export type NearSettlementResult =
   | { ok: false; message: string; transaction?: string };
 
 /**
+ * A Provider's NEAR Sweep to relay: the signed delegate action (base64
+ * Borsh) from the NEAR Receiving Address, holding one USDC `ft_transfer`.
+ */
+export type NearSweepSubmission = { network: Caip2; signedDelegateAction: string };
+
+/**
+ * A relayed Sweep: the relayer transaction's hash, once it is sent (not yet
+ * final). `ok: false` when Herald didn't send it: a malformed or expired
+ * delegate action, or a node that refused it.
+ */
+export type NearSweepSubmissionResult =
+  | { ok: true; transaction: string }
+  | { ok: false; message: string };
+
+/**
+ * Herald's NEAR chain queue for Sweeps: the relayer's account id, and
+ * submitting a signed Sweep for the relayer to send. Submitting the same
+ * signed delegate action again answers the same transaction without
+ * sending anything new. Rejects if the queue can't be reached, in which
+ * case submitting again is safe.
+ */
+export type NearSweepQueue = {
+  relayer(network: Caip2): Promise<string>;
+  submitSweep(submission: NearSweepSubmission): Promise<NearSweepSubmissionResult>;
+};
+
+/**
  * Setting up one Provider's NEAR Receiving Address on a NEAR network:
  * creating `account`, the implicit account, and registering it on USDC.
  */
@@ -62,4 +89,14 @@ export interface NearChainQueueRpc {
    * first submission's transaction.
    */
   submitSettlement(submission: NearSettlementSubmission): Promise<NearSettlementResult>;
+
+  /**
+   * Wraps a Provider's signed Sweep in a relayer transaction and sends it,
+   * answering its hash without waiting for it to be final. Presenting the
+   * same signed delegate action again answers the first transaction (sent
+   * again, in case the first broadcast was lost) instead of a new one.
+   * Refuses a delegate action that isn't a single USDC `ft_transfer` signed
+   * by its sender, or one that expired.
+   */
+  submitSweep(submission: NearSweepSubmission): Promise<NearSweepSubmissionResult>;
 }

@@ -25,7 +25,9 @@ export function addressProblem(address: string, kind: SweepChainOption["kind"]):
         ? null
         : "Enter a Solana wallet address.";
     case "near":
-      return NearAccountIdSchema.safeParse(address).success ? null : "Enter a NEAR account id.";
+      return NearAccountIdSchema.safeParse(address).success
+        ? null
+        : "Enter a NEAR account id, such as alice.near, or a 64-character implicit account. It's lowercase, without spaces.";
     default:
       return unhandledKind(kind);
   }

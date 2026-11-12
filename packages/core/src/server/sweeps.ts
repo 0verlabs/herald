@@ -3,7 +3,8 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { base58, base64 } from "@scure/base";
 import { isAddress } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
-import { and, count, desc, eq, gte, inArray, isNotNull, ne, or } from "drizzle-orm";
+import { hexToBytes } from "@noble/hashes/utils.js";
+import { and, count, desc, eq, gte, inArray, isNotNull, max, ne, or } from "drizzle-orm";
 import { encodeFunctionData, hashTypedData, parseAbi, recoverAddress, type Hex } from "viem";
 import { z } from "zod";
 import {
@@ -25,6 +26,7 @@ import {
   SweepSchema,
   type EvmSweep,
   type HeraldEnv,
+  type NearSweep,
   type Provider,
   type SolanaSweep,
   type Sweep,
@@ -38,6 +40,14 @@ import {
   type OneClickQuote,
   type OneClickSwap,
 } from "./one-click.ts";
+import type { NearSweepQueue, NearSweepSubmissionResult } from "./near-chain-queue.ts";
+import {
+  nearDelegatePayloadHash,
+  nearSweepDelegateAction,
+  signedNearDelegate,
+  type NearSweepReader,
+  type NearSweepStatus,
+} from "./near-sweeps.ts";
 import { providerFromRow } from "./providers.ts";
 import {
   buildSolanaSweepTransaction,
@@ -53,6 +63,7 @@ import {
 
 type EvmNetwork = Extract<Network, { kind: "evm" }>;
 type SolanaNetwork = Extract<Network, { kind: "solana" }>;
+type NearNetwork = Extract<Network, { kind: "near" }>;
 
 /**
  * How many Sweeps Herald submits for one Provider in any 24 hours, which
@@ -94,6 +105,30 @@ export const SWEEP_VALIDITY_SECONDS = 10 * 60;
  * isn't on NEAR.
  */
 export const SOLANA_SWEEP_VALIDITY_SECONDS = 120;
+
+/**
+ * How long a planned NEAR Sweep can be signed, by the server's clock, as
+ * long as an EVM Sweep. Its delegate action lands up to
+ * `nearMaxBlockHeight`, which the chain enforces: this many seconds of
+ * `NEAR_BLOCK_MS` blocks past the final height at planning.
+ */
+export const NEAR_SWEEP_VALIDITY_SECONDS = 10 * 60;
+
+/**
+ * NEAR's block time, rounded up a little: 0.578 s on testnet and 0.589 s on
+ * mainnet, measured over 1000 blocks on 2026-11-12. Slower blocks give the
+ * delegate action more time than `validBefore` says, faster ones a little
+ * less.
+ */
+const NEAR_BLOCK_MS = 600;
+
+/**
+ * How many blocks past a NEAR Sweep's `nearMaxBlockHeight` Herald waits for
+ * its relayer transaction to have executed before it counts the Sweep as
+ * never landed: one included in time has executed long before (about a
+ * minute).
+ */
+const NEAR_UNLANDED_GRACE_BLOCKS = 100;
 
 /**
  * The `deadline` Herald asks 1Click for: past it, 1Click refunds a swap that
@@ -156,7 +191,8 @@ export const MPC_SIGN_DEPOSIT = "1";
  * are the source Receiving Address's, so the signature is that address's:
  * an ECDSA signature of a 32-byte hash (`Ecdsa`, hex) for the EVM one, an
  * Ed25519 signature of the transaction message (`Eddsa`, hex) for the
- * Solana one.
+ * Solana one, and of the delegate action's 32-byte NEP-461 hash for the
+ * NEAR one.
  */
 export type MpcSignRequest = {
   contractId: string;
@@ -233,14 +269,17 @@ export type SweepTarget =
   | { destinationKind: "intents" };
 
 /**
- * What planning a Sweep reads: D1, balances, for Solana the chain and
- * Herald's chain queue, and 1Click for `cross_chain` and `intents` Sweeps.
+ * What planning a Sweep reads: D1, balances, for Solana and NEAR the chain
+ * and Herald's chain queue (its fee payer or relayer), and 1Click for
+ * `cross_chain` and `intents` Sweeps.
  */
 export type SweepPlanDeps = {
   db: Db;
   readUsdcBalance: UsdcBalanceReader;
   readSolana: SolanaSweepReader;
   solanaQueue: Pick<SolanaSweepQueue, "feePayer">;
+  readNear: NearSweepReader;
+  nearQueue: Pick<NearSweepQueue, "relayer">;
   oneClick: Pick<OneClickClient, "quote">;
 };
 
@@ -283,6 +322,11 @@ const transferWithAuthorizationTypes = {
  *   token account first (Herald paying the rent) if it has none. It uses a
  *   recent blockhash, so it must be signed within about
  *   `SOLANA_SWEEP_VALIDITY_SECONDS`; the MPC signer signs its message.
+ * - NEAR: a NEP-366 delegate action from the NEAR Receiving Address
+ *   holding one USDC `ft_transfer`, for Herald's relayer to submit (paying
+ *   the gas), to an account registered on USDC. It lands up to about
+ *   `NEAR_SWEEP_VALIDITY_SECONDS` from now; the MPC signer signs its
+ *   NEP-461 hash.
  */
 export async function planSweep(
   deps: SweepPlanDeps,
@@ -305,9 +349,6 @@ export async function planSweep(
       "unsupported_network",
       `${parsed.data.network} is not a network Herald lists on ${input.env}.`,
     );
-  }
-  if (network.kind === "near") {
-    return reject("unsupported_network", `Herald can't Sweep from ${network.label} yet.`);
   }
   const [row] = await deps.db.select().from(providers).where(eq(providers.id, input.providerId));
   if (!row) return reject("unknown_provider", "No Provider has this id.");
@@ -461,7 +502,7 @@ function enterAddress(network: Network): string {
     case "solana":
       return "Enter a Solana wallet address.";
     case "near":
-      return "Enter a NEAR account id.";
+      return "Enter a NEAR account id, such as alice.near, or a 64-character implicit account.";
     default:
       return unhandledKind(network);
   }
@@ -656,6 +697,14 @@ type PlannedColumns =
       solanaTransaction: string;
       lastValidBlockHeight: number;
       validBefore: number;
+    }
+  | {
+      sourceKind: "near";
+      nearDelegateAction: string;
+      nearNonce: number;
+      nearMaxBlockHeight: number;
+      payloadHash: Hex;
+      validBefore: number;
     };
 
 type PlannedRow =
@@ -675,7 +724,7 @@ type PlanContext<N extends Network> = {
 
 /** Plans the chain-specific columns of a Sweep from `network`. */
 async function planColumns(
-  deps: Pick<SweepPlanDeps, "readSolana" | "solanaQueue">,
+  deps: SweepPlanDeps,
   context: PlanContext<Network>,
 ): Promise<PlannedRow> {
   const { network } = context;
@@ -685,8 +734,7 @@ async function planColumns(
     case "solana":
       return planSolanaColumns(deps, { ...context, network });
     case "near":
-      // planSweep refuses NEAR before it gets here.
-      throw new Error(`Herald can't plan a Sweep from ${network.label}`);
+      return planNearColumns(deps, { ...context, network });
     default:
       return unhandledKind(network);
   }
@@ -791,6 +839,95 @@ async function planSolanaColumns(
         Math.floor(now.getTime() / 1000) + SOLANA_SWEEP_VALIDITY_SECONDS,
         signBy,
       ),
+    },
+  };
+}
+
+/**
+ * Reads what the delegate action needs (Herald's relayer, the NEAR
+ * Receiving Address's key nonce, whether the destination can receive USDC,
+ * the final block height) and builds it. Its nonce is above the key's and
+ * above any NEAR Sweep of the Provider's still on its way, so Sweeps
+ * planned one after the other can all land in that order.
+ */
+async function planNearColumns(
+  deps: Pick<SweepPlanDeps, "db" | "readNear" | "nearQueue">,
+  { provider, network, amount, destination, now, signBy = Infinity }: PlanContext<NearNetwork>,
+): Promise<PlannedRow> {
+  const publicKey = hexToBytes(provider.nearAddress);
+  let relayer: string;
+  let keyNonce: bigint | null;
+  let registered: boolean;
+  try {
+    [relayer, keyNonce, registered] = await Promise.all([
+      deps.nearQueue.relayer(network.caip2),
+      deps.readNear.accessKeyNonce({ network, accountId: provider.nearAddress, publicKey }),
+      deps.readNear.storageRegistered({ network, accountId: destination }),
+    ]);
+  } catch (error) {
+    return chainUnavailable(provider, network, error);
+  }
+  if (destination === relayer) {
+    return reject(
+      "invalid_destination",
+      `That's Herald's relayer on ${network.label}. Sweep to an account you control.`,
+    );
+  }
+  // An ft_transfer to an unregistered account fails, with Herald paying the gas.
+  if (!registered) {
+    return reject(
+      "invalid_destination",
+      `${destination} isn't registered on USDC on ${network.label}, so it can't receive USDC. Its owner registers it first (USDC's storage_deposit), as NEAR wallets do.`,
+    );
+  }
+  if (keyNonce === null) {
+    return reject(
+      "chain_unavailable",
+      `Your NEAR Receiving Address isn't set up on ${network.label} yet. Herald sets it up when you sign in; try again in a few minutes.`,
+    );
+  }
+  const [open] = await deps.db
+    .select({ nonce: max(sweeps.nearNonce) })
+    .from(sweeps)
+    .where(
+      and(
+        eq(sweeps.providerId, provider.id),
+        eq(sweeps.sourceNetwork, network.caip2),
+        inArray(sweeps.status, ["planned", "awaiting_signature", "submitted"]),
+      ),
+    );
+  const lastPlanned = open?.nonce != null ? BigInt(open.nonce) : 0n;
+  const nonce = (keyNonce > lastPlanned ? keyNonce : lastPlanned) + 1n;
+
+  // Read last, so the delegate action has as much of its window left as
+  // possible.
+  let height: number;
+  try {
+    height = await deps.readNear.finalBlockHeight({ network });
+  } catch (error) {
+    return chainUnavailable(provider, network, error);
+  }
+  const nowSeconds = Math.floor(now.getTime() / 1000);
+  const validBefore = Math.min(nowSeconds + NEAR_SWEEP_VALIDITY_SECONDS, signBy);
+  const maxBlockHeight = height + Math.floor(((validBefore - nowSeconds) * 1000) / NEAR_BLOCK_MS);
+  const delegateAction = nearSweepDelegateAction({
+    senderId: provider.nearAddress,
+    usdc: network.usdc.address,
+    receiverId: destination,
+    amount,
+    nonce,
+    maxBlockHeight: BigInt(maxBlockHeight),
+    publicKey,
+  });
+  return {
+    ok: true,
+    row: {
+      sourceKind: "near",
+      nearDelegateAction: base64.encode(delegateAction),
+      nearNonce: Number(nonce),
+      nearMaxBlockHeight: maxBlockHeight,
+      payloadHash: bytesToHex(nearDelegatePayloadHash(delegateAction)),
+      validBefore,
     },
   };
 }
@@ -910,6 +1047,9 @@ export type SweepDeps = {
   /** Solana: the chain, and Herald's chain queue. */
   readSolana: SolanaSweepReader;
   solanaQueue: Pick<SolanaSweepQueue, "submitSweep">;
+  /** NEAR: the chain, and Herald's chain queue. */
+  readNear: Pick<NearSweepReader, "finalBlockHeight" | "sweepStatus">;
+  nearQueue: Pick<NearSweepQueue, "submitSweep">;
   /** `cross_chain` and `intents` Sweeps: 1Click's swap status. */
   oneClick: Pick<OneClickClient, "status">;
 };
@@ -1250,6 +1390,8 @@ async function advance(deps: SweepDeps, context: SweepContext): Promise<Sweep> {
           return submitEvmSweep(deps, { ...context, sweep }, signature.successValue);
         case "solana":
           return submitSolanaSweep(deps, { ...context, sweep }, signature.successValue);
+        case "near":
+          return submitNearSweep(deps, { ...context, sweep }, signature.successValue);
         default:
           return unhandledKind(sweep);
       }
@@ -1260,6 +1402,8 @@ async function advance(deps: SweepDeps, context: SweepContext): Promise<Sweep> {
           return awaitReceipt(deps, { ...context, sweep }, nowSeconds);
         case "solana":
           return awaitSolanaTransaction(deps, { ...context, sweep });
+        case "near":
+          return awaitNearTransfer(deps, { ...context, sweep });
         default:
           return unhandledKind(sweep);
       }
@@ -1284,6 +1428,8 @@ function expiryOf(sweep: Sweep): string {
       return "authorization";
     case "solana":
       return "transaction's blockhash";
+    case "near":
+      return "delegate action";
     default:
       return unhandledKind(sweep);
   }
@@ -1449,6 +1595,46 @@ async function awaitSolanaTransaction(
   );
 }
 
+/**
+ * Reads whether a submitted NEAR Sweep's relayer transaction executed:
+ * `confirmed` once its `ft_transfer` succeeded, `failed` if it (or the
+ * delegate action) failed. One that hasn't executed fails only once the
+ * chain is well past the delegate action's `nearMaxBlockHeight`, and its
+ * status is read again after the height so it can't have executed between
+ * the two reads.
+ */
+async function awaitNearTransfer(
+  deps: SweepDeps,
+  { sweep, env }: SweepContext<NearSweep>,
+): Promise<Sweep> {
+  const network = networkRegistry[env].find((n) => n.caip2 === sweep.sourceNetwork);
+  const txHash = sweep.sourceTxHash;
+  if (network?.kind !== "near" || !txHash) return sweep;
+  let status: NearSweepStatus | null;
+  try {
+    status = await deps.readNear.sweepStatus({ network, txHash });
+    if (status === null) {
+      const height = await deps.readNear.finalBlockHeight({ network });
+      if (height <= sweep.nearMaxBlockHeight + NEAR_UNLANDED_GRACE_BLOCKS) return sweep;
+      status = await deps.readNear.sweepStatus({ network, txHash });
+    }
+  } catch (error) {
+    logSweep("sweep_near_status_read_failed", sweep, { error: String(error) }, "warn");
+    return sweep;
+  }
+  if (status?.kind === "success") return confirm(deps.db, sweep);
+  if (status?.kind === "failure") {
+    logSweep("sweep_near_transfer_failed", sweep, { failure: status.error }, "warn");
+    return fail(deps.db, sweep, `The transfer failed on ${network.label}.`);
+  }
+  // Not executed, and too far past the height it could land at.
+  return fail(
+    deps.db,
+    sweep,
+    `The transfer didn't land on ${network.label} before its delegate action expired.`,
+  );
+}
+
 async function confirm(db: Db, sweep: Sweep): Promise<Sweep> {
   await db
     .update(sweeps)
@@ -1583,6 +1769,47 @@ async function submitSolanaSweep(
     return fail(deps.db, sweep, `Herald couldn't submit the transfer: ${submitted.message}`);
   }
   return markSubmitted(deps.db, context, submitted.signature);
+}
+
+/**
+ * Checks the MPC signer's Ed25519 signature of the planned delegate
+ * action's NEP-461 hash against the NEAR Receiving Address, and hands the
+ * signed delegate action to the NEAR chain queue, whose relayer submits it.
+ */
+async function submitNearSweep(
+  deps: SweepDeps,
+  context: SweepContext<NearSweep>,
+  successValue: string,
+): Promise<Sweep> {
+  const { provider, sweep } = context;
+  const signature = parseMpcEd25519Signature(successValue);
+  if (!signature) {
+    return fail(deps.db, sweep, "The MPC signer's answer isn't an Ed25519 signature.");
+  }
+  const delegateAction = base64.decode(sweep.nearDelegateAction);
+  const payload = nearDelegatePayloadHash(delegateAction);
+  // Strict RFC 8032 verification, as NEAR verifies delegate actions.
+  const valid =
+    bytesToHex(payload) === sweep.payloadHash &&
+    ed25519.verify(signature, payload, hexToBytes(provider.nearAddress), { zip215: false });
+  if (!valid) return fail(deps.db, sweep, notYourSignature(sweep));
+
+  let submitted: NearSweepSubmissionResult;
+  try {
+    submitted = await deps.nearQueue.submitSweep({
+      network: sweep.sourceNetwork,
+      signedDelegateAction: signedNearDelegate(delegateAction, signature),
+    });
+  } catch (error) {
+    // Safe to submit again: the queue answers the same transaction for the
+    // same signed delegate action.
+    logSweep("sweep_submission_unanswered", sweep, { error: String(error) }, "warn");
+    return sweep;
+  }
+  if (!submitted.ok) {
+    return fail(deps.db, sweep, `Herald couldn't submit the transfer: ${submitted.message}`);
+  }
+  return markSubmitted(deps.db, context, submitted.transaction);
 }
 
 async function markSubmitted(db: Db, context: SweepContext, sourceTxHash: string): Promise<Sweep> {
@@ -1855,7 +2082,8 @@ function authorizationPayload(
 /**
  * The MPC `sign` call for a planned Sweep, on the source Receiving
  * Address's derivation path and domain: the EIP-712 hash for an EVM Sweep
- * (ECDSA), the transaction message for a Solana one (EdDSA).
+ * (ECDSA), the transaction message for a Solana one and the delegate
+ * action's NEP-461 hash for a NEAR one (EdDSA).
  */
 function signRequestFor(env: HeraldEnv, sweep: Sweep): MpcSignRequest {
   const { path, domainId } = receivingAddressPaths[sweep.sourceKind];
@@ -1875,6 +2103,8 @@ function signPayloadOf(sweep: Sweep): { Ecdsa: string } | { Eddsa: string } {
       return { Ecdsa: sweep.payloadHash.slice(2) };
     case "solana":
       return { Eddsa: bytesToHex(solanaTransactionMessage(sweep.solanaTransaction)).slice(2) };
+    case "near":
+      return { Eddsa: sweep.payloadHash.slice(2) };
     default:
       return unhandledKind(sweep);
   }

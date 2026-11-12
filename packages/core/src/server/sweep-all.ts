@@ -147,7 +147,9 @@ function sameChainDestination(
     case "solana":
       return target.solanaDestination;
     case "near":
-      // NEAR Sweeps come with #37; until then "Sweep all" leaves NEAR out.
+      // "Sweep all" takes no NEAR destination yet (#38), so it leaves NEAR
+      // out of a same-chain Sweep all, as it does any kind of chain without
+      // one.
       return undefined;
     default:
       return unhandledKind(chain.kind);
