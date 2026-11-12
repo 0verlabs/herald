@@ -152,6 +152,8 @@ For mainnet use `db:migrate:production` and `deploy:production`. Inside an app, 
 
 Secrets (gas wallet keys, RPC endpoints, the 1Click JWT) never go in the repo. Set them per environment with `CLOUDFLARE_ENV=<testnet|production> npx wrangler secret put <NAME>` from the Worker's directory, and keep local values in a gitignored `.dev.vars`.
 
+The NEAR relayer's key (`NEAR_RELAYER_KEY` on the facilitator) comes from a wizard that creates the relayer, funds it and sets the secret: `scripts/near-relayer-wizard.sh testnet`, or `production` for mainnet, which spends real NEAR and asks for a typed confirmation first.
+
 ### Known workarounds
 
 | Where                                      | Workaround                                                                                                         | Why                                                                                                                                                      |
