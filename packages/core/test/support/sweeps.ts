@@ -1,6 +1,6 @@
 import { createDb, providers } from "@herald/db";
 import { ed25519 } from "@noble/curves/ed25519.js";
-import { hexToBytes } from "@noble/curves/utils.js";
+import { bytesToHex, hexToBytes } from "@noble/curves/utils.js";
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { address } from "@solana/kit";
 import { base58, base64 } from "@scure/base";
@@ -41,7 +41,8 @@ export function solanaKeyPair(): { secretKey: Uint8Array; address: SolanaAddress
 
 /**
  * A testnet Provider whose Receiving Addresses belong to throwaway keys the
- * test holds (`receivingKey` on EVM, `solanaKey` on Solana), standing in for
+ * test holds (`receivingKey` on EVM, `solanaKey` on Solana, `nearKey` on
+ * NEAR), standing in for
  * the keys the MPC network derives for the Provider Account. Its row is
  * written directly: `registerProvider` would derive addresses from the real
  * MPC root keys, which no test can sign for.
@@ -50,10 +51,15 @@ export async function sweepingProvider(accountId: string) {
   const receivingKey = generatePrivateKey();
   const evmAddress = privateKeyToAccount(receivingKey).address.toLowerCase() as EvmAddress;
   const solana = solanaKeyPair();
-  await db().insert(providers).values({ accountId, evmAddress, solanaAddress: solana.address });
+  // A NEAR Receiving Address is an ed25519 key too, in hex.
+  const near = solanaKeyPair();
+  const nearAddress = bytesToHex(base58.decode(near.address));
+  await db()
+    .insert(providers)
+    .values({ accountId, evmAddress, solanaAddress: solana.address, nearAddress });
   const [row] = await db().select().from(providers).where(eq(providers.accountId, accountId));
   const provider: Provider = ProviderSchema.parse(row);
-  return { provider, receivingKey, solanaKey: solana.secretKey };
+  return { provider, receivingKey, solanaKey: solana.secretKey, nearKey: near.secretKey };
 }
 
 /** USDC balances keyed by owner address (any network); everyone else holds 0. */

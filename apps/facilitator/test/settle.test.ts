@@ -4,10 +4,11 @@ import { eq } from "drizzle-orm";
 import type { Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
-import { installFakeNetwork, SOLANA_DEVNET } from "./support/network.ts";
+import { installFakeNetwork, NEAR_TESTNET, nearRelayer, SOLANA_DEVNET } from "./support/network.ts";
 import {
   buyerPayment,
   facilitatorClient,
+  NEAR_BUYER_USDC,
   registeredProvider,
   solanaFeePayer,
 } from "./support/parties.ts";
@@ -143,6 +144,93 @@ describe("a Buyer pays on Solana Devnet", () => {
       errorReason: "invalid_exact_svm_recipient_ata_missing",
     });
     expect(fake.solana.transfers).toEqual([]);
+    expect(
+      await createDb(env.DB).select().from(payments).where(eq(payments.providerId, provider.id)),
+    ).toEqual([]);
+  });
+});
+
+describe("a Buyer pays on NEAR Testnet", () => {
+  test("the payment verifies, settles once into the NEAR Receiving Address and is recorded", async () => {
+    const fake = installFakeNetwork();
+    const accountId = "pays-near-testnet.testnet";
+    const { provider, apiKey, secret } = await registeredProvider(accountId);
+    fake.near.registerStorage(provider.nearAddress);
+    const { payload, requirements, buyer } = await buyerPayment({
+      providerAccount: accountId,
+      network: NEAR_TESTNET,
+      apiKey: secret,
+      near: fake.near,
+    });
+    const client = facilitatorClient(secret);
+
+    expect(await client.verify(payload, requirements)).toMatchObject({
+      isValid: true,
+      payer: buyer,
+    });
+    const settled = await client.settle(payload, requirements);
+
+    // The relayer paid the gas; the USDC moved from the Buyer to the
+    // Provider's NEAR Receiving Address.
+    expect(fake.near.transfers).toEqual([
+      {
+        txHash: expect.any(String),
+        relayer: nearRelayer().accountId,
+        relayerNonce: expect.any(BigInt),
+        sender: buyer,
+        receiver: provider.nearAddress,
+        amount: 1000n,
+      },
+    ]);
+    const [transfer] = fake.near.transfers;
+    expect(settled).toEqual({
+      success: true,
+      transaction: transfer?.txHash,
+      network: NEAR_TESTNET,
+      payer: buyer,
+    });
+    expect(fake.near.usdcBalanceOf(provider.nearAddress)).toBe(1000n);
+    expect(fake.near.usdcBalanceOf(buyer)).toBe(NEAR_BUYER_USDC - 1000n);
+
+    expect(
+      await createDb(env.DB).select().from(payments).where(eq(payments.providerId, provider.id)),
+    ).toEqual([
+      {
+        id: expect.any(Number),
+        providerId: provider.id,
+        apiKeyId: apiKey.id,
+        network: NEAR_TESTNET,
+        asset: "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+        amount: "1000",
+        buyerAddress: buyer,
+        txHash: transfer?.txHash,
+        resourceUrl: "https://weather.example/weather",
+        settledAt: expect.any(Date),
+      },
+    ]);
+  });
+
+  test("a payment into a NEAR Receiving Address not registered on USDC is refused before anything is sent", async () => {
+    const fake = installFakeNetwork();
+    const accountId = "near-unregistered.testnet";
+    const { provider, secret } = await registeredProvider(accountId);
+    const { payload, requirements } = await buyerPayment({
+      providerAccount: accountId,
+      network: NEAR_TESTNET,
+      apiKey: secret,
+      near: fake.near,
+    });
+    const client = facilitatorClient(secret);
+
+    expect(await client.verify(payload, requirements)).toMatchObject({
+      isValid: false,
+      invalidReason: "invalid_exact_near_recipient_not_registered_for_storage",
+    });
+    expect(await client.settle(payload, requirements)).toMatchObject({
+      success: false,
+      errorReason: "invalid_exact_near_recipient_not_registered_for_storage",
+    });
+    expect(fake.near.transfers).toEqual([]);
     expect(
       await createDb(env.DB).select().from(payments).where(eq(payments.providerId, provider.id)),
     ).toEqual([]);

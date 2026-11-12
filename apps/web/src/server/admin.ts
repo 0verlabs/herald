@@ -13,6 +13,7 @@ import { env } from "cloudflare:workers";
 import { sessionToken } from "./auth";
 import { evmGasWallet } from "./evm-chain-queue";
 import { readHeraldEnv } from "./herald-env";
+import { nearRelayer } from "./near-chain-queue";
 import { solanaSweepQueue } from "./solana-chain-queue";
 
 // The admin page and its server functions are for the Herald admins in the
@@ -56,6 +57,8 @@ export const getGasWalletStatuses = createServerFn({ method: "GET" })
               return evmGasWallet(network.caip2);
             case "solana":
               return solana.feePayer(network.caip2);
+            case "near":
+              return nearRelayer(network.caip2);
             default:
               return unhandledKind(network);
           }

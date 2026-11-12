@@ -6,6 +6,8 @@ import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import {
   FACILITATOR_URL,
   installFakeNetwork,
+  NEAR_TESTNET,
+  OTHER_FACILITATOR_URL,
   SOLANA_DEVNET,
   type FakeNetwork,
 } from "./support/network.ts";
@@ -119,6 +121,81 @@ describe("no double settlement on Solana", () => {
     expect(results.filter((result) => result.success)).toHaveLength(1);
     expect(fake.solana.transfers).toHaveLength(1);
     expect(await paymentRows(provider.id)).toHaveLength(1);
+  });
+});
+
+describe("no double settlement on NEAR", () => {
+  async function nearPaidRequest(fake: FakeNetwork, accountId: string) {
+    const { provider, secret } = await registeredProvider(accountId);
+    fake.near.registerStorage(provider.nearAddress);
+    const payment = await buyerPayment({
+      providerAccount: accountId,
+      network: NEAR_TESTNET,
+      apiKey: secret,
+      near: fake.near,
+    });
+    return { provider, secret, ...payment, client: facilitatorClient(secret) };
+  }
+
+  test("settling the same signed delegate action again fails without a second transfer", async () => {
+    const fake = installFakeNetwork();
+    const { provider, payload, requirements, client } = await nearPaidRequest(
+      fake,
+      "near-settle-twice.testnet",
+    );
+
+    const first = await client.settle(payload, requirements);
+    const second = await client.settle(payload, requirements);
+
+    expect(first.success).toBe(true);
+    // The Buyer's key nonce has moved past the delegate action's.
+    expect(second).toMatchObject({
+      success: false,
+      errorReason: "invalid_exact_near_payload_delegate_action_nonce_already_used",
+    });
+    expect(fake.near.transfers).toHaveLength(1);
+    expect(await paymentRows(provider.id)).toHaveLength(1);
+  });
+
+  test("the same signed delegate action presented to two facilitator isolates at once settles once", async () => {
+    const fake = installFakeNetwork();
+    const { provider, secret, payload, requirements, client } = await nearPaidRequest(
+      fake,
+      "near-settle-race.testnet",
+    );
+    const otherIsolate = facilitatorClient(secret, OTHER_FACILITATOR_URL);
+
+    const results = await Promise.all([
+      client.settle(payload, requirements),
+      otherIsolate.settle(payload, requirements),
+      client.settle(payload, requirements),
+      otherIsolate.settle(payload, requirements),
+    ]);
+
+    expect(results.filter((result) => result.success)).toHaveLength(1);
+    expect(fake.near.transfers).toHaveLength(1);
+    expect(await paymentRows(provider.id)).toHaveLength(1);
+  });
+
+  test("concurrent payments all settle, each relayed with its own relayer nonce", async () => {
+    const fake = installFakeNetwork();
+    const payments = await Promise.all(
+      ["near-nonce-one", "near-nonce-two", "near-nonce-three"].map((name) =>
+        nearPaidRequest(fake, `${name}.testnet`),
+      ),
+    );
+
+    const results = await Promise.all(
+      payments.map(({ client, payload, requirements }) => client.settle(payload, requirements)),
+    );
+
+    expect(results.map((result) => result.success)).toEqual([true, true, true]);
+    expect(fake.near.transfers).toHaveLength(3);
+    // The queue keeps its nonce across tests in this file, so only the
+    // spacing is fixed: consecutive nonces, one per payment.
+    const nonces = fake.near.transfers.map((t) => t.relayerNonce).sort((a, b) => Number(a - b));
+    const [lowest = 0n] = nonces;
+    expect(nonces).toEqual([lowest, lowest + 1n, lowest + 2n]);
   });
 });
 

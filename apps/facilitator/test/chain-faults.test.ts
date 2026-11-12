@@ -2,7 +2,12 @@ import { createDb, payments } from "@herald/db";
 import { env } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
-import { installFakeNetwork, SOLANA_DEVNET } from "./support/network.ts";
+import {
+  installFakeNetwork,
+  NEAR_TESTNET,
+  SOLANA_DEVNET,
+  type FakeNetwork,
+} from "./support/network.ts";
 import { buyerPayment, facilitatorClient, registeredProvider } from "./support/parties.ts";
 
 // The chain misbehaving the way real nodes do. SETTLE_RECEIPT_TIMEOUT_MS is
@@ -18,6 +23,15 @@ async function paidRequest(accountId: string) {
   const { provider, secret } = await registeredProvider(accountId);
   const payment = await buyerPayment({ providerAccount: accountId, network, apiKey: secret });
   return { provider, ...payment, client: facilitatorClient(secret) };
+}
+
+/** What the Provider's server sees from a facilitator call: its answer, or its error. */
+async function seenByProvider(call: () => Promise<unknown>): Promise<string> {
+  try {
+    return JSON.stringify(await call());
+  } catch (error) {
+    return `${String(error)} ${JSON.stringify(error)}`;
+  }
 }
 
 async function paymentRows(providerId: number) {
@@ -122,14 +136,6 @@ describe("a failing RPC endpoint", () => {
   const endpoint = "base-sepolia.rpc.test";
 
   /** The facilitator's answer, or its error, as the Provider's server sees it. */
-  async function seenByProvider(call: () => Promise<unknown>): Promise<string> {
-    try {
-      return JSON.stringify(await call());
-    } catch (error) {
-      return `${String(error)} ${JSON.stringify(error)}`;
-    }
-  }
-
   test("a broadcast the node refuses fails without naming the endpoint", async () => {
     const fake = installFakeNetwork();
     const chain = fake.chains[network];
@@ -226,5 +232,99 @@ describe("a failing RPC endpoint", () => {
     const seen = await seenByProvider(() => client.settle(payload, requirements));
 
     expect(seen).not.toContain(endpoint);
+  });
+});
+
+describe("NEAR RPC faults", () => {
+  async function nearPaidRequest(fake: FakeNetwork, accountId: string) {
+    const { provider, secret } = await registeredProvider(accountId);
+    fake.near.registerStorage(provider.nearAddress);
+    const payment = await buyerPayment({
+      providerAccount: accountId,
+      network: NEAR_TESTNET,
+      apiKey: secret,
+      near: fake.near,
+    });
+    return { provider, ...payment, client: facilitatorClient(secret) };
+  }
+
+  test("a relayer transaction slow to be final still settles within the wait, and is recorded", async () => {
+    const fake = installFakeNetwork();
+    const { provider, payload, requirements, client } = await nearPaidRequest(
+      fake,
+      "near-slow-final.testnet",
+    );
+    fake.near.faults.finalityDelayMs = 700;
+
+    const settled = await client.settle(payload, requirements);
+
+    expect(settled).toMatchObject({ success: true, transaction: fake.near.transfers[0]?.txHash });
+    expect(await paymentRows(provider.id)).toHaveLength(1);
+  });
+
+  test("a relayer transaction not final within the wait fails the settlement, naming the transaction", async () => {
+    const fake = installFakeNetwork();
+    const { provider, payload, requirements, client } = await nearPaidRequest(
+      fake,
+      "near-never-final.testnet",
+    );
+    fake.near.faults.finalityDelayMs = 60_000;
+
+    const settled = await client.settle(payload, requirements);
+
+    // It landed; the Provider's server hears which transaction to look up.
+    const [transfer] = fake.near.transfers;
+    expect(settled).toMatchObject({ success: false, errorReason: "settlement_failed" });
+    expect(settled.errorMessage).toContain(transfer?.txHash);
+    expect(await paymentRows(provider.id)).toEqual([]);
+  });
+
+  test("a broadcast the node doesn't take is sent again, and the payment settles once", async () => {
+    const fake = installFakeNetwork();
+    const { provider, payload, requirements, client } = await nearPaidRequest(
+      fake,
+      "near-lost-broadcast.testnet",
+    );
+    fake.near.faults.failNextBroadcasts = 1;
+
+    const settled = await client.settle(payload, requirements);
+
+    expect(settled).toMatchObject({ success: true, transaction: fake.near.transfers[0]?.txHash });
+    expect(fake.near.transfers).toHaveLength(1);
+    expect(await paymentRows(provider.id)).toHaveLength(1);
+  });
+
+  test("an unreachable NEAR endpoint isn't named, though the runtime's error names it", async () => {
+    const fake = installFakeNetwork();
+    const { payload, requirements, client } = await nearPaidRequest(
+      fake,
+      "near-unreachable-rpc.testnet",
+    );
+    fake.near.faults.unreachable = true;
+
+    const verified = await seenByProvider(() => client.verify(payload, requirements));
+    const settled = await seenByProvider(() => client.settle(payload, requirements));
+
+    expect(verified).toContain('"isValid":false');
+    expect(verified).not.toContain("near-testnet.rpc.test");
+    expect(settled).not.toContain("near-testnet.rpc.test");
+    expect(fake.near.transfers).toEqual([]);
+  });
+
+  test("a failing NEAR endpoint doesn't name itself either", async () => {
+    const fake = installFakeNetwork();
+    const { payload, requirements, client } = await nearPaidRequest(
+      fake,
+      "near-failing-rpc.testnet",
+    );
+    fake.near.faults.failNextRequests = 20;
+
+    const verified = await seenByProvider(() => client.verify(payload, requirements));
+    const settled = await seenByProvider(() => client.settle(payload, requirements));
+
+    expect(verified).toContain('"isValid":false');
+    expect(verified).not.toContain("near-testnet.rpc.test");
+    expect(settled).not.toContain("near-testnet.rpc.test");
+    expect(fake.near.transfers).toEqual([]);
   });
 });

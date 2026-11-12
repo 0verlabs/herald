@@ -28,6 +28,7 @@ describe("getProviderBalances", () => {
       env: "testnet",
     });
     const readUsdcBalance = fakeChains({
+      [`near:testnet/${provider.nearAddress}`]: "3000000",
       [`eip155:84532/${provider.evmAddress}`]: "1500000",
       [`solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1/${provider.solanaAddress}`]: "250000",
       [`eip155:421614/${provider.evmAddress}`]: "1",
@@ -41,6 +42,13 @@ describe("getProviderBalances", () => {
         { providerId: provider.id, env: "testnet" },
       ),
     ).toEqual([
+      {
+        network: "near:testnet",
+        label: "NEAR Testnet",
+        address: provider.nearAddress,
+        ok: true,
+        amount: "3000000",
+      },
       {
         network: "eip155:84532",
         label: "Base Sepolia",
@@ -84,11 +92,12 @@ describe("getProviderBalances", () => {
     );
 
     expect(balances).toMatchObject([
+      { label: "NEAR Testnet", ok: true, amount: "0" },
       { label: "Base Sepolia", ok: true, amount: "1500000" },
       { label: "Solana Devnet", ok: false, address: provider.solanaAddress },
       { label: "Arbitrum Sepolia", ok: true, amount: "42" },
     ]);
-    const solana = balances?.[1];
+    const solana = balances?.[2];
     expect(solana?.ok === false && solana.message).toContain("Solana Devnet");
   });
 
@@ -107,6 +116,7 @@ describe("getProviderBalances", () => {
     );
 
     expect(balances).toMatchObject([
+      { label: "NEAR Testnet", ok: true, amount: "0" },
       { label: "Base Sepolia", ok: true, amount: "5" },
       { label: "Solana Devnet", ok: false },
       { label: "Arbitrum Sepolia", ok: true, amount: "0" },

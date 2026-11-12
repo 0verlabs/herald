@@ -24,7 +24,10 @@ export type Caip2 = `${string}:${string}`;
  * `explorerTxUrl`).
  *
  * `native` is the chain's own token, which pays its gas: Herald's gas
- * wallet holds it.
+ * wallet (on NEAR, its relayer) holds it.
+ *
+ * On NEAR, `usdc.address` is the NEP-141 contract's account id, and
+ * Receiving Addresses are implicit accounts (64 lowercase hex characters).
  */
 export type Network =
   | {
@@ -37,6 +40,14 @@ export type Network =
     }
   | {
       kind: "solana";
+      caip2: Caip2;
+      label: string;
+      usdc: { address: string; decimals: number };
+      native: NativeToken;
+      txExplorer: string;
+    }
+  | {
+      kind: "near";
       caip2: Caip2;
       label: string;
       usdc: { address: string; decimals: number };
@@ -62,6 +73,7 @@ export type NativeToken = { symbol: string; decimals: number };
 
 const ETH: NativeToken = { symbol: "ETH", decimals: 18 };
 const SOL: NativeToken = { symbol: "SOL", decimals: 9 };
+const NEAR: NativeToken = { symbol: "NEAR", decimals: 24 };
 
 // Domains were read from each contract's `name()` / `version()` on
 // 2026-11-10; the opt-in live test in live.test.ts re-checks them. Testnet
@@ -127,8 +139,22 @@ const mainnet: readonly Network[] = [
   },
 ];
 
-// Polygon and Avalanche have no Herald testnet.
+// Polygon and Avalanche have no Herald testnet. NEAR is listed on testnet
+// only until its mainnet relayer is funded (spec #30).
 const testnet: readonly Network[] = [
+  {
+    kind: "near",
+    caip2: "near:testnet",
+    label: "NEAR Testnet",
+    // Circle's testnet USDC (NEP-141), not `usdc.testnet`. Its `ft_metadata`
+    // is re-checked by the opt-in live test in live.test.ts.
+    usdc: {
+      address: "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+      decimals: USDC_DECIMALS,
+    },
+    native: NEAR,
+    txExplorer: "https://testnet.nearblocks.io/txns/{txHash}",
+  },
   {
     kind: "evm",
     caip2: "eip155:84532",
@@ -164,8 +190,9 @@ const testnet: readonly Network[] = [
 ];
 
 /**
- * The networks each Herald environment lists, in Payment Option order (Base,
- * Solana, Arbitrum, Polygon, Avalanche).
+ * The networks each Herald environment lists, in Payment Option order: on
+ * testnet NEAR Testnet, Base Sepolia, Solana Devnet, Arbitrum Sepolia; on
+ * mainnet Base, Solana, Arbitrum, Polygon, Avalanche.
  */
 export const networkRegistry: Readonly<Record<HeraldEnv, readonly Network[]>> = {
   mainnet,

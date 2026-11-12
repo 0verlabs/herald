@@ -8,6 +8,7 @@ import {
   type RoutesConfig,
 } from "@x402/core/server";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
+import { ExactNearScheme } from "@x402/near/exact/server";
 import { ExactSvmScheme } from "@x402/svm/exact/server";
 import { describe, expect, test } from "vite-plus/test";
 import { accepts, type Caip2, type HeraldEnv } from "./index.ts";
@@ -18,8 +19,13 @@ import { accepts, type Caip2, type HeraldEnv } from "./index.ts";
 // A placeholder Solana fee payer, as a facilitator's /supported lists it.
 const feePayer = "FeePayer1111111111111111111111111111111111";
 
+// A placeholder NEAR relayer, as a facilitator's /supported lists it.
+const relayer = "ab".repeat(32);
+
 // Answers /supported for every network the Payment Options use, as Herald's
-// facilitator does. Verify and settle are never reached by an unpaid request.
+// facilitator does: Solana kinds carry the fee payer, and NEAR's relayer is
+// listed under `signers`. Verify and settle are never reached by an unpaid
+// request.
 function facilitatorFor(networks: Caip2[]): FacilitatorClient {
   return {
     getSupported: async () => ({
@@ -30,7 +36,9 @@ function facilitatorFor(networks: Caip2[]): FacilitatorClient {
         ...(network.startsWith("solana:") ? { extra: { feePayer } } : {}),
       })),
       extensions: [],
-      signers: {},
+      signers: Object.fromEntries(
+        networks.some((network) => network.startsWith("near:")) ? [["near:*", [relayer]]] : [],
+      ),
     }),
     verify: async () => {
       throw new Error("not reached");
@@ -58,7 +66,8 @@ async function paymentRequiredFor(env: HeraldEnv) {
 
   const server = new x402ResourceServer(facilitatorFor(options.map((o) => o.network)))
     .register("eip155:*", new ExactEvmScheme())
-    .register("solana:*", new ExactSvmScheme());
+    .register("solana:*", new ExactSvmScheme())
+    .register("near:*", new ExactNearScheme());
   const httpServer = new x402HTTPResourceServer(server, routes);
   await httpServer.initialize();
 
@@ -117,6 +126,17 @@ describe("accepts() with the stock x402ResourceServer", () => {
       decodePaymentRequiredHeader(response.headers["PAYMENT-REQUIRED"] ?? ""),
     );
     expect(paymentRequired.accepts).toMatchObject([
+      {
+        scheme: "exact",
+        network: "near:testnet",
+        asset: "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+        amount: "10000",
+        payTo: "dd8a6fceebf4d64665a1f0ee59ebdc07ac150515abdcb85640fe6ecb0033b73e",
+        maxTimeoutSeconds: 300,
+        // The stock NEAR server adds an empty `extra`; the relayer is never
+        // part of the requirements.
+        extra: {},
+      },
       {
         network: "eip155:84532",
         asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",

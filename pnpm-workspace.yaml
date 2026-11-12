@@ -10,6 +10,9 @@ catalogMode: prefer
 allowBuilds:
   esbuild: true
   workerd: true
+  # @x402/near's @near-js/crypto pulls in the native secp256k1 binding. Its
+  # pure-JS fallback is what runs in Workers, so the native build is skipped.
+  secp256k1: false
 
 catalog:
   "@cloudflare/vite-plugin": ^1.68.0
@@ -28,6 +31,7 @@ catalog:
   "@x402/evm": ~2.30.0
   "@x402/fetch": ~2.30.0
   "@x402/hono": ~2.30.0
+  "@x402/near": ~2.30.0
   "@x402/svm": ~2.30.0
   drizzle-kit: 1.0.0-rc.5
   drizzle-orm: 1.0.0-rc.5

@@ -45,6 +45,7 @@ describe("getRevenue", () => {
 
     expect(await getRevenue(db(), { providerId: provider.id, env: "testnet" })).toEqual({
       chains: [
+        { network: "near:testnet", label: "NEAR Testnet", allTime: "0", last7Days: "0" },
         { network: BASE_SEPOLIA, label: "Base Sepolia", allTime: "12500", last7Days: "12500" },
         { network: SOLANA_DEVNET, label: "Solana Devnet", allTime: "1", last7Days: "1" },
         { network: "eip155:421614", label: "Arbitrum Sepolia", allTime: "0", last7Days: "0" },
@@ -70,7 +71,10 @@ describe("getRevenue", () => {
 
     expect(sixDaysOn.total).toEqual({ allTime: "10000", last7Days: "10000" });
     expect(eightDaysOn.total).toEqual({ allTime: "10000", last7Days: "0" });
-    expect(eightDaysOn.chains[0]).toMatchObject({ allTime: "10000", last7Days: "0" });
+    expect(eightDaysOn.chains.find((chain) => chain.network === BASE_SEPOLIA)).toMatchObject({
+      allTime: "10000",
+      last7Days: "0",
+    });
   });
 
   test("counts only the Provider's own payments", async () => {
@@ -100,6 +104,7 @@ describe("getRevenue", () => {
 
     expect(await getRevenue(db(), { providerId: provider.id, env: "testnet" })).toMatchObject({
       chains: [
+        { label: "NEAR Testnet", allTime: "0", last7Days: "0" },
         { label: "Base Sepolia", allTime: "0", last7Days: "0" },
         { label: "Solana Devnet", allTime: "0", last7Days: "0" },
         { label: "Arbitrum Sepolia", allTime: "0", last7Days: "0" },

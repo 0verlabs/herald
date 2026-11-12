@@ -19,7 +19,7 @@ import { callJsonRpc, postRpc } from "../rpc.ts";
 import {
   EvmAddressSchema,
   NEAR_INTENTS_NETWORK,
-  ProviderSchema,
+  NearAccountIdSchema,
   SweepDestinationKindSchema,
   SweepMinimumSchema,
   SweepSchema,
@@ -38,6 +38,7 @@ import {
   type OneClickQuote,
   type OneClickSwap,
 } from "./one-click.ts";
+import { providerFromRow } from "./providers.ts";
 import {
   buildSolanaSweepTransaction,
   SYSTEM_PROGRAM_ADDRESS,
@@ -305,9 +306,12 @@ export async function planSweep(
       `${parsed.data.network} is not a network Herald lists on ${input.env}.`,
     );
   }
+  if (network.kind === "near") {
+    return reject("unsupported_network", `Herald can't Sweep from ${network.label} yet.`);
+  }
   const [row] = await deps.db.select().from(providers).where(eq(providers.id, input.providerId));
   if (!row) return reject("unknown_provider", "No Provider has this id.");
-  const provider = ProviderSchema.parse(row);
+  const provider = await providerFromRow(deps.db, row, input.env);
 
   const target = resolveTarget(parsed.data, { provider, network, env: input.env });
   if (!target.ok) return target;
@@ -456,6 +460,8 @@ function enterAddress(network: Network): string {
       return "Enter an EVM address: 0x and 40 hex characters.";
     case "solana":
       return "Enter a Solana wallet address.";
+    case "near":
+      return "Enter a NEAR account id.";
     default:
       return unhandledKind(network);
   }
@@ -678,6 +684,9 @@ async function planColumns(
       return planEvmColumns({ ...context, network });
     case "solana":
       return planSolanaColumns(deps, { ...context, network });
+    case "near":
+      // planSweep refuses NEAR before it gets here.
+      throw new Error(`Herald can't plan a Sweep from ${network.label}`);
     default:
       return unhandledKind(network);
   }
@@ -808,6 +817,8 @@ function receivingAddressOn(provider: Provider, network: Network): string {
       return provider.evmAddress;
     case "solana":
       return provider.solanaAddress;
+    case "near":
+      return provider.nearAddress;
     default:
       return unhandledKind(network);
   }
@@ -815,7 +826,8 @@ function receivingAddressOn(provider: Provider, network: Network): string {
 
 /**
  * `destination` as an address on `network`'s chain, or null if it isn't
- * one: 0x and 40 hex characters on EVM, a base58 32-byte key on Solana.
+ * one: 0x and 40 hex characters on EVM, a base58 32-byte key on Solana, a
+ * NEAR account id on NEAR.
  */
 function parseDestination(destination: string, network: Network): string | null {
   switch (network.kind) {
@@ -823,6 +835,8 @@ function parseDestination(destination: string, network: Network): string | null 
       return EvmAddressSchema.safeParse(destination).success ? destination : null;
     case "solana":
       return isAddress(destination) ? destination : null;
+    case "near":
+      return NearAccountIdSchema.safeParse(destination).success ? destination : null;
     default:
       return unhandledKind(network);
   }
@@ -930,7 +944,7 @@ export async function completeSweep(
     return { ok: false, reason: "invalid_request", message: "Not a NEAR transaction hash." };
   }
   const nearTxHash = parsedHash.data;
-  const found = await ownSweep(deps.db, input.providerId, input.sweepId);
+  const found = await ownSweep(deps.db, input);
   if (!found) return { ok: false, reason: "unknown_sweep", message: "No such Sweep." };
   const { provider } = found;
   let { sweep } = found;
@@ -1097,7 +1111,7 @@ export async function refreshSweeps(
     .from(providers)
     .where(eq(providers.id, input.providerId));
   if (!providerRow) return [];
-  const provider = ProviderSchema.parse(providerRow);
+  const provider = await providerFromRow(deps.db, providerRow, input.env);
   const unfinished = await deps.db
     .select()
     .from(sweeps)
@@ -1642,8 +1656,7 @@ async function fail(db: Db, sweep: Sweep, error: string): Promise<Sweep> {
 
 async function ownSweep(
   db: Db,
-  providerId: number,
-  sweepId: number,
+  { providerId, sweepId, env }: { providerId: number; sweepId: number; env: HeraldEnv },
 ): Promise<{ provider: Provider; sweep: Sweep } | null> {
   const [row] = await db
     .select({ sweep: sweeps, provider: providers })
@@ -1651,7 +1664,10 @@ async function ownSweep(
     .innerJoin(providers, eq(providers.id, sweeps.providerId))
     .where(and(eq(sweeps.id, sweepId), eq(sweeps.providerId, providerId)));
   return row
-    ? { provider: ProviderSchema.parse(row.provider), sweep: SweepSchema.parse(row.sweep) }
+    ? {
+        provider: await providerFromRow(db, row.provider, env),
+        sweep: SweepSchema.parse(row.sweep),
+      }
     : null;
 }
 
@@ -1756,12 +1772,15 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 /** Whether `address` is the Provider's own Receiving Address on `network`. */
 function isReceivingAddress(address: string, provider: Provider, network: Network): boolean {
-  // EVM addresses are case-insensitive; Solana's base58 ones aren't.
+  // EVM addresses are case-insensitive; Solana's base58 ones and NEAR
+  // account ids aren't.
   switch (network.kind) {
     case "evm":
       return address.toLowerCase() === provider.evmAddress.toLowerCase();
     case "solana":
       return address === provider.solanaAddress;
+    case "near":
+      return address === provider.nearAddress;
     default:
       return unhandledKind(network);
   }
@@ -1770,7 +1789,7 @@ function isReceivingAddress(address: string, provider: Provider, network: Networ
 /**
  * Why USDC sent to `address` on `network` is lost, or null if it isn't: on
  * EVM, the zero address or the USDC contract; on Solana, the USDC mint or
- * the System Program. (Planning a Solana Sweep also refuses token accounts
+ * the System Program; on NEAR, the USDC contract. (Planning a Solana Sweep also refuses token accounts
  * and Herald's fee payer, which it reads from the chain.)
  */
 function lostDestination(address: string, network: Network): string | null {
@@ -1782,6 +1801,8 @@ function lostDestination(address: string, network: Network): string | null {
     }
     case "solana":
       return address === network.usdc.address || address === SYSTEM_PROGRAM_ADDRESS ? lost : null;
+    case "near":
+      return address === network.usdc.address ? lost : null;
     default:
       return unhandledKind(network);
   }

@@ -22,6 +22,9 @@ export const providers = sqliteTable("providers", {
   accountId: text("account_id").notNull().unique(),
   evmAddress: text("evm_address").notNull(),
   solanaAddress: text("solana_address").notNull(),
+  // Null only on rows from before the NEAR migration, until core derives
+  // and stores it (see `providerFromRow` in @herald/core/server).
+  nearAddress: text("near_address"),
   solanaTokenAccountStatus: text("solana_token_account_status", {
     enum: ["not_queued", "queued", "created", "failed"],
   })

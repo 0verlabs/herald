@@ -2,11 +2,14 @@ import {
   fetchPrivateEndpoint,
   findNetwork,
   HeraldEnvSchema,
+  postRpc,
   requestFailedError,
   rpcUrlSecret,
   type Caip2,
   type HeraldEnv,
 } from "@herald/core";
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { bytesToHex, equalBytes } from "@noble/curves/utils.js";
 import { base58 } from "@scure/base";
 import {
   address,
@@ -189,4 +192,79 @@ export async function confirmSolanaTransaction(
     }
     await new Promise((resolve) => setTimeout(resolve, CONFIRMATION_POLL_MS));
   }
+}
+
+/**
+ * Herald's NEAR relayer key, `NEAR_RELAYER_KEY` in near-cli format:
+ * `ed25519:` and the base58 64-byte secret key (the 32-byte seed, then the
+ * public key). The relayer is the implicit account of its public key.
+ */
+export function nearRelayerKey(env: CloudflareBindings): {
+  seed: Uint8Array;
+  publicKey: Uint8Array;
+  accountId: string;
+} {
+  const invalid = new Error(
+    "The NEAR_RELAYER_KEY secret must be ed25519: and a base58 64-byte secret key",
+  );
+  const encoded = env.NEAR_RELAYER_KEY;
+  if (!encoded?.startsWith("ed25519:")) throw invalid;
+  let key: Uint8Array;
+  try {
+    key = base58.decode(encoded.slice("ed25519:".length));
+  } catch {
+    throw invalid;
+  }
+  const seed = key.subarray(0, 32);
+  const publicKey = key.subarray(32);
+  if (key.length !== 64 || !equalBytes(ed25519.getPublicKey(seed), publicKey)) throw invalid;
+  return { seed, publicKey, accountId: bytesToHex(publicKey) };
+}
+
+/** An error a NEAR node answered. `rpcCause` is its `cause.name`, e.g. `INVALID_TRANSACTION`. */
+export class NearRpcError extends Error {
+  readonly rpcCause: string | undefined;
+  readonly info: unknown;
+
+  constructor(message: string, cause: string | undefined, info: unknown) {
+    super(message);
+    this.name = "NearRpcError";
+    this.rpcCause = cause;
+    this.info = info;
+  }
+}
+
+/**
+ * Calls a NEAR JSON-RPC method (object params) on the network's endpoint and
+ * returns its `result`, giving up after `timeoutMs`. An error answer throws
+ * a `NearRpcError` with the node's cause; a failed request throws core's
+ * `requestFailedError`. Neither names the URL.
+ */
+export async function nearRpc(
+  env: CloudflareBindings,
+  network: Caip2,
+  method: string,
+  params: Record<string, unknown>,
+  timeoutMs: number,
+): Promise<unknown> {
+  const response = await postRpc(
+    fetch,
+    rpcUrl(env, network),
+    { jsonrpc: "2.0", id: "herald", method, params },
+    `${rpcName(network)} ${method}`,
+    AbortSignal.timeout(timeoutMs),
+  );
+  const body = (await response.json()) as {
+    result?: unknown;
+    error?: { name?: string; cause?: { name?: string; info?: unknown }; message?: string };
+  };
+  if (body.error) {
+    const cause = body.error.cause?.name;
+    throw new NearRpcError(
+      `${rpcName(network)} refused ${method}: ${cause ?? body.error.message ?? "error"}`,
+      cause,
+      body.error.cause?.info,
+    );
+  }
+  return body.result;
 }

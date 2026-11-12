@@ -24,6 +24,15 @@ export const NearAccountIdSchema = z
   .regex(/^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/, "Invalid NEAR account id");
 export type NearAccountId = z.infer<typeof NearAccountIdSchema>;
 
+/**
+ * A NEAR implicit account id: the lowercase hex of an ed25519 public key, 64
+ * characters. NEAR Receiving Addresses are implicit accounts (ADR-0009).
+ */
+export const NearImplicitAccountSchema = z
+  .string()
+  .regex(/^[0-9a-f]{64}$/, "Invalid NEAR implicit account id");
+export type NearImplicitAccount = z.infer<typeof NearImplicitAccountSchema>;
+
 /** A 20-byte EVM address. One is shared by every EVM chain Herald lists. */
 export const EvmAddressSchema = z.string().regex(/^0x[0-9a-fA-F]{40}$/, "Invalid EVM address");
 export type EvmAddress = z.infer<typeof EvmAddressSchema>;
@@ -50,13 +59,16 @@ export type SolanaTokenAccountStatus = z.infer<typeof SolanaTokenAccountStatusSc
 /**
  * A Provider, identified by its Provider Account, with the Receiving
  * Addresses derived from it and the state of its Solana USDC token account.
- * `packages/db` keeps the `providers` table in line with this schema.
+ * `packages/db` keeps the `providers` table in line with this schema, except
+ * that `near_address` is null on rows from before NEAR until core fills it
+ * in (`providerFromRow`).
  */
 export const ProviderSchema = z.object({
   id: z.number().int().positive(),
   accountId: NearAccountIdSchema,
   evmAddress: EvmAddressSchema,
   solanaAddress: SolanaAddressSchema,
+  nearAddress: NearImplicitAccountSchema,
   solanaTokenAccountStatus: SolanaTokenAccountStatusSchema,
   createdAt: z.date(),
 });
