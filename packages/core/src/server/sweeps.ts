@@ -946,7 +946,8 @@ export async function completeSweep(
  * be read), and the minimum Sweep in base units, null if Herald has none
  * for the chain (it can't Sweep there). `oneClick` says whether 1Click
  * takes and delivers its USDC, for `cross_chain` and `intents` Sweeps
- * (mainnet only).
+ * (mainnet only). `sweepAll` says whether "Sweep all" takes the chain: it
+ * holds at least its minimum (see `planSweepAll`).
  */
 export type SweepChainOption = {
   network: Caip2;
@@ -956,7 +957,13 @@ export type SweepChainOption = {
   balance: { ok: true; amount: string } | { ok: false; message: string };
   minimum: string | null;
   oneClick: boolean;
+  sweepAll: boolean;
 };
+
+/** Whether `balance` is worth a Sweep: something, and at least the chain's `minimum` (none: never). */
+function holdsMinimum(balance: string, minimum: string | null): boolean {
+  return minimum !== null && BigInt(balance) > 0n && BigInt(balance) >= BigInt(minimum);
+}
 
 export type SweepOptions = {
   /** The networks of the Herald environment, in Payment Option order. */
@@ -990,6 +997,7 @@ export async function getSweepOptions(
       balance: read.ok ? { ok: true, amount: read.amount } : { ok: false, message: read.message },
       minimum: minimum?.minimum ?? null,
       oneClick: input.env === "mainnet" && oneClickUsdcAsset(network.caip2) !== undefined,
+      sweepAll: read.ok && holdsMinimum(read.amount, minimum?.minimum ?? null),
     });
   }
   return {

@@ -13,6 +13,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { AlertCircleIcon, ArrowRightLeftIcon, ExternalLinkIcon, TimerIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { SweepAllCard } from "@/components/sweep-all";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -81,6 +82,7 @@ const inFlight = (sweep: SweepEntry) =>
 
 function SweepPage() {
   const { choices, sweeps: loadedSweeps } = Route.useLoaderData();
+  const { account, heraldEnv } = Route.useRouteContext();
   const router = useRouter();
   const fetchSweeps = useServerFn(listSweeps);
   // The list as last polled, until the loader runs again.
@@ -114,6 +116,14 @@ function SweepPage() {
       <SweepForm
         chains={choices.chains}
         capReached={choices.submittedToday >= choices.dailyCap}
+        dailyCap={choices.dailyCap}
+        submittedToday={choices.submittedToday}
+      />
+
+      <SweepAllCard
+        chains={choices.chains}
+        heraldEnv={heraldEnv}
+        accountId={account.accountId}
         dailyCap={choices.dailyCap}
         submittedToday={choices.submittedToday}
       />

@@ -266,6 +266,7 @@ describe("getSweepOptions", () => {
           balance: { ok: true, amount: "2500000" },
           minimum: "150000",
           oneClick: false,
+          sweepAll: true,
         },
         {
           network: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
@@ -275,6 +276,7 @@ describe("getSweepOptions", () => {
           balance: { ok: true, amount: "700000" },
           minimum: "1000",
           oneClick: false,
+          sweepAll: true,
         },
         {
           network: "eip155:421614",
@@ -284,11 +286,29 @@ describe("getSweepOptions", () => {
           balance: { ok: true, amount: "2500000" },
           minimum: "1000",
           oneClick: false,
+          sweepAll: true,
         },
       ],
       submittedToday: 0,
       dailyCap: 10,
     });
+  });
+
+  test("marks for Sweep all only the chains holding at least their own minimum", async () => {
+    const { provider } = await sweepingProvider("options-sweep-all.testnet");
+
+    // One EVM balance, under Base Sepolia's 0.15 USDC minimum but over
+    // Arbitrum Sepolia's 0.001; nothing on Solana.
+    const options = await getSweepOptions(
+      { db: db(), readUsdcBalance: usdcBalances({ [provider.evmAddress]: "149999" }) },
+      { providerId: provider.id, env: "testnet" },
+    );
+
+    expect(options?.chains.map((chain) => [chain.label, chain.sweepAll])).toEqual([
+      ["Base Sepolia", false],
+      ["Solana Devnet", false],
+      ["Arbitrum Sepolia", true],
+    ]);
   });
 });
 

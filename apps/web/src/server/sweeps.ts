@@ -5,6 +5,7 @@ import {
   getSweepOptions,
   nearRpcTransactionReader,
   planSweep,
+  planSweepAll,
   refreshSweeps,
   rpcEvmReceiptReader,
   rpcSolanaSweepReader,
@@ -146,6 +147,69 @@ export const startSweep = createServerFn({ method: "POST" })
       sweepId: plan.sweep.id,
       signRequest: plan.signRequest,
       quote: plan.quote,
+    };
+  });
+
+/**
+ * Plans "Sweep all": one Sweep of the whole balance per chain holding at
+ * least its minimum, each with its own MPC `sign` call for the wallet to
+ * send in its own NEAR transaction. Chains that couldn't be planned come
+ * back in `skipped` with the reason.
+ */
+export const startSweepAll = createServerFn({ method: "POST" })
+  .middleware([requireSession])
+  .validator(
+    z.discriminatedUnion("destinationKind", [
+      z.object({
+        destinationKind: z.literal("same_chain"),
+        evmDestination: AddressInputSchema.optional(),
+        solanaDestination: AddressInputSchema.optional(),
+      }),
+      z.object({
+        destinationKind: z.literal("cross_chain"),
+        destinationNetwork: z.string().max(64),
+        destination: AddressInputSchema,
+      }),
+      z.object({ destinationKind: z.literal("intents") }),
+    ]),
+  )
+  .handler(async ({ context, data }) => {
+    const providerId = context.session.providerId;
+    const plan = await planSweepAll(planDeps(), {
+      providerId,
+      env: readHeraldEnv(),
+      target: data,
+    });
+    if (!plan.ok) {
+      console.warn(
+        JSON.stringify({
+          event: "sweep_all_rejected",
+          providerId,
+          destinationKind: data.destinationKind,
+          reason: plan.reason,
+        }),
+      );
+      return { ok: false as const, reason: plan.reason, message: plan.message };
+    }
+    console.log(
+      JSON.stringify({
+        event: "sweep_all_planned",
+        providerId,
+        destinationKind: data.destinationKind,
+        sweepIds: plan.planned.map(({ sweep }) => sweep.id),
+        skipped: plan.skipped.map(({ network, reason }) => ({ network, reason })),
+      }),
+    );
+    return {
+      ok: true as const,
+      planned: plan.planned.map(({ sweep, signRequest, quote }) => ({
+        sweepId: sweep.id,
+        network: sweep.sourceNetwork,
+        amount: sweep.amount,
+        signRequest,
+        quote,
+      })),
+      skipped: plan.skipped,
     };
   });
 
