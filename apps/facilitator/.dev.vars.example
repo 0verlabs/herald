@@ -16,3 +16,11 @@ BASE_RPC_URL=https://example.base-sepolia.quiknode.pro/replace_me/
 SOLANA_RPC_URL=https://example.solana-devnet.quiknode.pro/replace_me/
 ARBITRUM_RPC_URL=https://example.arbitrum-sepolia.quiknode.pro/replace_me/
 NEAR_RPC_URL=https://example.near-testnet.quiknode.pro/replace_me/
+
+# NEAR relayer: pays the gas of NEAR settlements, Receiving Address setup and
+# NEAR Sweeps. A near-cli private key, ed25519:<base58 of the 64-byte secret
+# key>, of a funded testnet implicit account (its id is the hex of the public
+# key). Use its own throwaway key: not the deployed testnet relayer's (their
+# nonces would collide) and never a Buyer's account. The deployed
+# environments get theirs from scripts/near-relayer-wizard.sh.
+NEAR_RELAYER_KEY=ed25519:replace_me
