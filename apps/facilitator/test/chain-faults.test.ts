@@ -262,7 +262,26 @@ describe("NEAR RPC faults", () => {
     expect(await paymentRows(provider.id)).toHaveLength(1);
   });
 
-  test("a relayer transaction not final within the wait fails the settlement, naming the transaction", async () => {
+  test("a relayer transaction final only after the wait: the resource server's retry finds it, and the payment is recorded", async () => {
+    const fake = installFakeNetwork();
+    const { provider, payload, requirements, server } = await nearPaidRequest(
+      fake,
+      "near-final-after-wait.testnet",
+    );
+    // Lands at once, but is final only after the first wait (1.5 s).
+    fake.near.faults.finalityDelayMs = 2_000;
+
+    // settlePayment is what the stock middleware calls. On settlement_pending
+    // it asks the facilitator once more, here a fresh request and facilitator.
+    const settled = await server.settlePayment(payload, requirements);
+
+    const [transfer] = fake.near.transfers;
+    expect(settled).toMatchObject({ success: true, transaction: transfer?.txHash });
+    expect(fake.near.transfers).toHaveLength(1);
+    expect(await paymentRows(provider.id)).toMatchObject([{ txHash: transfer?.txHash }]);
+  });
+
+  test("a relayer transaction not final within the wait is pending, and is recorded once it is final", async () => {
     const fake = installFakeNetwork();
     const { provider, payload, requirements, client } = await nearPaidRequest(
       fake,
@@ -270,13 +289,45 @@ describe("NEAR RPC faults", () => {
     );
     fake.near.faults.finalityDelayMs = 60_000;
 
-    const settled = await client.settle(payload, requirements);
+    const pending = await client.settle(payload, requirements);
 
     // It landed; the Provider's server hears which transaction to look up.
     const [transfer] = fake.near.transfers;
-    expect(settled).toMatchObject({ success: false, errorReason: "settlement_failed" });
-    expect(settled.errorMessage).toContain(transfer?.txHash);
+    expect(pending).toMatchObject({
+      success: false,
+      errorReason: "settlement_pending",
+      transaction: transfer?.txHash,
+    });
     expect(await paymentRows(provider.id)).toEqual([]);
+
+    fake.near.faults.finalityDelayMs = 0;
+    const settled = await client.settle(payload, requirements);
+    const again = await client.settle(payload, requirements);
+
+    expect(settled).toMatchObject({ success: true, transaction: transfer?.txHash });
+    expect(again.success).toBe(false);
+    expect(fake.near.transfers).toHaveLength(1);
+    expect(await paymentRows(provider.id)).toMatchObject([{ txHash: transfer?.txHash }]);
+  });
+
+  test("a pending payment presented under another Provider's API key isn't recorded for it", async () => {
+    const fake = installFakeNetwork();
+    const { payload, requirements, client } = await nearPaidRequest(
+      fake,
+      "near-pending-payee.testnet",
+    );
+    fake.near.faults.finalityDelayMs = 60_000;
+    expect((await client.settle(payload, requirements)).errorReason).toBe("settlement_pending");
+    const other = await registeredProvider("near-pending-other.testnet");
+    fake.near.faults.finalityDelayMs = 0;
+
+    const settled = await facilitatorClient(other.secret).settle(payload, {
+      ...requirements,
+      payTo: other.provider.nearAddress,
+    });
+
+    expect(settled.success).toBe(false);
+    expect(await paymentRows(other.provider.id)).toEqual([]);
   });
 
   test("a broadcast the node doesn't take is sent again, and the payment settles once", async () => {

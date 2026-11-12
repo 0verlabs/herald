@@ -18,14 +18,17 @@ export type NearReceiptStatus =
 
 /**
  * A relayed settlement: the relayer transaction's hash and how the inner
- * `ft_transfer` ended, once final. `ok: false` when Herald didn't submit it
- * (a malformed or duplicate submission, a node that refused it) or couldn't
- * see it through to final; `transaction` is then the relayer transaction if
- * one was sent.
+ * `ft_transfer` ended, once final. `pending` when the relayer transaction
+ * was sent but wasn't final in time: it may still land, and
+ * `NearChainQueueRpc.awaitPendingSettlement` follows it from there.
+ * Otherwise `ok: false` when Herald didn't submit it (a malformed or
+ * duplicate submission, a node that refused it); `transaction` is then the
+ * relayer transaction if one was sent.
  */
 export type NearSettlementResult =
   | { ok: true; transaction: string; innerReceipt: NearReceiptStatus }
-  | { ok: false; message: string; transaction?: string };
+  | { ok: false; pending: true; message: string; transaction: string }
+  | { ok: false; pending?: never; message: string; transaction?: string };
 
 /**
  * A Provider's NEAR Sweep to relay: the signed delegate action (base64
@@ -86,9 +89,21 @@ export interface NearChainQueueRpc {
    * Wraps a Buyer's signed delegate action in a relayer transaction, sends
    * it and waits until it is final. A signed delegate action is submitted at
    * most once, across isolates: presenting it again is refused, naming the
-   * first submission's transaction.
+   * first submission's transaction. One sent but not final in time is
+   * answered `pending` and remembered for a few minutes.
    */
   submitSettlement(submission: NearSettlementSubmission): Promise<NearSettlementResult>;
+
+  /**
+   * Follows a settlement that `submitSettlement` answered `pending`: waits
+   * again until its relayer transaction is final, without sending anything
+   * new. Null when this signed delegate action has no pending settlement.
+   * Of concurrent calls for one settlement only one follows it; the others
+   * get null. One still not final is answered `pending` again.
+   */
+  awaitPendingSettlement(
+    submission: NearSettlementSubmission,
+  ): Promise<NearSettlementResult | null>;
 
   /**
    * Wraps a Provider's signed Sweep in a relayer transaction and sends it,

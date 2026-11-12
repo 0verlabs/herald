@@ -13,7 +13,9 @@ type ViewResult = { result?: number[]; error?: string };
  * finality as the mechanism asks. Submitting a settlement goes through the
  * network's `NearChainQueue`, which holds the relayer key and its nonce.
  * Errors never name the endpoint: the mechanism hands them to the
- * Provider's server as `errorMessage`.
+ * Provider's server as `errorMessage`. The mechanism turns any submission
+ * error into `settlement_failed`, so a settlement the queue answers
+ * `pending` is reported to `onPending` before the error is thrown.
  *
  * Without a usable `NEAR_RELAYER_KEY` the signer has no relayer: the network
  * stays listed in `/supported` (so Providers' routes offering it still
@@ -24,6 +26,7 @@ type ViewResult = { result?: number[]; error?: string };
 export function facilitatorNearSigner(
   env: CloudflareBindings,
   network: Caip2,
+  onPending?: (signedDelegateAction: string, transaction: string) => void,
 ): FacilitatorNearSigner {
   // Synchronous, as the mechanism's `getSigners` needs: the relayer is the
   // implicit account of its key.
@@ -115,7 +118,10 @@ export function facilitatorNearSigner(
     submitSignedDelegateAction: async ({ signedDelegateAction }) => {
       const queue = env.NEAR_CHAIN_QUEUE.getByName(network);
       const settled = await queue.submitSettlement({ network, signedDelegateAction });
-      if (!settled.ok) throw new Error(settled.message);
+      if (!settled.ok) {
+        if (settled.pending) onPending?.(signedDelegateAction, settled.transaction);
+        throw new Error(settled.message);
+      }
       return { transaction: settled.transaction, innerReceipt: settled.innerReceipt };
     },
   };

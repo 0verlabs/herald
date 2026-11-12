@@ -23,6 +23,7 @@ import {
   type NearAction,
   type SignedNearTransaction,
 } from "./near-transactions.ts";
+import { PendingSettlements } from "./pending-settlements.ts";
 
 // Each RPC call while the queue waits on it must fail fast rather than stall
 // every transaction behind it.
@@ -95,6 +96,9 @@ type Outcome = {
   receipts_outcome?: { outcome?: { executor_id?: string; status?: Record<string, unknown> } }[];
 };
 
+/** A relayer transaction that was sent: its hash, and its bytes when at hand for a rebroadcast. */
+type SentTransaction = { hash: string; bytes?: Uint8Array };
+
 /**
  * The chain queue for one NEAR network, addressed by its CAIP-2 id
  * (`NEAR_CHAIN_QUEUE.getByName("near:testnet")`). It holds Herald's NEAR
@@ -107,7 +111,9 @@ type Outcome = {
  * given, in its storage, so whichever isolate presents one again, it is
  * refused rather than relayed twice. The wait for a transaction to be final
  * happens outside the nonce lock, so one slow transaction doesn't hold up
- * the others.
+ * the others. One not final in time is answered `pending` and followed
+ * again when the Provider's resource server retries it
+ * (`awaitPendingSettlement`), as the stock EVM and Solana mechanisms do.
  *
  * Sweeps (`submitSweep`) wrap a Provider's signed delegate action, from the
  * NEAR Receiving Address, the same way. Each is sent once: presenting it
@@ -126,9 +132,13 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
   // Tail of the send queue. Each send starts after the previous one has been
   // broadcast or has failed.
   #tail: Promise<unknown> = Promise.resolve();
+  // Settlements sent but not final in time, by delegate hash, until the
+  // Provider's resource server retries them (`awaitPendingSettlement`).
+  readonly #pending: PendingSettlements;
 
   constructor(ctx: DurableObjectState, env: CloudflareBindings) {
     super(ctx, env);
+    this.#pending = new PendingSettlements(ctx.storage.sql);
     ctx.storage.sql.exec(
       `CREATE TABLE IF NOT EXISTS settlements (
         delegate_hash TEXT PRIMARY KEY,
@@ -283,25 +293,64 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
       this.#release(delegateHash);
       return sent;
     }
-    const final = await this.#awaitFinal(network, sent.transaction);
+    return this.#settlementOutcome(network, delegateHash, listed.usdc.address, sent.transaction);
+  }
+
+  /**
+   * Follows a settlement `submitSettlement` answered `pending`, as the
+   * Provider's resource server retries it: waits again, up to
+   * `SETTLE_RECEIPT_TIMEOUT_MS`, until its relayer transaction is final.
+   * Sends nothing new. Null when the signed delegate action has no pending
+   * settlement. The pending record is taken before anything is awaited, so
+   * of concurrent retries only one follows it.
+   */
+  async awaitPendingSettlement(
+    input: NearSettlementSubmission,
+  ): Promise<NearSettlementResult | null> {
+    const parsed = SettlementSubmissionSchema.safeParse(input);
+    if (!parsed.success) return null;
+    const { network, signedDelegateAction } = parsed.data;
+    const listed = this.#nearNetwork(network);
+    if (!listed) return null;
+    const delegateHash = settlementCacheKey(signedDelegateAction);
+    const txHash = this.#pending.get(delegateHash);
+    if (!txHash) return null;
+    this.#pending.delete(delegateHash);
+    return this.#settlementOutcome(network, delegateHash, listed.usdc.address, { hash: txHash });
+  }
+
+  /**
+   * Waits until a settlement's relayer transaction is final and reads how
+   * its `ft_transfer` ended. One not final in time is recorded as pending,
+   * for the resource server's retry, and answered `pending`.
+   */
+  async #settlementOutcome(
+    network: Caip2,
+    delegateHash: string,
+    usdc: string,
+    transaction: SentTransaction,
+  ): Promise<NearSettlementResult> {
+    const final = await this.#awaitFinal(network, transaction);
     if (!final) {
-      console.error(
+      this.#pending.set(delegateHash, transaction.hash);
+      console.warn(
         JSON.stringify({
-          event: "near_settlement_not_final",
+          event: "near_settlement_pending",
           network,
-          transaction: sent.transaction.hash,
+          transaction: transaction.hash,
         }),
       );
       return {
         ok: false,
-        message: `Relayer transaction ${sent.transaction.hash} wasn't final within ${this.env.SETTLE_RECEIPT_TIMEOUT_MS} ms`,
-        transaction: sent.transaction.hash,
+        pending: true,
+        message: `Relayer transaction ${transaction.hash} wasn't final within ${this.env.SETTLE_RECEIPT_TIMEOUT_MS} ms`,
+        transaction: transaction.hash,
       };
     }
     return {
       ok: true,
-      transaction: sent.transaction.hash,
-      innerReceipt: innerReceiptOf(final, listed.usdc.address),
+      transaction: transaction.hash,
+      innerReceipt: innerReceiptOf(final, usdc),
     };
   }
 
@@ -725,10 +774,10 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
   /**
    * Reads a sent transaction until it is final, its receipts included, for
    * up to `SETTLE_RECEIPT_TIMEOUT_MS`; null if it isn't by then. One the node
-   * doesn't know is broadcast again, in case the first broadcast never
-   * reached it: a transaction lands at most once.
+   * doesn't know is broadcast again when its bytes are at hand, in case the
+   * first broadcast never reached it: a transaction lands at most once.
    */
-  async #awaitFinal(network: Caip2, transaction: SignedNearTransaction): Promise<Outcome | null> {
+  async #awaitFinal(network: Caip2, transaction: SentTransaction): Promise<Outcome | null> {
     const relayer = nearRelayerKey(this.env).accountId;
     const deadline = Date.now() + Number(this.env.SETTLE_RECEIPT_TIMEOUT_MS);
     for (;;) {
@@ -742,7 +791,8 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
         )) as Outcome;
       } catch (error) {
         if (error instanceof NearRpcError && error.rpcCause === "UNKNOWN_TRANSACTION") {
-          await this.#send(network, transaction).catch(() => undefined);
+          const { hash, bytes } = transaction;
+          if (bytes) await this.#send(network, { hash, bytes }).catch(() => undefined);
         } else if (!(error instanceof NearRpcError && error.rpcCause === "TIMEOUT_ERROR")) {
           console.warn(
             JSON.stringify({
