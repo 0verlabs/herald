@@ -110,17 +110,20 @@ export const SOLANA_SWEEP_VALIDITY_SECONDS = 120;
  * How long a planned NEAR Sweep can be signed, by the server's clock, as
  * long as an EVM Sweep. Its delegate action lands up to
  * `nearMaxBlockHeight`, which the chain enforces: this many seconds of
- * `NEAR_BLOCK_MS` blocks past the final height at planning.
+ * `NEAR_FASTEST_BLOCK_MS` blocks past the final height at planning.
  */
 export const NEAR_SWEEP_VALIDITY_SECONDS = 10 * 60;
 
 /**
- * NEAR's block time, rounded up a little: 0.578 s on testnet and 0.589 s on
- * mainnet, measured over 1000 blocks on 2026-11-12. Slower blocks give the
- * delegate action more time than `validBefore` says, faster ones a little
- * less.
+ * A NEAR block time at or below the fastest Herald expects, for turning a
+ * NEAR Sweep's signing window into blocks. Blocks take 0.578 s on testnet
+ * and 0.589 s on mainnet (measured over 1000 blocks on 2026-11-12). The
+ * chain only enforces a block height, and slower blocks make that height
+ * come later, so counting 0.5 s blocks makes the delegate action outlast
+ * `validBefore` (by about 90 s at the measured times): a Sweep signed
+ * before the deadline Herald shows hasn't expired on chain.
  */
-const NEAR_BLOCK_MS = 600;
+const NEAR_FASTEST_BLOCK_MS = 500;
 
 /**
  * How many blocks past a NEAR Sweep's `nearMaxBlockHeight` Herald waits for
@@ -324,9 +327,9 @@ const transferWithAuthorizationTypes = {
  *   `SOLANA_SWEEP_VALIDITY_SECONDS`; the MPC signer signs its message.
  * - NEAR: a NEP-366 delegate action from the NEAR Receiving Address
  *   holding one USDC `ft_transfer`, for Herald's relayer to submit (paying
- *   the gas), to an account registered on USDC. It lands up to about
- *   `NEAR_SWEEP_VALIDITY_SECONDS` from now; the MPC signer signs its
- *   NEP-461 hash.
+ *   the gas), to an account registered on USDC. It must be signed within
+ *   `NEAR_SWEEP_VALIDITY_SECONDS`, and lands up to a block height a little
+ *   past that; the MPC signer signs its NEP-461 hash.
  */
 export async function planSweep(
   deps: SweepPlanDeps,
@@ -909,7 +912,8 @@ async function planNearColumns(
   }
   const nowSeconds = Math.floor(now.getTime() / 1000);
   const validBefore = Math.min(nowSeconds + NEAR_SWEEP_VALIDITY_SECONDS, signBy);
-  const maxBlockHeight = height + Math.floor(((validBefore - nowSeconds) * 1000) / NEAR_BLOCK_MS);
+  const maxBlockHeight =
+    height + Math.ceil(((validBefore - nowSeconds) * 1000) / NEAR_FASTEST_BLOCK_MS);
   const delegateAction = nearSweepDelegateAction({
     senderId: provider.nearAddress,
     usdc: network.usdc.address,
