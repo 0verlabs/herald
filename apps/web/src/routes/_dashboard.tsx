@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
-import { AppShell } from "@/components/app-shell";
+import { AppShell } from "@/components/layout/app-shell";
 import { getSessionAccount } from "@/server/auth";
 import { getHeraldEnv } from "@/server/herald-env";
 

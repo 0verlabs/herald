@@ -1,4 +1,4 @@
-import { apiKeyPrefixes, type HeraldEnv } from "@herald/core";
+import { apiKeyPrefixes, facilitatorUrls, type HeraldEnv } from "@herald/core";
 
 export type Framework = "hono" | "express";
 
@@ -6,6 +6,13 @@ export type Framework = "hono" | "express";
 export const frameworkLabels: Record<Framework, string> = { hono: "Hono", express: "Express" };
 
 export const frameworks = Object.keys(frameworkLabels) as Framework[];
+
+export type Runtime = "node";
+
+/** The languages and runtimes there are snippets for, each with its frameworks. */
+export const runtimes: Record<Runtime, { label: string; frameworks: Framework[] }> = {
+  node: { label: "Node.js", frameworks: ["hono", "express"] },
+};
 
 export type IntegrationSnippet = {
   /** The shell command that installs the packages the snippet imports. */
@@ -70,7 +77,7 @@ ${parts.imports}
 // Herald's facilitator settles every payment. /supported is public;
 // verify and settle need your Herald API key.
 const facilitator = new HTTPFacilitatorClient({
-  url: facilitatorUrls.${input.env},
+  url: facilitatorUrls.${input.env}, // ${facilitatorUrls[input.env]}
   createAuthHeaders: async () => {
     const auth = { Authorization: \`Bearer \${process.env.${API_KEY_ENV_VAR}}\` };
     return { verify: auth, settle: auth };
