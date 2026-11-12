@@ -96,6 +96,15 @@ export class EvmChainQueue extends DurableObject<CloudflareBindings> implements 
     return this.#enqueue(submission, "answer");
   }
 
+  /**
+   * The gas wallet's address: the public half of `EVM_GAS_KEY`, the same on
+   * every EVM network. The web Worker's admin page shows it with its
+   * balance.
+   */
+  async gasWallet(): Promise<string> {
+    return evmGasAccount(this.env).address;
+  }
+
   #enqueue(
     submission: TransferWithAuthorizationSubmission,
     onResubmit: "refuse" | "answer",

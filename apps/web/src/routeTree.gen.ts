@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardRouteImport } from './routes/_dashboard'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as DashboardApiKeysRouteImport } from './routes/_dashboard/api-keys'
 import { Route as DashboardIntegrationRouteImport } from './routes/_dashboard/integration'
@@ -26,6 +27,11 @@ const IndexRoute = IndexRouteImport.update({
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
   id: '/_dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignInRoute = SignInRouteImport.update({
@@ -66,6 +72,7 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/sign-in': typeof SignInRoute
   '/api-keys': typeof DashboardApiKeysRoute
   '/integration': typeof DashboardIntegrationRoute
@@ -76,6 +83,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/sign-in': typeof SignInRoute
   '/api-keys': typeof DashboardApiKeysRoute
   '/integration': typeof DashboardIntegrationRoute
@@ -88,6 +96,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_dashboard': typeof DashboardRouteWithChildren
+  '/admin': typeof AdminRoute
   '/sign-in': typeof SignInRoute
   '/_dashboard/api-keys': typeof DashboardApiKeysRoute
   '/_dashboard/integration': typeof DashboardIntegrationRoute
@@ -100,6 +109,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/admin'
     | '/sign-in'
     | '/api-keys'
     | '/integration'
@@ -110,6 +120,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/admin'
     | '/sign-in'
     | '/api-keys'
     | '/integration'
@@ -121,6 +132,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_dashboard'
+    | '/admin'
     | '/sign-in'
     | '/_dashboard/api-keys'
     | '/_dashboard/integration'
@@ -133,6 +145,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRoute: typeof DashboardRouteWithChildren
+  AdminRoute: typeof AdminRoute
   SignInRoute: typeof SignInRoute
   ApiHealthRoute: typeof ApiHealthRoute
 }
@@ -151,6 +164,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in': {
@@ -228,6 +248,7 @@ const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRouteWithChildren,
+  AdminRoute: AdminRoute,
   SignInRoute: SignInRoute,
   ApiHealthRoute: ApiHealthRoute,
 }

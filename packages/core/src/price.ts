@@ -30,3 +30,18 @@ export function priceToBaseUnits(price: Price, decimals: number): string {
   }
   return BigInt(whole + fraction.padEnd(decimals, "0")).toString();
 }
+
+/**
+ * Converts a non-negative decimal amount (`"0.15"`) into base units of a
+ * token with `decimals` decimals, on the string, never on floats. Throws a
+ * `RangeError` on anything else, or on more decimal places than the token
+ * has.
+ */
+export function decimalToBaseUnits(amount: string, decimals: number): string {
+  if (!/^\d+(\.\d+)?$/.test(amount)) throw new RangeError(`${amount} is not a decimal amount`);
+  const [whole = "", fraction = ""] = amount.split(".");
+  if (fraction.length > decimals) {
+    throw new RangeError(`${amount} has more than ${decimals} decimal places`);
+  }
+  return BigInt(whole + fraction.padEnd(decimals, "0")).toString();
+}

@@ -1,6 +1,7 @@
 import {
   createSignInChallenge,
   endSession,
+  isHeraldAdmin,
   nearRpcAccessKeyReader,
   readSession,
   SESSION_TTL_SECONDS,
@@ -32,8 +33,11 @@ const sessionCookie = createServerOnlyFn(() => {
   };
 });
 
+/** The session cookie's token, if the browser sent one. Server only. */
+export const sessionToken = createServerOnlyFn(() => getCookie(sessionCookie().name));
+
 const currentSession = createServerOnlyFn(async () => {
-  const token = getCookie(sessionCookie().name);
+  const token = sessionToken();
   return { token, session: await readSession(env.SESSIONS, token) };
 });
 
@@ -59,10 +63,18 @@ export const requireSession = createMiddleware({ type: "function" }).server(asyn
   return next({ context: { session } });
 });
 
-/** The signed-in Provider Account, or null. For route guards. */
+/**
+ * The signed-in Provider Account, and whether it is a Herald admin, or
+ * null. For route guards and navigation; admin server functions check
+ * `requireAdmin` themselves.
+ */
 export const getSessionAccount = createServerFn({ method: "GET" }).handler(async () => {
   const { session } = await currentSession();
-  return session ? { accountId: session.accountId } : null;
+  if (!session) return null;
+  return {
+    accountId: session.accountId,
+    isAdmin: isHeraldAdmin(session.accountId, { admins: env.HERALD_ADMINS }),
+  };
 });
 
 /** Issues the NEP-413 challenge the Provider's wallet signs to sign in. */

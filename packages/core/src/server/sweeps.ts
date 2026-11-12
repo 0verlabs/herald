@@ -836,6 +836,9 @@ export type EvmSweepSubmitter = (
 export interface EvmChainQueueRpc {
   /** An `EvmSweepSubmitter` for the queue's network. */
   submitSweep(submission: EvmSweepSubmission): Promise<EvmSweepSubmissionResult>;
+
+  /** The gas wallet's address, which pays for every transaction the queue sends. */
+  gasWallet(): Promise<string>;
 }
 
 /**

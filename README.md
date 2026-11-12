@@ -110,6 +110,12 @@ The Sweeps table follows each Sweep through `planned → awaiting_signature → 
 
 After the transfer confirms, `refreshSweeps` follows `GET /v0/status` on 1Click for the deposit address: `confirmed → delivering → delivered | refunded`, or `failed` if 1Click gives up. If 1Click still hasn't seen the deposit an hour after the quote's deadline (`ONE_CLICK_PICKUP_GRACE_SECONDS`), the Sweep fails with the deposit address to give NEAR Intents support. A swap 1Click is already delivering keeps being followed. The table links the swap on the NEAR Intents explorer and, for a cross-chain Sweep, the delivery transaction. 1Click quotes without a key. An optional partner key lowers its fee on some routes: set it with `CLOUDFLARE_ENV=production wrangler secret put ONE_CLICK_JWT` in `apps/web`. It is deliberately left out of `secrets.required`, because `wrangler deploy` refuses to deploy without a required secret.
 
+### Admin
+
+`/admin` is for Herald admins: the NEAR account ids in the web Worker's `HERALD_ADMINS` var, comma-separated (`"ops.near, alice.near"`), set per environment in `apps/web/wrangler.jsonc` and locally in `.dev.vars`. It ships empty, so nobody is an admin until you set it. Everyone else, signed in or not, gets a 404, from the page and from its server functions. Admins see an **Admin** link in the dashboard header.
+
+**Gas wallets** lists Herald's gas wallet on each chain of the environment: the address the facilitator's chain queue holds the key for, and its native balance (ETH, SOL, POL, AVAX) read from `<CHAIN>_RPC_URL`. A wallet below its threshold in `GAS_LOW_BALANCE_THRESHOLDS` (whole tokens per CAIP-2 network) is flagged **Low**; a network without a threshold never warns. **Sweep minimums** lists the `sweep_minimums` rows of the environment. **Edit** changes a row's minimum (in USDC) and note, checked with `SweepMinimumEditSchema` in the browser and on the server, and stamps it updated; the next Sweep planned uses it. The logic lives in `packages/core/src/server` (`admin.ts`, `balances.ts`); `apps/web/src/server/admin.ts` wires it.
+
 ### Pay the example API
 
 ```bash

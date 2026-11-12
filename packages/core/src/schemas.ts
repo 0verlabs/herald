@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Caip2Schema } from "./networks.ts";
+import { USDC_DECIMALS } from "./price.ts";
 
 /**
  * Which Herald environment a deployment is: `testnet` serves the test
@@ -122,6 +123,32 @@ export const SweepMinimumSchema = z.object({
   updatedAt: z.date(),
 });
 export type SweepMinimum = z.infer<typeof SweepMinimumSchema>;
+
+/**
+ * An admin's edit of one `sweep_minimums` row, named by its network and
+ * asset: the new `minimum` as a USDC amount (`"0.15"`, every asset Herald
+ * lists being USDC) and the new `note`, trimmed. The dashboard checks a form
+ * against it before sending, and the server again.
+ */
+export const SweepMinimumEditSchema = z.object({
+  network: Caip2Schema,
+  asset: z.string().min(1),
+  minimum: z
+    .string()
+    .trim()
+    .regex(/^\d{1,12}(\.\d+)?$/, 'Enter a USDC amount like "0.15"')
+    .refine(
+      (amount) => (amount.split(".")[1]?.length ?? 0) <= USDC_DECIMALS,
+      `USDC has at most ${USDC_DECIMALS} decimal places`,
+    )
+    .refine((amount) => /[1-9]/.test(amount), "The minimum must be more than 0"),
+  note: z
+    .string()
+    .trim()
+    .min(1, "Say where the figure comes from")
+    .max(500, "Keep the note to 500 characters"),
+});
+export type SweepMinimumEdit = z.input<typeof SweepMinimumEditSchema>;
 
 /**
  * Where a Sweep sends funds:
