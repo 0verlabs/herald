@@ -23,16 +23,58 @@ function u64(value: bigint): Uint8Array {
   return bytes;
 }
 
-function string(value: string): Uint8Array {
-  const bytes = textEncoder.encode(value);
+function u128(value: bigint): Uint8Array {
+  const bytes = new Uint8Array(16);
+  const view = new DataView(bytes.buffer);
+  view.setBigUint64(0, value & 0xffff_ffff_ffff_ffffn, true);
+  view.setBigUint64(8, value >> 64n, true);
+  return bytes;
+}
+
+function byteString(bytes: Uint8Array): Uint8Array {
   return concatBytes(u32(bytes.length), bytes);
+}
+
+function string(value: string): Uint8Array {
+  return byteString(textEncoder.encode(value));
 }
 
 // `PublicKey` and `Signature` start with their key type; 0 is ed25519.
 const ED25519 = new Uint8Array([0]);
 
-// The `Action::Delegate` variant.
-const DELEGATE_ACTION_TAG = new Uint8Array([8]);
+// `Action` variant tags.
+const FUNCTION_CALL_TAG = new Uint8Array([2]);
+const TRANSFER_TAG = new Uint8Array([3]);
+const DELEGATE_TAG = new Uint8Array([8]);
+
+/** A Borsh-encoded `Action`, for `signedRelayerTransaction`. */
+export type NearAction = Uint8Array & { readonly __nearAction: unique symbol };
+
+/** `Action::Delegate`: a signed delegate action (NEP-366), as the Borsh bytes it was signed as. */
+export function delegateAction(signedDelegate: Uint8Array): NearAction {
+  return concatBytes(DELEGATE_TAG, signedDelegate) as NearAction;
+}
+
+/** `Action::Transfer` of `deposit` yoctoNEAR. */
+export function transferAction(deposit: bigint): NearAction {
+  return concatBytes(TRANSFER_TAG, u128(deposit)) as NearAction;
+}
+
+/** `Action::FunctionCall` with JSON `args`. */
+export function functionCallAction(input: {
+  methodName: string;
+  args: object;
+  gas: bigint;
+  deposit: bigint;
+}): NearAction {
+  return concatBytes(
+    FUNCTION_CALL_TAG,
+    string(input.methodName),
+    byteString(textEncoder.encode(JSON.stringify(input.args))),
+    u64(input.gas),
+    u128(input.deposit),
+  ) as NearAction;
+}
 
 /** A signed relayer transaction, ready for `send_tx`, and its hash. */
 export type SignedNearTransaction = {
@@ -43,18 +85,17 @@ export type SignedNearTransaction = {
 };
 
 /**
- * Builds and signs the relayer transaction that relays a signed delegate
- * action (NEP-366): from the relayer to the delegate's sender, holding one
- * `Delegate` action whose payload is `signedDelegate`, the Borsh
- * `SignedDelegateAction` as the Buyer signed it. `blockHash` (32 bytes) is a
- * recent block, and `nonce` must be above the relayer key's.
+ * Builds and signs a transaction from the relayer to `receiverId` holding
+ * `actions`. To relay a signed delegate action, the receiver is the
+ * delegate's sender and the one action is `delegateAction`. `blockHash`
+ * (32 bytes) is a recent block, and `nonce` must be above the relayer key's.
  */
-export function signedDelegateTransaction(input: {
+export function signedRelayerTransaction(input: {
   relayer: { accountId: string; publicKey: Uint8Array; seed: Uint8Array };
   receiverId: string;
   nonce: bigint;
   blockHash: Uint8Array;
-  signedDelegate: Uint8Array;
+  actions: NearAction[];
 }): SignedNearTransaction {
   const { relayer } = input;
   const transaction = concatBytes(
@@ -64,9 +105,8 @@ export function signedDelegateTransaction(input: {
     u64(input.nonce),
     string(input.receiverId),
     input.blockHash,
-    u32(1),
-    DELEGATE_ACTION_TAG,
-    input.signedDelegate,
+    u32(input.actions.length),
+    ...input.actions,
   );
   const hash = sha256(transaction);
   const signature = ed25519.sign(hash, relayer.seed);

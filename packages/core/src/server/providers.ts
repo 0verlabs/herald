@@ -7,11 +7,13 @@ import {
   ProviderSchema,
   type HeraldEnv,
   type NearAccountId,
+  type NearSetupStatus,
   type Provider,
   type SolanaAddress,
   type SolanaTokenAccountStatus,
 } from "../schemas.ts";
 import type { Db } from "./db.ts";
+import type { NearSetupJob } from "./near-chain-queue.ts";
 import type { SolanaSweepSubmission, SolanaSweepSubmissionResult } from "./solana-sweeps.ts";
 
 /**
@@ -108,6 +110,70 @@ export async function setSolanaTokenAccountStatus(
 }
 
 /**
+ * Hands a Provider's NEAR Receiving Address to Herald's NEAR chain queue
+ * (the `NearChainQueue` Durable Object in `apps/facilitator`), which creates
+ * the account and registers it on USDC at most once, from the relayer, and
+ * reports back through `setNearSetupStatus`. Resolves once the queue has the
+ * job.
+ */
+export type NearSetupQueue = (job: NearSetupJob) => Promise<void>;
+
+/**
+ * Makes sure a Provider's NEAR Receiving Address is being set up: unless it
+ * is `created`, hands it to the NEAR chain queue and marks it `queued`, as
+ * `ensureSolanaTokenAccountQueued` does for Solana. The chain queue ignores a
+ * job it already has and sets each account up at most once, so handing it
+ * over again is safe, and it recovers a job the queue never received. If
+ * the chain queue can't be reached, the Provider goes back to `not_queued`
+ * for the next call to retry, and the failure is logged. Returns the
+ * Provider as it now stands.
+ */
+export async function ensureNearSetupQueued(
+  deps: { db: Db; queueNearSetup: NearSetupQueue },
+  input: { provider: Provider; env: HeraldEnv },
+): Promise<Provider> {
+  const { db } = deps;
+  const { provider } = input;
+  const network = networkRegistry[input.env].find((n) => n.kind === "near");
+  if (!network || provider.nearSetupStatus === "created") return provider;
+  const notCreated = and(eq(providers.id, provider.id), ne(providers.nearSetupStatus, "created"));
+  await db.update(providers).set({ nearSetupStatus: "queued" }).where(notCreated);
+  try {
+    await deps.queueNearSetup({
+      network: network.caip2,
+      providerId: provider.id,
+      account: provider.nearAddress,
+    });
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        event: "near_setup_queue_failed",
+        providerId: provider.id,
+        error: String(error),
+      }),
+    );
+    await db.update(providers).set({ nearSetupStatus: "not_queued" }).where(notCreated);
+  }
+  const [row] = await db.select().from(providers).where(eq(providers.id, provider.id));
+  if (!row) throw new Error(`Provider ${provider.id} disappeared`);
+  return providerFromRow(db, row, input.env);
+}
+
+/**
+ * Records where a Provider's NEAR Receiving Address setup stands. The NEAR
+ * chain queue calls it as it sets the account up.
+ */
+export async function setNearSetupStatus(
+  db: Db,
+  input: { providerId: number; status: NearSetupStatus },
+): Promise<void> {
+  await db
+    .update(providers)
+    .set({ nearSetupStatus: input.status })
+    .where(eq(providers.id, input.providerId));
+}
+
+/**
  * Registers a Provider Account in a Herald environment and stores its
  * Receiving Addresses, derived for that environment's MPC signer. Registering
  * an account that already exists returns the existing Provider unchanged.
@@ -161,12 +227,14 @@ export type ProviderOverview = {
   accountId: NearAccountId;
   evm: ReceivingAddressListing;
   solana: ReceivingAddressListing & { tokenAccountStatus: SolanaTokenAccountStatus };
+  near: ReceivingAddressListing & { setupStatus: NearSetupStatus };
 };
 
 /**
  * A Provider's account and Receiving Addresses, each listed with the
- * networks it receives on in `env`, in Payment Option order, and where its
- * Solana USDC token account stands. Null if no Provider has this id.
+ * networks it receives on in `env`, in Payment Option order, where its
+ * Solana USDC token account stands and whether its NEAR Receiving Address
+ * is set up. Null if no Provider has this id.
  */
 export async function getProviderOverview(
   db: Db,
@@ -184,6 +252,11 @@ export async function getProviderOverview(
       address: provider.solanaAddress,
       networks: networksOf("solana"),
       tokenAccountStatus: provider.solanaTokenAccountStatus,
+    },
+    near: {
+      address: provider.nearAddress,
+      networks: networksOf("near"),
+      setupStatus: provider.nearSetupStatus,
     },
   };
 }

@@ -1,16 +1,26 @@
-import { Caip2Schema, networkRegistry, type Caip2 } from "@herald/core";
-import type {
-  NearChainQueueRpc,
-  NearReceiptStatus,
-  NearSettlementResult,
-  NearSettlementSubmission,
+import { Caip2Schema, NearImplicitAccountSchema, networkRegistry, type Caip2 } from "@herald/core";
+import {
+  setNearSetupStatus,
+  type NearChainQueueRpc,
+  type NearReceiptStatus,
+  type NearSettlementResult,
+  type NearSettlementSubmission,
+  type NearSetupJob,
 } from "@herald/core/server";
+import { createDb } from "@herald/db";
 import { base58, base64 } from "@scure/base";
 import { decodeSignedDelegateB64, parseFtTransferArgs, settlementCacheKey } from "@x402/near";
 import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
 import { heraldEnvOf, NearRpcError, nearRelayerKey, nearRpc } from "./chains.ts";
-import { signedDelegateTransaction, type SignedNearTransaction } from "./near-transactions.ts";
+import {
+  delegateAction,
+  functionCallAction,
+  signedRelayerTransaction,
+  transferAction,
+  type NearAction,
+  type SignedNearTransaction,
+} from "./near-transactions.ts";
 
 // Each RPC call while the queue waits on it must fail fast rather than stall
 // every transaction behind it.
@@ -27,6 +37,35 @@ const SettlementSubmissionSchema = z.object({
 // The stock mechanism's cap on the gas a Buyer's ft_transfer may use, which
 // the relayer pays for.
 const MAX_SPONSORED_GAS = 100_000_000_000_000n;
+
+// Setting up a Provider's NEAR Receiving Address. A transfer creates the
+// implicit account; 0.002 NEAR covers its own storage (182 bytes at
+// 10^19 yoctoNEAR each, 0.00182 NEAR). Registering it on USDC costs
+// USDC's `storage_balance_bounds`, 0.00125 NEAR on testnet and mainnet.
+const ACCOUNT_CREATION_YOCTO = 2_000_000_000_000_000_000_000n;
+const STORAGE_DEPOSIT_YOCTO = 1_250_000_000_000_000_000_000n;
+const STORAGE_DEPOSIT_GAS = 30_000_000_000_000n;
+
+// Setup is tried this many times, waiting RETRY_DELAYS_MS[attempt - 1]
+// after each failed attempt, before giving up until it is queued again.
+const RETRY_DELAYS_MS = [30_000, 60_000, 120_000, 300_000, 600_000];
+const MAX_ATTEMPTS = RETRY_DELAYS_MS.length + 1;
+
+const SetupJobSchema = z.object({
+  network: Caip2Schema,
+  providerId: z.number().int().positive(),
+  account: NearImplicitAccountSchema,
+});
+
+/** A row of `setup_jobs`: one per Provider, keyed by its NEAR Receiving Address. */
+type SetupJobRow = {
+  account: string;
+  network: Caip2;
+  provider_id: number;
+  status: "queued" | "created" | "failed";
+  attempts: number;
+  next_attempt_at: number;
+};
 
 /** A row of `settlements`: one per signed delegate action ever submitted. */
 type SettlementRow = {
@@ -53,6 +92,12 @@ type Outcome = {
  * refused rather than relayed twice. The wait for a transaction to be final
  * happens outside the nonce lock, so one slow transaction doesn't hold up
  * the others.
+ *
+ * It sets up Providers' NEAR Receiving Addresses, which NEAR payments need
+ * to verify: the web Worker queues one when a Provider signs in
+ * (`queueSetup`), and an alarm creates the implicit account and registers
+ * it on USDC, each at most once, recording the outcome on the Provider in
+ * D1.
  */
 export class NearChainQueue extends DurableObject<CloudflareBindings> implements NearChainQueueRpc {
   // Tail of the send queue. Each send starts after the previous one has been
@@ -70,6 +115,14 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
       CREATE TABLE IF NOT EXISTS relayer_nonce (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         nonce INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS setup_jobs (
+        account TEXT PRIMARY KEY,
+        network TEXT NOT NULL,
+        provider_id INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        attempts INTEGER NOT NULL,
+        next_attempt_at INTEGER NOT NULL
       )`,
     );
   }
@@ -77,6 +130,65 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
   /** The relayer's account id: the implicit account of `NEAR_RELAYER_KEY`. */
   async relayer(): Promise<string> {
     return nearRelayerKey(this.env).accountId;
+  }
+
+  /**
+   * Queues setting up a Provider's NEAR Receiving Address. This Durable
+   * Object's own record is the source of truth: queueing one that is
+   * already queued does nothing, one that was set up is recorded on the
+   * Provider as `created` again (repairing a lost D1 write), and one the
+   * queue gave up on starts over. Refuses a malformed job or one for a
+   * network this Herald environment doesn't list.
+   */
+  async queueSetup(input: NearSetupJob): Promise<{ ok: true } | { ok: false; message: string }> {
+    const parsed = SetupJobSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, message: "Not a NEAR setup job" };
+    const job = parsed.data;
+    if (!this.#nearNetwork(job.network)) {
+      return {
+        ok: false,
+        message: `${job.network} is not a Herald NEAR network on ${this.env.HERALD_ENV}`,
+      };
+    }
+    const [existing] = this.ctx.storage.sql
+      .exec<SetupJobRow>("SELECT * FROM setup_jobs WHERE account = ?", job.account)
+      .toArray();
+    if (existing?.status === "queued") return { ok: true };
+    if (existing?.status === "created") {
+      await setNearSetupStatus(createDb(this.env.DB), {
+        providerId: existing.provider_id,
+        status: "created",
+      });
+      return { ok: true };
+    }
+    this.ctx.storage.sql.exec(
+      `INSERT OR REPLACE INTO setup_jobs
+         (account, network, provider_id, status, attempts, next_attempt_at)
+       VALUES (?, ?, ?, 'queued', 0, ?)`,
+      job.account,
+      job.network,
+      job.providerId,
+      Date.now(),
+    );
+    await this.#scheduleNextAttempt();
+    return { ok: true };
+  }
+
+  /**
+   * Makes one attempt at every queued setup whose next attempt is due, then
+   * sets the alarm for the next one due. Each setup transaction waits its
+   * turn in the send queue; waiting for it to be final doesn't hold the
+   * queue.
+   */
+  override async alarm(): Promise<void> {
+    const due = this.ctx.storage.sql
+      .exec<SetupJobRow>(
+        "SELECT * FROM setup_jobs WHERE status = 'queued' AND next_attempt_at <= ?",
+        Date.now(),
+      )
+      .toArray();
+    for (const job of due) await this.#attemptSetup(job);
+    await this.#scheduleNextAttempt();
   }
 
   /**
@@ -127,9 +239,21 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
     );
 
     const sent = await this.#enqueue(() =>
-      this.#broadcast(network, sender, base64.decode(signedDelegateAction), delegateHash),
+      this.#broadcast(network, sender, [delegateAction(base64.decode(signedDelegateAction))], {
+        // Recorded before broadcasting, so a lost answer or an eviction
+        // mid-broadcast can't lead to the delegate action being sent twice.
+        recordHash: (hash) =>
+          this.ctx.storage.sql.exec(
+            "UPDATE settlements SET tx_hash = ? WHERE delegate_hash = ?",
+            hash,
+            delegateHash,
+          ),
+      }),
     );
-    if (!sent.ok) return sent;
+    if (!sent.ok) {
+      this.#release(delegateHash);
+      return sent;
+    }
     const final = await this.#awaitFinal(network, sent.transaction);
     if (!final) {
       console.error(
@@ -164,19 +288,20 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
   }
 
   /**
-   * Signs the relayer transaction with the next nonce and broadcasts it.
-   * Runs inside the send queue. The node refusing it (an `INVALID_TRANSACTION`
-   * answer) means it was never sent: the claim on the delegate action is
-   * released. A nonce the node finds stale (another sender used the key) is
-   * re-read from the chain and tried once more. Without an answer the
-   * transaction may have been sent, so it counts as sent and the wait for
-   * it to be final decides.
+   * Signs a relayer transaction to `receiverId` holding `actions` with the
+   * next nonce and broadcasts it. Runs inside the send queue. `recordHash`
+   * gets the transaction's hash before it is broadcast, and null if the
+   * node refused it. The node refusing it (an `INVALID_TRANSACTION` answer)
+   * means it was never sent. A nonce the node finds stale (another sender
+   * used the key) is re-read from the chain and tried once more. Without an
+   * answer the transaction may have been sent, so it counts as sent and the
+   * wait for it to be final decides.
    */
   async #broadcast(
     network: Caip2,
-    sender: string,
-    signedDelegate: Uint8Array,
-    delegateHash: string,
+    receiverId: string,
+    actions: NearAction[],
+    { recordHash }: { recordHash?: (hash: string | null) => void } = {},
   ): Promise<{ ok: true; transaction: SignedNearTransaction } | { ok: false; message: string }> {
     const relayer = nearRelayerKey(this.env);
     for (let attempt = 1; ; attempt++) {
@@ -186,23 +311,10 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
           this.#nextNonce(network),
           this.#finalBlockHash(network),
         ]);
-        transaction = signedDelegateTransaction({
-          relayer,
-          receiverId: sender,
-          nonce,
-          blockHash,
-          signedDelegate,
-        });
-        // Recorded before broadcasting, so a lost answer or an eviction
-        // mid-broadcast can't lead to the delegate action being sent twice.
-        this.ctx.storage.sql.exec(
-          "UPDATE settlements SET tx_hash = ? WHERE delegate_hash = ?",
-          transaction.hash,
-          delegateHash,
-        );
+        transaction = signedRelayerTransaction({ relayer, receiverId, nonce, blockHash, actions });
+        recordHash?.(transaction.hash);
         this.#useNonce(nonce);
       } catch (error) {
-        this.#release(delegateHash);
         return {
           ok: false,
           message: `Herald couldn't prepare the relayer transaction: ${String(error)}`,
@@ -223,15 +335,11 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
           );
           return { ok: true, transaction };
         }
-        this.ctx.storage.sql.exec(
-          "UPDATE settlements SET tx_hash = NULL WHERE delegate_hash = ?",
-          delegateHash,
-        );
+        recordHash?.(null);
         if (isInvalidNonce(error.info) && attempt === 1) {
           this.ctx.storage.sql.exec("DELETE FROM relayer_nonce");
           continue;
         }
-        this.#release(delegateHash);
         return {
           ok: false,
           message: `The NEAR node refused the relayer transaction: ${JSON.stringify(error.info)}`,
@@ -242,6 +350,169 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
 
   #release(delegateHash: string): void {
     this.ctx.storage.sql.exec("DELETE FROM settlements WHERE delegate_hash = ?", delegateHash);
+  }
+
+  async #scheduleNextAttempt(): Promise<void> {
+    const [next] = this.ctx.storage.sql
+      .exec<{ at: number | null }>(
+        "SELECT MIN(next_attempt_at) AS at FROM setup_jobs WHERE status = 'queued'",
+      )
+      .toArray();
+    if (next?.at != null) await this.ctx.storage.setAlarm(next.at);
+  }
+
+  /**
+   * One attempt at setting up a NEAR Receiving Address. The outcome goes
+   * into this Durable Object's record first, then onto the Provider in D1;
+   * a failed D1 write is logged and repaired the next time the setup is
+   * queued. Once the queue gives up, the Provider goes back to
+   * `not_queued`, so its next sign-in queues the setup again.
+   */
+  async #attemptSetup(job: SetupJobRow): Promise<void> {
+    const attempt = job.attempts + 1;
+    let status: SetupJobRow["status"];
+    let nextAttemptAt = Date.now();
+    try {
+      await this.#setUp(job);
+      status = "created";
+    } catch (error) {
+      status = attempt >= MAX_ATTEMPTS ? "failed" : "queued";
+      nextAttemptAt += RETRY_DELAYS_MS[attempt - 1] ?? 0;
+      console.warn(
+        JSON.stringify({
+          event: "near_setup_attempt_failed",
+          providerId: job.provider_id,
+          account: job.account,
+          attempt,
+          gaveUp: status === "failed",
+          error: String(error),
+        }),
+      );
+    }
+    this.ctx.storage.sql.exec(
+      "UPDATE setup_jobs SET status = ?, attempts = ?, next_attempt_at = ? WHERE account = ?",
+      status,
+      attempt,
+      nextAttemptAt,
+      job.account,
+    );
+    if (status === "queued") return;
+    try {
+      await setNearSetupStatus(createDb(this.env.DB), {
+        providerId: job.provider_id,
+        status: status === "created" ? "created" : "not_queued",
+      });
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "near_setup_status_write_failed",
+          providerId: job.provider_id,
+          status,
+          error: String(error),
+        }),
+      );
+    }
+  }
+
+  /**
+   * Creates `job.account`, the implicit account, with a transfer from the
+   * relayer unless it exists, then registers it on USDC (`storage_deposit`)
+   * unless it is registered. Each step reads the chain first, so a setup
+   * tried again doesn't repeat a step that landed. Throws unless both
+   * landed.
+   */
+  async #setUp(job: SetupJobRow): Promise<void> {
+    const network = this.#nearNetwork(job.network);
+    if (!network) throw new Error(`${job.network} is not a Herald NEAR network`);
+    if (!(await this.#accountExists(job.network, job.account))) {
+      const transaction = await this.#sendAndAwait(job.network, job.account, [
+        transferAction(ACCOUNT_CREATION_YOCTO),
+      ]);
+      console.log(
+        JSON.stringify({
+          event: "near_account_created",
+          providerId: job.provider_id,
+          account: job.account,
+          transaction,
+        }),
+      );
+    }
+    if (!(await this.#registeredOn(job.network, network.usdc.address, job.account))) {
+      const transaction = await this.#sendAndAwait(job.network, network.usdc.address, [
+        functionCallAction({
+          methodName: "storage_deposit",
+          args: { account_id: job.account, registration_only: true },
+          gas: STORAGE_DEPOSIT_GAS,
+          deposit: STORAGE_DEPOSIT_YOCTO,
+        }),
+      ]);
+      console.log(
+        JSON.stringify({
+          event: "near_storage_registered",
+          providerId: job.provider_id,
+          account: job.account,
+          transaction,
+        }),
+      );
+    }
+  }
+
+  /**
+   * Sends a relayer transaction through the send queue and waits until it
+   * is final. Returns its hash; throws if it was refused, isn't final in
+   * time, or failed.
+   */
+  async #sendAndAwait(network: Caip2, receiverId: string, actions: NearAction[]): Promise<string> {
+    const sent = await this.#enqueue(() => this.#broadcast(network, receiverId, actions));
+    if (!sent.ok) throw new Error(sent.message);
+    const final = await this.#awaitFinal(network, sent.transaction);
+    if (!final)
+      throw new Error(`Relayer transaction ${sent.transaction.hash} wasn't final in time`);
+    const failure = failureOf(final);
+    if (failure) throw new Error(`Relayer transaction ${sent.transaction.hash} failed: ${failure}`);
+    return sent.transaction.hash;
+  }
+
+  async #accountExists(network: Caip2, accountId: string): Promise<boolean> {
+    try {
+      await nearRpc(
+        this.env,
+        network,
+        "query",
+        { request_type: "view_account", finality: "final", account_id: accountId },
+        RPC_TIMEOUT_MS,
+      );
+      return true;
+    } catch (error) {
+      if (error instanceof NearRpcError && error.rpcCause === "UNKNOWN_ACCOUNT") return false;
+      throw error;
+    }
+  }
+
+  /** Whether `accountId` is registered on the NEP-145 contract `token`. */
+  async #registeredOn(network: Caip2, token: string, accountId: string): Promise<boolean> {
+    const answer = (await nearRpc(
+      this.env,
+      network,
+      "query",
+      {
+        request_type: "call_function",
+        finality: "final",
+        account_id: token,
+        method_name: "storage_balance_of",
+        args_base64: base64.encode(
+          new TextEncoder().encode(JSON.stringify({ account_id: accountId })),
+        ),
+      },
+      RPC_TIMEOUT_MS,
+    )) as { result?: unknown; error?: unknown };
+    if (!Array.isArray(answer.result)) {
+      throw new Error(`storage_balance_of failed: ${JSON.stringify(answer.error ?? null)}`);
+    }
+    const balance: unknown = JSON.parse(
+      new TextDecoder().decode(Uint8Array.from(answer.result as number[])),
+    );
+    return balance !== null;
   }
 
   async #send(network: Caip2, transaction: SignedNearTransaction): Promise<void> {
@@ -383,18 +654,23 @@ function delegateProblem(
  * `SuccessValue`.
  */
 function innerReceiptOf(outcome: Outcome, usdc: string): NearReceiptStatus {
-  const describe = (failure: unknown) => JSON.stringify(failure);
-  if (outcome.status?.Failure !== undefined) {
-    return { kind: "failure", error: describe(outcome.status.Failure) };
-  }
+  const failure = failureOf(outcome);
+  if (failure) return { kind: "failure", error: failure };
   const receipts = outcome.receipts_outcome ?? [];
-  const failed = receipts.find((r) => r.outcome?.status?.["Failure"] !== undefined);
-  if (failed) return { kind: "failure", error: describe(failed.outcome?.status?.["Failure"]) };
   const transfer = receipts.find((r) => r.outcome?.executor_id === usdc);
   const value = transfer?.outcome?.status?.["SuccessValue"];
   return typeof value === "string"
     ? { kind: "success", value }
     : { kind: "failure", error: "inner_ft_transfer_receipt_not_successful" };
+}
+
+/** The failure of a final transaction or of one of its receipts, as JSON; null if none failed. */
+function failureOf(outcome: Outcome): string | null {
+  if (outcome.status?.Failure !== undefined) return JSON.stringify(outcome.status.Failure);
+  const failed = (outcome.receipts_outcome ?? []).find(
+    (r) => r.outcome?.status?.["Failure"] !== undefined,
+  );
+  return failed ? JSON.stringify(failed.outcome?.status?.["Failure"]) : null;
 }
 
 function isInvalidNonce(info: unknown): boolean {

@@ -7,6 +7,7 @@ import {
   getProviderOverview,
   issueApiKey,
   registerProvider,
+  setNearSetupStatus,
   setSolanaTokenAccountStatus,
 } from "../src/server/index.ts";
 
@@ -100,7 +101,28 @@ describe("getProviderOverview", () => {
         networks: ["Solana"],
         tokenAccountStatus: "not_queued",
       },
+      // Herald mainnet doesn't list NEAR yet.
+      near: { address: mainnetNear, networks: [], setupStatus: "not_queued" },
     });
+  });
+
+  test("reports whether the NEAR Receiving Address is set up", async () => {
+    const db = createDb(env.DB);
+    const provider = await registerProvider(db, {
+      accountId: "overview-near.testnet",
+      env: "testnet",
+    });
+    const overview = () => getProviderOverview(db, { providerId: provider.id, env: "testnet" });
+
+    expect(await overview()).toMatchObject({
+      near: {
+        address: provider.nearAddress,
+        networks: ["NEAR Testnet"],
+        setupStatus: "not_queued",
+      },
+    });
+    await setNearSetupStatus(db, { providerId: provider.id, status: "created" });
+    expect(await overview()).toMatchObject({ near: { setupStatus: "created" } });
   });
 
   test("reports where the Solana USDC token account stands", async () => {

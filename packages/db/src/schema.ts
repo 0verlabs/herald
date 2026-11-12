@@ -30,6 +30,9 @@ export const providers = sqliteTable("providers", {
   })
     .notNull()
     .default("not_queued"),
+  nearSetupStatus: text("near_setup_status", { enum: ["not_queued", "queued", "created"] })
+    .notNull()
+    .default("not_queued"),
   createdAt: createdAt(),
 });
 

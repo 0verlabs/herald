@@ -20,10 +20,29 @@ const solanaSetup = {
   failed: { label: "USDC setup failed", variant: "destructive" },
 } as const;
 
-/** The addresses customers pay into, one row per kind of network: EVM, then Solana. */
+// Herald creates the NEAR Receiving Address and registers it on USDC; NEAR
+// payments to it are refused until then.
+const nearSetup = {
+  created: null,
+  queued: { label: "Setting up USDC", variant: "outline" },
+  not_queued: { label: "USDC not set up yet", variant: "outline" },
+} as const;
+
+/** A setup still under way, as a badge; null once it's done. */
+function setupBadge(setup: { label: string; variant: "outline" | "destructive" } | null) {
+  return setup ? (
+    <Badge variant={setup.variant} className="mt-0.5">
+      {setup.label}
+    </Badge>
+  ) : null;
+}
+
+/**
+ * The addresses customers pay into, one row per kind of network: EVM, then
+ * Solana, then NEAR where the Herald environment lists it.
+ */
 export function PaymentAddressesCard({ overview }: { overview: ProviderOverview }) {
-  const { evm, solana } = overview;
-  const setup = solanaSetup[solana.tokenAccountStatus];
+  const { evm, solana, near } = overview;
 
   return (
     <Card>
@@ -45,14 +64,17 @@ export function PaymentAddressesCard({ overview }: { overview: ProviderOverview 
             label="Solana payment address"
             address={solana.address}
             networks={solana.networks}
-            status={
-              setup ? (
-                <Badge variant={setup.variant} className="mt-0.5">
-                  {setup.label}
-                </Badge>
-              ) : null
-            }
+            status={setupBadge(solanaSetup[solana.tokenAccountStatus])}
           />
+          {near.networks.length > 0 && (
+            <AddressRow
+              title="NEAR"
+              label="NEAR payment address"
+              address={near.address}
+              networks={near.networks}
+              status={setupBadge(nearSetup[near.setupStatus])}
+            />
+          )}
         </ul>
       </CardContent>
       <CardFooter className="gap-2 text-sm text-muted-foreground">

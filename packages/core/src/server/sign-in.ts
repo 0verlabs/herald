@@ -9,8 +9,10 @@ import { postRpc } from "../rpc.ts";
 import { NearAccountIdSchema, type HeraldEnv, type Provider } from "../schemas.ts";
 import type { Db } from "./db.ts";
 import {
+  ensureNearSetupQueued,
   ensureSolanaTokenAccountQueued,
   registerProvider,
+  type NearSetupQueue,
   type SolanaTokenAccountQueue,
 } from "./providers.ts";
 
@@ -93,9 +95,11 @@ export async function createSignInChallenge(
 
 /**
  * Signs a Provider in from its wallet's signature over a sign-in challenge,
- * and registers the Provider Account the first time, handing its Solana
- * USDC token account to the Solana chain queue until one call succeeds (see
- * `ensureSolanaTokenAccountQueued`). The signature must
+ * and registers the Provider Account the first time. Until each is created,
+ * every sign-in hands the Provider's Solana USDC token account to the Solana
+ * chain queue (`ensureSolanaTokenAccountQueued`) and its NEAR Receiving
+ * Address setup to the NEAR chain queue (`ensureNearSetupQueued`), which is
+ * also how Providers registered before either get theirs. The signature must
  * cover Herald's message for `env`, `recipient` and a nonce Herald issued
  * and nobody has used yet. The key must be a full-access key of the account,
  * which `readAccessKey` checks over NEAR RPC; if that check fails, the
@@ -107,6 +111,7 @@ export async function signIn(
     db: Db;
     readAccessKey: NearAccessKeyReader;
     queueSolanaTokenAccount: SolanaTokenAccountQueue;
+    queueNearSetup: NearSetupQueue;
   },
   input: { env: HeraldEnv; recipient: string; signature: unknown },
 ): Promise<SignInResult> {
@@ -152,11 +157,12 @@ export async function signIn(
     );
   }
 
-  const provider = await registerProvider(deps.db, { accountId, env: input.env });
-  return {
-    ok: true,
-    provider: await ensureSolanaTokenAccountQueued(deps, { provider, env: input.env }),
-  };
+  const registered = await registerProvider(deps.db, { accountId, env: input.env });
+  const provider = await ensureSolanaTokenAccountQueued(deps, {
+    provider: registered,
+    env: input.env,
+  });
+  return { ok: true, provider: await ensureNearSetupQueued(deps, { provider, env: input.env }) };
 }
 
 function reject(reason: SignInRejection, message: string): SignInResult {

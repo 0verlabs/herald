@@ -57,8 +57,22 @@ export const SolanaTokenAccountStatusSchema = z.enum(["not_queued", "queued", "c
 export type SolanaTokenAccountStatus = z.infer<typeof SolanaTokenAccountStatusSchema>;
 
 /**
+ * Where a Provider's NEAR Receiving Address stands: Herald creates the
+ * implicit account and registers it on USDC (NEP-145) before NEAR payments
+ * to it can verify.
+ *
+ * - `not_queued`: not handed to the NEAR chain queue yet, handing it over
+ *   failed, or the queue gave up after retrying.
+ * - `queued`: the NEAR chain queue has it and is setting it up.
+ * - `created`: the account exists and is registered on USDC.
+ */
+export const NearSetupStatusSchema = z.enum(["not_queued", "queued", "created"]);
+export type NearSetupStatus = z.infer<typeof NearSetupStatusSchema>;
+
+/**
  * A Provider, identified by its Provider Account, with the Receiving
- * Addresses derived from it and the state of its Solana USDC token account.
+ * Addresses derived from it, the state of its Solana USDC token account and
+ * the setup of its NEAR Receiving Address.
  * `packages/db` keeps the `providers` table in line with this schema, except
  * that `near_address` is null on rows from before NEAR until core fills it
  * in (`providerFromRow`).
@@ -70,6 +84,7 @@ export const ProviderSchema = z.object({
   solanaAddress: SolanaAddressSchema,
   nearAddress: NearImplicitAccountSchema,
   solanaTokenAccountStatus: SolanaTokenAccountStatusSchema,
+  nearSetupStatus: NearSetupStatusSchema,
   createdAt: z.date(),
 });
 export type Provider = z.infer<typeof ProviderSchema>;
