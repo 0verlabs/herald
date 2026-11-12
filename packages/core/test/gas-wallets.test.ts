@@ -1,7 +1,8 @@
 import { describe, expect, test } from "vite-plus/test";
-import { unhandledKind } from "../src/index.ts";
+import { findNetwork, unhandledKind } from "../src/index.ts";
 import {
   getGasWallets,
+  rpcNativeBalanceReader,
   type GasWalletAddressReader,
   type NativeBalanceReader,
 } from "../src/server/index.ts";
@@ -191,5 +192,134 @@ describe("getGasWallets", () => {
       { threshold: null },
       { threshold: null },
     ]);
+  });
+});
+
+describe("getGasWallets with no NEAR relayer", () => {
+  test("shows NEAR as unavailable and every other chain's gas wallet", async () => {
+    // As the NEAR chain queue answers without a NEAR_RELAYER_KEY.
+    const wallets = await getGasWallets(
+      {
+        gasWalletAddress: async (network) => {
+          if (network.kind === "near") throw new Error("The NEAR_RELAYER_KEY secret is not set");
+          return gasWallets(network);
+        },
+        readNativeBalance: fakeChains({}),
+      },
+      { env: "testnet", lowBalanceThresholds: { "near:testnet": "0.5" } },
+    );
+
+    expect(wallets).toMatchObject([
+      { label: "NEAR Testnet", ok: false, address: null, threshold: "500000000000000000000000" },
+      { label: "Base Sepolia", ok: true, address: EVM_GAS },
+      { label: "Solana Devnet", ok: true, address: SOLANA_GAS },
+      { label: "Arbitrum Sepolia", ok: true, address: EVM_GAS },
+    ]);
+  });
+});
+
+describe("low-balance thresholds", () => {
+  test("accept NEAR mainnet before Herald lists it, and warn only once it does", async () => {
+    const wallets = await getGasWallets(
+      { gasWalletAddress: gasWallets, readNativeBalance: fakeChains({}) },
+      { env: "mainnet", lowBalanceThresholds: { "near:mainnet": "0.5", "eip155:8453": "0.002" } },
+    );
+
+    expect(wallets.map((w) => w.label)).not.toContain("NEAR");
+    expect(wallets.find((w) => w.label === "Base")).toMatchObject({ low: true });
+  });
+});
+
+// A private endpoint: the path stands in for an API key.
+const NEAR_RPC_URL = "https://near-testnet.rpc.test/secret-api-key/";
+
+/**
+ * A fake NEAR RPC node: `accounts` maps account ids to their liquid balance
+ * in yoctoNEAR. It answers `view_account` at final finality as a node does,
+ * with `UNKNOWN_ACCOUNT` for an account that doesn't exist.
+ */
+function fakeNearRpc(accounts: Record<string, string>): typeof fetch {
+  return async (url, init) => {
+    const request = new Request(url, init);
+    if (request.url !== NEAR_RPC_URL) throw new Error(`Unexpected request to ${request.url}`);
+    const { id, method, params } = (await request.json()) as {
+      id: unknown;
+      method: string;
+      params: Record<string, string>;
+    };
+    const answer = (body: object) => Response.json({ jsonrpc: "2.0", id, ...body });
+    if (
+      method !== "query" ||
+      params.request_type !== "view_account" ||
+      params.finality !== "final"
+    ) {
+      return answer({ error: { name: "HANDLER_ERROR", code: -32000, message: "Server error" } });
+    }
+    const amount = accounts[params.account_id ?? ""];
+    if (amount === undefined) {
+      return answer({
+        error: {
+          name: "HANDLER_ERROR",
+          cause: { name: "UNKNOWN_ACCOUNT", info: { requested_account_id: params.account_id } },
+          code: -32000,
+          message: "Server error",
+          data: `account ${params.account_id} does not exist while viewing`,
+        },
+      });
+    }
+    return answer({
+      result: {
+        amount,
+        locked: "0",
+        code_hash: "11111111111111111111111111111111",
+        storage_usage: 182,
+        storage_paid_at: 0,
+        block_height: 1,
+        block_hash: "h",
+      },
+    });
+  };
+}
+
+describe("rpcNativeBalanceReader on NEAR", () => {
+  const nearTestnet = () => {
+    const network = findNetwork("near:testnet");
+    if (!network) throw new Error("near:testnet isn't listed");
+    return network;
+  };
+
+  test("reads the relayer's NEAR balance with view_account", async () => {
+    const read = rpcNativeBalanceReader(
+      { "near:testnet": NEAR_RPC_URL },
+      fakeNearRpc({ [NEAR_RELAYER]: "2500000000000000000000000", ["other.testnet"]: "1" }),
+    );
+
+    expect(await read({ network: nearTestnet(), owner: NEAR_RELAYER })).toBe(
+      "2500000000000000000000000",
+    );
+  });
+
+  test("reads 0 for a relayer account that doesn't exist yet", async () => {
+    const read = rpcNativeBalanceReader({ "near:testnet": NEAR_RPC_URL }, fakeNearRpc({}));
+
+    expect(await read({ network: nearTestnet(), owner: NEAR_RELAYER })).toBe("0");
+  });
+
+  test("fails without naming the endpoint when the node can't answer", async () => {
+    const down: typeof fetch = async () => new Response("Bad gateway", { status: 502 });
+    // A runtime's own error can name the URL.
+    const unreachable: typeof fetch = async () => {
+      throw new TypeError(`fetch failed: ${NEAR_RPC_URL}`);
+    };
+
+    for (const fetchFn of [down, unreachable]) {
+      const read = rpcNativeBalanceReader({ "near:testnet": NEAR_RPC_URL }, fetchFn);
+      const failure = await read({ network: nearTestnet(), owner: NEAR_RELAYER }).then(
+        () => expect.unreachable("the read should fail"),
+        (error: unknown) => String(error),
+      );
+      expect(failure).toContain("NEAR Testnet");
+      expect(failure).not.toContain("secret-api-key");
+    }
   });
 });

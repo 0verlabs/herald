@@ -2,6 +2,7 @@ import { providers } from "@herald/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import {
+  Caip2Schema,
   findNetwork,
   networkRegistry,
   unhandledKind,
@@ -9,7 +10,7 @@ import {
   type Network,
 } from "../networks.ts";
 import { decimalToBaseUnits } from "../price.ts";
-import { callJsonRpc } from "../rpc.ts";
+import { callJsonRpc, postRpc, rpcUrlSecret } from "../rpc.ts";
 import type { HeraldEnv, Provider } from "../schemas.ts";
 import type { Db } from "./db.ts";
 import { providerFromRow } from "./providers.ts";
@@ -112,7 +113,8 @@ const BALANCE_OF_SELECTOR = "0x70a08231";
  * A `UsdcBalanceReader` over each chain's JSON-RPC endpoint, from `rpcUrls`
  * keyed by CAIP-2 network. EVM chains answer `balanceOf` on the USDC
  * contract at the latest block; Solana sums the owner's USDC token accounts
- * at `confirmed` commitment. A network without an endpoint fails to read.
+ * at `confirmed` commitment; NEAR answers `ft_balance_of` on the USDC
+ * contract at final finality. A network without an endpoint fails to read.
  * Errors never include the endpoint, whose URL may carry an API key.
  */
 export function rpcUsdcBalanceReader(
@@ -153,9 +155,22 @@ export function rpcUsdcBalanceReader(
         }
         return total.toString();
       }
-      case "near":
-        // Read with `ft_balance_of` once the dashboard shows NEAR (#34).
-        throw new Error(`Herald doesn't read USDC balances on ${network.label} yet`);
+      case "near": {
+        const balance = await nearView(fetchFn, url, network.label, {
+          request_type: "call_function",
+          account_id: network.usdc.address,
+          method_name: "ft_balance_of",
+          args_base64: btoa(JSON.stringify({ account_id: owner })),
+        });
+        const bytes = (balance as { result?: unknown }).result;
+        const amount: unknown = Array.isArray(bytes)
+          ? JSON.parse(new TextDecoder().decode(Uint8Array.from(bytes as number[])))
+          : undefined;
+        if (typeof amount !== "string" || !/^\d+$/.test(amount)) {
+          throw new Error(`${network.label} answered ft_balance_of without an amount`);
+        }
+        return amount;
+      }
       default:
         return unhandledKind(network);
     }
@@ -177,16 +192,57 @@ function jsonRpc(
 }
 
 /**
+ * A NEAR `query` (object params, unlike `callJsonRpc`) at final finality,
+ * giving up after `BALANCE_READ_TIMEOUT_MS`. Returns the node's `result`.
+ * An error answer, at the top level or as the view's own `result.error`
+ * (a contract panic), throws naming `label` and the request type, never the
+ * URL. With `unknownAccount`, a view of an account that doesn't exist
+ * returns that instead of throwing.
+ */
+async function nearView(
+  fetchFn: typeof fetch,
+  url: string,
+  label: string,
+  params: { request_type: string; account_id: string } & Record<string, string>,
+  unknownAccount?: object,
+): Promise<object> {
+  const what = `${label} RPC ${params.request_type}`;
+  const response = await postRpc(
+    fetchFn,
+    url,
+    { jsonrpc: "2.0", id: "herald", method: "query", params: { ...params, finality: "final" } },
+    what,
+    AbortSignal.timeout(BALANCE_READ_TIMEOUT_MS),
+  );
+  const body = (await response.json()) as {
+    result?: { error?: unknown };
+    error?: { cause?: { name?: unknown } };
+  };
+  if (body.error !== undefined) {
+    if (unknownAccount && body.error?.cause?.name === "UNKNOWN_ACCOUNT") return unknownAccount;
+    throw new Error(`${what} failed: ${JSON.stringify(body.error)}`);
+  }
+  if (typeof body.result !== "object" || body.result === null) {
+    throw new Error(`${what} answered without a result`);
+  }
+  if (body.result.error !== undefined) {
+    throw new Error(`${what} failed: ${JSON.stringify(body.result.error)}`);
+  }
+  return body.result;
+}
+
+/**
  * The address of Herald's gas wallet on `network`, from the chain queue that
- * holds its key: one EVM wallet shared by every EVM network, and the Solana
- * fee payer. Rejects if the queue can't be reached.
+ * holds its key: one EVM wallet shared by every EVM network, the Solana
+ * fee payer, and the NEAR relayer. Rejects if the queue can't name it, as
+ * the NEAR queue can't without its relayer key.
  */
 export type GasWalletAddressReader = (network: Network) => Promise<string>;
 
 /**
  * Reads how much of `network`'s native token (`network.native`) `owner`
- * holds, in base units as a decimal string: wei, lamports. Rejects if the
- * chain can't be read.
+ * holds, in base units as a decimal string: wei, lamports, yoctoNEAR.
+ * Rejects if the chain can't be read.
  */
 export type NativeBalanceReader = (request: { network: Network; owner: string }) => Promise<string>;
 
@@ -194,16 +250,23 @@ export type NativeBalanceReader = (request: { network: Network; owner: string })
  * Below which native balance each network's gas wallet counts as low, keyed
  * by CAIP-2 network, in whole tokens (`{ "eip155:8453": "0.005" }`). It is
  * configuration, so a JSON string of the same object reads too. A network
- * without one is never low; a key that isn't a network Herald lists is
- * refused, since it would never warn either.
+ * without one is never low. A key must be a network Herald knows: one it
+ * lists, or one it has an RPC endpoint for ahead of listing it (NEAR
+ * mainnet), so the threshold is in place the day it is listed. Anything else,
+ * such as a typo, is refused, since it would never warn.
  */
 const LowBalanceThresholdsSchema = z.preprocess(
   (raw) => (typeof raw === "string" ? JSON.parse(raw) : raw),
   z.record(
-    z.string().refine((key) => findNetwork(key) !== undefined),
+    z.string().refine((key) => findNetwork(key) !== undefined || isCaip2WithRpc(key)),
     z.string().regex(/^\d+(\.\d+)?$/, "must be an amount like 0.005"),
   ),
 );
+
+function isCaip2WithRpc(key: string): boolean {
+  const caip2 = Caip2Schema.safeParse(key);
+  return caip2.success && rpcUrlSecret(caip2.data) !== undefined;
+}
 
 /**
  * Herald's gas wallet on one network, its native balance, and whether that
@@ -295,7 +358,7 @@ export async function getGasWallets(
           address,
           message:
             address === null
-              ? `Herald couldn't reach the ${network.label} chain queue for its gas wallet.`
+              ? `Herald couldn't get its ${network.label} gas wallet from the chain queue.`
               : `Herald couldn't read the gas wallet's balance from ${network.label}.`,
         };
       }
@@ -306,8 +369,10 @@ export async function getGasWallets(
 /**
  * A `NativeBalanceReader` over each chain's JSON-RPC endpoint, from
  * `rpcUrls` keyed by CAIP-2 network: `eth_getBalance` at the latest block
- * on EVM chains, `getBalance` at `confirmed` commitment on Solana. A network
- * without an endpoint fails to read. Errors never include the endpoint.
+ * on EVM chains, `getBalance` at `confirmed` commitment on Solana, and
+ * `view_account` at final finality on NEAR (0 for an account that doesn't
+ * exist). A network without an endpoint fails to read. Errors never include
+ * the endpoint.
  */
 export function rpcNativeBalanceReader(
   rpcUrls: Partial<Record<Caip2, string>>,
@@ -341,9 +406,24 @@ export function rpcNativeBalanceReader(
         }
         return BigInt(lamports).toString();
       }
-      case "near":
-        // Read with `view_account` once the fee-wallet view shows the relayer (#34).
-        throw new Error(`Herald doesn't read NEAR balances on ${network.label} yet`);
+      case "near": {
+        // `amount` is the liquid balance (staked NEAR is `locked`). It
+        // includes the few thousandths of a NEAR the account's own storage
+        // holds back, which doesn't matter against a 0.5 NEAR threshold.
+        const account = await nearView(
+          fetchFn,
+          url,
+          network.label,
+          { request_type: "view_account", account_id: owner },
+          // A relayer that was never created holds nothing, and warns low.
+          { amount: "0" },
+        );
+        const amount = (account as { amount?: unknown }).amount;
+        if (typeof amount !== "string" || !/^\d+$/.test(amount)) {
+          throw new Error(`${network.label} answered view_account without a balance`);
+        }
+        return amount;
+      }
       default:
         return unhandledKind(network);
     }

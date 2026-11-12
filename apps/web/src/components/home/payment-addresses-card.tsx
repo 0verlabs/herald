@@ -20,9 +20,12 @@ const solanaSetup = {
   failed: { label: "USDC setup failed", variant: "destructive" },
 } as const;
 
-/** The addresses customers pay into, one row per kind of network: EVM, then Solana. */
+/**
+ * The addresses customers pay into, one row per kind of network, in Payment
+ * Option order: NEAR (where Herald lists it), EVM, then Solana.
+ */
 export function PaymentAddressesCard({ overview }: { overview: ProviderOverview }) {
-  const { evm, solana } = overview;
+  const { near, evm, solana } = overview;
   const setup = solanaSetup[solana.tokenAccountStatus];
 
   return (
@@ -33,6 +36,14 @@ export function PaymentAddressesCard({ overview }: { overview: ProviderOverview 
       </CardHeader>
       <CardContent>
         <ul className="flex flex-col divide-y rounded-xl border">
+          {near.networks.length > 0 ? (
+            <AddressRow
+              title="NEAR"
+              label="NEAR payment address"
+              address={near.address}
+              networks={near.networks}
+            />
+          ) : null}
           <AddressRow
             title="EVM"
             label="EVM payment address"

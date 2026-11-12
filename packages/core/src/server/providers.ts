@@ -159,6 +159,8 @@ export type ReceivingAddressListing = { address: string; networks: string[] };
 
 export type ProviderOverview = {
   accountId: NearAccountId;
+  /** No networks in an environment that doesn't list NEAR. */
+  near: ReceivingAddressListing;
   evm: ReceivingAddressListing;
   solana: ReceivingAddressListing & { tokenAccountStatus: SolanaTokenAccountStatus };
 };
@@ -179,6 +181,7 @@ export async function getProviderOverview(
     networkRegistry[input.env].filter((n) => n.kind === kind).map((n) => n.label);
   return {
     accountId: provider.accountId,
+    near: { address: provider.nearAddress, networks: networksOf("near") },
     evm: { address: provider.evmAddress, networks: networksOf("evm") },
     solana: {
       address: provider.solanaAddress,
