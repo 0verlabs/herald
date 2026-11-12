@@ -129,8 +129,10 @@ describe("planning a NEAR Sweep", () => {
       destinationAddress: DESTINATION,
       status: "planned",
       nearNonce: Number(keyNonce + 1n),
-      // About ten minutes of NEAR's 0.6 s blocks, like an EVM Sweep's window.
-      nearMaxBlockHeight: chain.height + 1000,
+      // Ten minutes to sign, like an EVM Sweep's window. The delegate action
+      // lasts ten minutes of 0.5 s blocks, faster than NEAR's, so it can't
+      // expire on chain before the deadline Herald shows.
+      nearMaxBlockHeight: chain.height + 1200,
       validBefore: now.getTime() / 1000 + 600,
     });
     const signable = expectedDelegate({
@@ -138,7 +140,7 @@ describe("planning a NEAR Sweep", () => {
       receiver: DESTINATION,
       amount: "1500000",
       nonce: keyNonce + 1n,
-      maxBlockHeight: BigInt(chain.height + 1000),
+      maxBlockHeight: BigInt(chain.height + 1200),
     });
     // Stored without the 4-byte NEP-461 prefix, as it sits in a signed delegate action.
     expect(base64.decode(sweep.nearDelegateAction)).toEqual(signable.slice(4));

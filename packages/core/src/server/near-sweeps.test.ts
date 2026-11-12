@@ -2,11 +2,8 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import { base64 } from "@scure/base";
 import { describe, expect, test } from "vite-plus/test";
 import { networkRegistry } from "../networks.ts";
-import {
-  nearDelegatePayloadHash,
-  nearSweepDelegateAction,
-  rpcNearSweepReader,
-} from "./near-sweeps.ts";
+import { nearDelegatePayloadHash } from "./near-protocol.ts";
+import { nearSweepDelegateAction, rpcNearSweepReader } from "./near-sweeps.ts";
 
 describe("a NEAR Sweep's delegate action", () => {
   test("hashes to the NEP-461 hash near-api-js gives the same delegate action", () => {

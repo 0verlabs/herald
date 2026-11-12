@@ -1,6 +1,7 @@
 import {
   PriceSchema,
   priceToBaseUnits,
+  sameAddress,
   USDC_DECIMALS,
   type HeraldEnv,
   type SweepDestinationKind,
@@ -36,7 +37,7 @@ import { discardPlannedSweep, finishSweep, startSweep } from "@/server/sweeps";
 import { OptionSelect, type Option } from "./option-select";
 import { QuoteReview, WithdrawSummary } from "./withdraw-review";
 import { WithdrawLayout } from "./withdraw-layout";
-import { addressPlaceholder, addressProblem, sameAddress, type Step } from "./withdraw-shared";
+import { addressPlaceholder, addressProblem, type Step } from "./withdraw-shared";
 
 const stepLabels: Record<Exclude<Step, "idle">, string> = {
   planning: "Preparing your withdrawal…",
@@ -161,7 +162,7 @@ export function WithdrawFromNetwork(props: {
   const trimmedDestination = destination.trim();
   // A payment address on another network is fine: that's consolidating.
   const isOwnAddress =
-    kind === "same_chain" && sameAddress(trimmedDestination, chain.address, chain.kind);
+    kind === "same_chain" && sameAddress(chain.kind, trimmedDestination, chain.address);
   const destinationProblem =
     !addressChain || !destination
       ? null

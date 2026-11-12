@@ -15,7 +15,7 @@ type SummaryRow = {
   strong?: boolean;
 };
 
-/** A withdrawal laid out like a receipt, one line per fact. */
+/** A Sweep laid out like a receipt, one line per fact. */
 function SummaryList({
   title,
   aside,
@@ -55,7 +55,7 @@ function SummaryList({
   );
 }
 
-/** What the withdrawal will do, before you approve it or ask for a quote. */
+/** What the Sweep will do, before the Provider approves it or asks for a quote. */
 export function WithdrawSummary(props: {
   chain: SweepChainOption;
   kind: SweepDestinationKind;
@@ -97,7 +97,7 @@ export function WithdrawSummary(props: {
   return <SummaryList title="Summary" rows={rows} />;
 }
 
-/** What a withdrawal on the chain itself costs you. */
+/** What a Sweep on the chain itself costs the Provider. */
 function sameChainFees(chain: SweepChainOption): string {
   switch (chain.kind) {
     case "evm":

@@ -2,6 +2,12 @@ import type { Caip2 } from "../networks.ts";
 import type { NearImplicitAccount } from "../schemas.ts";
 
 /**
+ * What `NearChainQueueRpc` answers when it won't do what it was asked, and
+ * why. It sends nothing for that request.
+ */
+export type NearQueueRefusal = { ok: false; message: string };
+
+/**
  * A Buyer's NEAR payment to relay: a NEP-366 signed delegate action (base64
  * Borsh) holding one `ft_transfer` on the network's USDC contract, as the
  * stock `@x402/near` exact scheme carries it.
@@ -18,14 +24,17 @@ export type NearReceiptStatus =
 
 /**
  * A relayed settlement: the relayer transaction's hash and how the inner
- * `ft_transfer` ended, once final. `ok: false` when Herald didn't submit it
- * (a malformed or duplicate submission, a node that refused it) or couldn't
- * see it through to final; `transaction` is then the relayer transaction if
- * one was sent.
+ * `ft_transfer` ended, once final. `pending` when the relayer transaction
+ * was sent but wasn't final in time: it may still land, and
+ * `NearChainQueueRpc.awaitPendingSettlement` follows it from there.
+ * Otherwise `ok: false` when Herald didn't submit it (a malformed or
+ * duplicate submission, a node that refused it); `transaction` is then the
+ * relayer transaction if one was sent.
  */
 export type NearSettlementResult =
   | { ok: true; transaction: string; innerReceipt: NearReceiptStatus }
-  | { ok: false; message: string; transaction?: string };
+  | { ok: false; pending: true; message: string; transaction: string }
+  | (NearQueueRefusal & { pending?: never; transaction?: string });
 
 /**
  * A Provider's NEAR Sweep to relay: the signed delegate action (base64
@@ -38,9 +47,7 @@ export type NearSweepSubmission = { network: Caip2; signedDelegateAction: string
  * final). `ok: false` when Herald didn't send it: a malformed or expired
  * delegate action, or a node that refused it.
  */
-export type NearSweepSubmissionResult =
-  | { ok: true; transaction: string }
-  | { ok: false; message: string };
+export type NearSweepSubmissionResult = { ok: true; transaction: string } | NearQueueRefusal;
 
 /**
  * Herald's NEAR chain queue for Sweeps: the relayer's account id, and
@@ -80,15 +87,27 @@ export interface NearChainQueueRpc {
    * reported as `created` again. Refuses (`ok: false`) a job it can't take,
    * such as one for another network.
    */
-  queueSetup(job: NearSetupJob): Promise<{ ok: true } | { ok: false; message: string }>;
+  queueSetup(job: NearSetupJob): Promise<{ ok: true } | NearQueueRefusal>;
 
   /**
    * Wraps a Buyer's signed delegate action in a relayer transaction, sends
    * it and waits until it is final. A signed delegate action is submitted at
    * most once, across isolates: presenting it again is refused, naming the
-   * first submission's transaction.
+   * first submission's transaction. One sent but not final in time is
+   * answered `pending` and remembered for a few minutes.
    */
   submitSettlement(submission: NearSettlementSubmission): Promise<NearSettlementResult>;
+
+  /**
+   * Follows a settlement that `submitSettlement` answered `pending`: waits
+   * again until its relayer transaction is final, without sending anything
+   * new. Null when this signed delegate action has no pending settlement.
+   * Of concurrent calls for one settlement only one follows it; the others
+   * get null. One still not final is answered `pending` again.
+   */
+  awaitPendingSettlement(
+    submission: NearSettlementSubmission,
+  ): Promise<NearSettlementResult | null>;
 
   /**
    * Wraps a Provider's signed Sweep in a relayer transaction and sends it,
