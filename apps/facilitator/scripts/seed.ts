@@ -8,16 +8,18 @@
 // Apply migrations first (`vp run db:migrate:local` or `db:migrate:testnet`).
 // The key is printed once; Herald stores only its hash.
 //
-// Locally it also queues the Provider's Solana USDC token account, as the
-// dashboard's first sign-in does, through the web Worker's cross-Worker
-// binding to the Solana chain queue. Run the facilitator (`vp run dev`)
-// first. On testnet the token account is queued at the Provider's first
-// dashboard sign-in.
+// Locally it also queues the Provider's Solana USDC token account and its
+// NEAR Receiving Address setup, as the dashboard's sign-in does, through the
+// web Worker's cross-Worker bindings to the chain queues. Run the
+// facilitator (`vp run dev`) first. On testnet both are queued at the
+// Provider's next dashboard sign-in.
 import { parseArgs } from "node:util";
 import {
+  ensureNearSetupQueued,
   ensureSolanaTokenAccountQueued,
   issueApiKey,
   registerProvider,
+  type NearChainQueueRpc,
   type SolanaChainQueueRpc,
 } from "@herald/core/server";
 import { createDb } from "@herald/db";
@@ -40,7 +42,10 @@ const proxy = await getPlatformProxy<CloudflareBindings>({
   ...(local ? { persist } : { environment: "testnet" }),
 });
 const web = local
-  ? await getPlatformProxy<{ SOLANA_CHAIN_QUEUE: DurableObjectNamespace }>({
+  ? await getPlatformProxy<{
+      SOLANA_CHAIN_QUEUE: DurableObjectNamespace;
+      NEAR_CHAIN_QUEUE: DurableObjectNamespace;
+    }>({
       configPath: new URL("../../web/wrangler.jsonc", import.meta.url).pathname,
       persist,
     })
@@ -65,6 +70,20 @@ try {
       },
       { provider, env: "testnet" },
     );
+    provider = await ensureNearSetupQueued(
+      {
+        db,
+        queueNearSetup: async (job) => {
+          const queue = web.env.NEAR_CHAIN_QUEUE.getByName(job.network) as DurableObjectStub &
+            NearChainQueueRpc;
+          const queued = await queue.queueSetup(job);
+          if (!(await Promise.resolve(queued.ok))) {
+            throw new Error(String(await Promise.resolve(Reflect.get(queued, "message"))));
+          }
+        },
+      },
+      { provider, env: "testnet" },
+    );
   }
   const { apiKey, secret } = await issueApiKey(db, { providerId: provider.id, env: "testnet" });
   console.log(
@@ -74,6 +93,7 @@ try {
       `  Solana Receiving Address: ${provider.solanaAddress}`,
       `  NEAR Receiving Address:   ${provider.nearAddress}`,
       `  Solana USDC token account: ${provider.solanaTokenAccountStatus}`,
+      `  NEAR Receiving Address setup: ${provider.nearSetupStatus}`,
       `API key ${apiKey.prefix}… (id ${apiKey.id}), shown once:`,
       `  ${secret}`,
     ].join("\n"),

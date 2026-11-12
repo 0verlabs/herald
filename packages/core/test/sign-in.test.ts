@@ -1,12 +1,15 @@
-import { createDb } from "@herald/db";
+import { createDb, providers } from "@herald/db";
 import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import {
   createSignInChallenge,
   nearRpcAccessKeyReader,
+  setNearSetupStatus,
   setSolanaTokenAccountStatus,
   signIn,
   type NearAccessKeyReader,
+  type NearSetupJob,
+  type NearSetupQueue,
   type SolanaTokenAccountJob,
   type SolanaTokenAccountQueue,
 } from "../src/server/index.ts";
@@ -33,16 +36,32 @@ function fakeSolanaChainQueue() {
   return { jobs, queueSolanaTokenAccount };
 }
 
+/** A fake NEAR chain queue that records the Receiving Addresses it's asked to set up. */
+function fakeNearChainQueue() {
+  const jobs: NearSetupJob[] = [];
+  const queueNearSetup: NearSetupQueue = async (job) => {
+    jobs.push(job);
+  };
+  return { jobs, queueNearSetup };
+}
+
 async function signInWith(
   readAccessKey: NearAccessKeyReader,
   signature: unknown,
-  {
-    queueSolanaTokenAccount,
-  }: { queueSolanaTokenAccount: SolanaTokenAccountQueue } = fakeSolanaChainQueue(),
+  queues: {
+    queueSolanaTokenAccount?: SolanaTokenAccountQueue;
+    queueNearSetup?: NearSetupQueue;
+  } = {},
 ) {
   const db = createDb(env.DB);
   return signIn(
-    { db, readAccessKey, queueSolanaTokenAccount },
+    {
+      db,
+      readAccessKey,
+      queueSolanaTokenAccount:
+        queues.queueSolanaTokenAccount ?? fakeSolanaChainQueue().queueSolanaTokenAccount,
+      queueNearSetup: queues.queueNearSetup ?? fakeNearChainQueue().queueNearSetup,
+    },
     { env: "testnet", recipient, signature },
   );
 }
@@ -59,9 +78,10 @@ describe("signIn", () => {
     const challenge = await createSignInChallenge(db, { env: "mainnet", recipient });
     const signature = await walletSignature({ accountId: "herald-test.near", challenge, key });
     const { queueSolanaTokenAccount } = fakeSolanaChainQueue();
+    const { queueNearSetup } = fakeNearChainQueue();
 
     const result = await signIn(
-      { db, readAccessKey, queueSolanaTokenAccount },
+      { db, readAccessKey, queueSolanaTokenAccount, queueNearSetup },
       { env: "mainnet", recipient, signature },
     );
 
@@ -317,6 +337,117 @@ describe("the Provider's Solana USDC token account", () => {
 
     expect(second).toMatchObject({ ok: true, provider: { solanaTokenAccountStatus: "created" } });
     expect(queue.jobs).toHaveLength(1);
+  });
+});
+
+describe("the Provider's NEAR Receiving Address setup", () => {
+  const signInAs = async (
+    { accountId, key, readAccessKey }: ReturnType<typeof account>,
+    queueNearSetup: NearSetupQueue,
+  ) =>
+    signInWith(
+      readAccessKey,
+      await walletSignature({ accountId, challenge: await challenge(), key }),
+      {
+        queueNearSetup,
+      },
+    );
+
+  test("the first sign-in queues it on the Herald environment's NEAR network", async () => {
+    const queue = fakeNearChainQueue();
+
+    const result = await signInAs(account("near-setup.testnet"), queue.queueNearSetup);
+
+    if (!result.ok) throw new Error(result.message);
+    expect(result.provider.nearSetupStatus).toBe("queued");
+    expect(queue.jobs).toEqual([
+      {
+        network: "near:testnet",
+        providerId: result.provider.id,
+        account: result.provider.nearAddress,
+      },
+    ]);
+  });
+
+  test("is handed to the chain queue again at each sign-in until it's created, then no more", async () => {
+    const provider = account("near-setup-again.testnet");
+    const queue = fakeNearChainQueue();
+
+    await signInAs(provider, queue.queueNearSetup);
+    const second = await signInAs(provider, queue.queueNearSetup);
+    if (!second.ok) throw new Error(second.message);
+    await setNearSetupStatus(createDb(env.DB), {
+      providerId: second.provider.id,
+      status: "created",
+    });
+    const third = await signInAs(provider, queue.queueNearSetup);
+
+    expect(queue.jobs).toHaveLength(2);
+    expect(queue.jobs[1]).toEqual(queue.jobs[0]);
+    expect(third).toMatchObject({ ok: true, provider: { nearSetupStatus: "created" } });
+  });
+
+  test("when the chain queue can't be reached, sign-in still succeeds and the next sign-in queues it", async () => {
+    const provider = account("near-setup-retry.testnet");
+    const unreachable: NearSetupQueue = async () => {
+      throw new Error("Durable Object unreachable");
+    };
+    const queue = fakeNearChainQueue();
+
+    const first = await signInAs(provider, unreachable);
+    const second = await signInAs(provider, queue.queueNearSetup);
+
+    expect(first).toMatchObject({ ok: true, provider: { nearSetupStatus: "not_queued" } });
+    expect(second).toMatchObject({ ok: true, provider: { nearSetupStatus: "queued" } });
+    expect(queue.jobs).toHaveLength(1);
+  });
+
+  test("a Provider registered before NEAR has it queued at its next sign-in", async () => {
+    const provider = account("near-setup-existing.testnet");
+    // As the NEAR migrations leave an existing row: no NEAR Receiving
+    // Address yet, and its setup not queued.
+    await createDb(env.DB).insert(providers).values({
+      accountId: provider.accountId,
+      evmAddress: "0xddd22895f299b4aed54ebd6468a273e857d83296",
+      solanaAddress: "6hNg2qo9BhiG87haavYeqTEjqA4GgWZbAhEKihUqumPL",
+    });
+    const queue = fakeNearChainQueue();
+
+    const result = await signInAs(provider, queue.queueNearSetup);
+
+    if (!result.ok) throw new Error(result.message);
+    expect(queue.jobs).toEqual([
+      {
+        network: "near:testnet",
+        providerId: result.provider.id,
+        account: result.provider.nearAddress,
+      },
+    ]);
+    expect(result.provider.nearSetupStatus).toBe("queued");
+  });
+
+  test("Herald environments that list no NEAR network queue nothing", async () => {
+    const db = createDb(env.DB);
+    const key = nearKey();
+    const queue = fakeNearChainQueue();
+    const signature = await walletSignature({
+      accountId: "near-setup-mainnet.near",
+      challenge: await createSignInChallenge(db, { env: "mainnet", recipient }),
+      key,
+    });
+
+    const result = await signIn(
+      {
+        db,
+        readAccessKey: fakeNearAccounts({ "near-setup-mainnet.near": [[key, "full_access"]] }),
+        queueSolanaTokenAccount: fakeSolanaChainQueue().queueSolanaTokenAccount,
+        queueNearSetup: queue.queueNearSetup,
+      },
+      { env: "mainnet", recipient, signature },
+    );
+
+    expect(result).toMatchObject({ ok: true, provider: { nearSetupStatus: "not_queued" } });
+    expect(queue.jobs).toEqual([]);
   });
 });
 

@@ -1,5 +1,6 @@
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { sha256 } from "@noble/hashes/sha2.js";
+import { hexToBytes } from "@noble/hashes/utils.js";
 import { base58, base64 } from "@scure/base";
 import {
   decodeSignedTransaction,
@@ -35,6 +36,27 @@ export type NearTransfer = {
   amount: bigint;
 };
 
+/** A NEAR transfer that landed: from the relayer, creating `receiver` if it didn't exist. */
+export type NearNativeTransfer = {
+  txHash: string;
+  relayer: string;
+  receiver: string;
+  /** yoctoNEAR. */
+  amount: bigint;
+  /** Whether the transfer created `receiver`, an implicit account. */
+  createdAccount: boolean;
+};
+
+/** A `storage_deposit` on USDC that landed (NEP-145). */
+export type NearStorageDeposit = {
+  txHash: string;
+  relayer: string;
+  /** The account it registers. */
+  account: string;
+  /** yoctoNEAR attached. */
+  deposit: bigint;
+};
+
 /** Ways the fake NEAR RPC misbehaves, set by a test. */
 export type NearChainFaults = {
   /** A sent transaction is final only this many milliseconds after it lands. */
@@ -43,6 +65,8 @@ export type NearChainFaults = {
   failNextRequests?: number;
   /** Answer this many upcoming `send_tx` with a server error, without taking the transaction. */
   failNextBroadcasts?: number;
+  /** Fail this many upcoming view calls (`call_function`) of each contract method, by name. */
+  failNextCalls?: Record<string, number>;
   /** Refuse connections: every request fails before reaching the node. */
   unreachable?: boolean;
 };
@@ -55,6 +79,8 @@ const EMPTY_CODE_HASH = "11111111111111111111111111111111";
 const START_HEIGHT = 200_000_000n;
 // Gas a relayer transaction holding one delegate burns, roughly.
 const TOKENS_BURNT = "250000000000000000000";
+// USDC's `storage_balance_bounds` on testnet and mainnet: 0.00125 NEAR.
+const STORAGE_MIN = 1_250_000_000_000_000_000_000n;
 
 class RpcFailure extends Error {
   readonly cause: string;
@@ -83,10 +109,17 @@ class RpcFailure extends Error {
  * receiver isn't registered or the sender lacks the balance. Each block
  * query advances the height by one.
  *
- * It records landed USDC transfers in `transfers`.
+ * A relayer transaction can instead hold one `Transfer` (creating an
+ * implicit account that doesn't exist yet) or one `storage_deposit` call on
+ * USDC, as setting up a Provider's NEAR Receiving Address sends.
+ *
+ * It records landed USDC transfers in `transfers`, NEAR transfers in
+ * `nearTransfers` and `storage_deposit` calls in `storageDeposits`.
  */
 export class FakeNearChain {
   readonly transfers: NearTransfer[] = [];
+  readonly nearTransfers: NearNativeTransfer[] = [];
+  readonly storageDeposits: NearStorageDeposit[] = [];
   readonly faults: NearChainFaults = {};
   readonly usdc: string;
   /** What `public_key({ domain_id })` answers on the MPC signer contract. */
@@ -129,6 +162,14 @@ export class FakeNearChain {
   /** Registers `accountId` on USDC (`storage_deposit`), as if done before the test. */
   registerStorage(accountId: string): void {
     this.#registered.add(accountId);
+  }
+
+  hasAccount(accountId: string): boolean {
+    return this.#accounts.has(accountId);
+  }
+
+  isRegistered(accountId: string): boolean {
+    return this.#registered.has(accountId);
   }
 
   usdcBalanceOf(accountId: string): bigint {
@@ -220,13 +261,20 @@ export class FakeNearChain {
         }
         return { nonce: Number(key.nonce), permission: key.permission, ...at };
       }
-      case "call_function":
+      case "call_function": {
+        const method = String(params["method_name"]);
+        const failures = this.faults.failNextCalls?.[method] ?? 0;
+        if (failures > 0) {
+          this.faults.failNextCalls = { ...this.faults.failNextCalls, [method]: failures - 1 };
+          throw new RpcFailure("INTERNAL_ERROR", "Internal server error");
+        }
         return this.#view(
           accountId,
           String(params["method_name"]),
           JSON.parse(new TextDecoder().decode(base64.decode(String(params["args_base64"])))),
           at,
         );
+      }
       default:
         throw new Error(`FakeNearChain: query ${String(params["request_type"])} is not faked`);
     }
@@ -285,19 +333,96 @@ export class FakeNearChain {
     if (!this.#blocks.has(base58.encode(new Uint8Array(transaction.blockHash)))) {
       throw invalidTransaction("InvalidChain");
     }
+    const [action, ...rest] = transaction.actions;
+    if (!action || rest.length > 0) {
+      throw new Error("FakeNearChain: Herald's relayer sends one action per transaction");
+    }
+    const { signerId, receiverId } = transaction;
+    const deposit = BigInt(action.transfer?.deposit ?? action.functionCall?.deposit ?? 0n);
+    const signer = this.#accounts.get(signerId);
+    if (!signer || signer.amount < deposit) {
+      throw invalidTransaction({ NotEnoughBalance: { signer_id: signerId } });
+    }
     key.nonce = transaction.nonce;
 
-    const [action, ...rest] = transaction.actions;
-    const delegate = action?.signedDelegate;
-    if (!delegate || rest.length > 0) {
-      throw new Error("FakeNearChain: Herald's relayer sends one Delegate action per settlement");
+    let outcome: unknown;
+    if (action.signedDelegate) {
+      if (receiverId !== action.signedDelegate.delegateAction.senderId) {
+        throw new Error("FakeNearChain: a Delegate goes to its sender");
+      }
+      outcome = this.#runDelegate(hash, signerId, transaction.nonce, action.signedDelegate);
+    } else if (action.transfer) {
+      outcome = this.#runTransfer(hash, signerId, receiverId, deposit);
+    } else if (action.functionCall) {
+      outcome = this.#runCall(hash, signerId, receiverId, action.functionCall);
+    } else {
+      throw new Error("FakeNearChain: Herald's relayer sends Delegate, Transfer or FunctionCall");
     }
-    if (transaction.receiverId !== delegate.delegateAction.senderId) {
-      throw new Error("FakeNearChain: a Delegate goes to its sender");
-    }
-    const outcome = this.#runDelegate(hash, transaction.signerId, transaction.nonce, delegate);
     this.#landed.set(hash, { at: Date.now(), outcome });
     return this.#sendAnswer(hash, waitUntil);
+  }
+
+  // A Transfer from the relayer. One to a missing implicit account creates
+  // it, with the full-access key its id names; one to a missing named
+  // account fails.
+  #runTransfer(txHash: string, relayer: string, receiver: string, amount: bigint) {
+    const existing = this.#accounts.get(receiver);
+    if (!existing && !/^[0-9a-f]{64}$/.test(receiver)) {
+      return simpleOutcome(txHash, relayer, receiver, {
+        error: { AccountDoesNotExist: { account_id: receiver } },
+      });
+    }
+    this.#debit(relayer, amount);
+    if (existing) {
+      existing.amount += amount;
+    } else {
+      this.addAccount(receiver, `ed25519:${base58.encode(hexToBytes(receiver))}`, amount);
+    }
+    this.nearTransfers.push({ txHash, relayer, receiver, amount, createdAccount: !existing });
+    return simpleOutcome(txHash, relayer, receiver, {});
+  }
+
+  // A FunctionCall from the relayer: only `storage_deposit` on USDC.
+  #runCall(
+    txHash: string,
+    relayer: string,
+    contract: string,
+    call: { methodName: string; args: ArrayLike<number>; deposit: bigint | string | number },
+  ) {
+    if (contract !== this.usdc || call.methodName !== "storage_deposit") {
+      throw new Error(`FakeNearChain: ${contract}.${call.methodName} calls are not faked`);
+    }
+    const args = JSON.parse(new TextDecoder().decode(new Uint8Array(Array.from(call.args)))) as {
+      account_id?: string;
+      registration_only?: boolean;
+    };
+    const account = args.account_id ?? relayer;
+    const deposit = BigInt(call.deposit);
+    if (!this.#registered.has(account) && deposit < STORAGE_MIN) {
+      return simpleOutcome(txHash, relayer, contract, {
+        error: {
+          FunctionCallError: {
+            ExecutionError:
+              "Smart contract panicked: The attached deposit is less than the minimum storage balance",
+          },
+        },
+      });
+    }
+    // With `registration_only`, an account already registered gets the
+    // deposit back; a new one keeps the minimum and gets the rest back.
+    const kept = this.#registered.has(account) ? 0n : STORAGE_MIN;
+    this.#debit(relayer, args.registration_only ? kept : deposit);
+    this.#registered.add(account);
+    this.storageDeposits.push({ txHash, relayer, account, deposit });
+    const balance = { total: STORAGE_MIN.toString(), available: "0" };
+    return simpleOutcome(txHash, relayer, contract, {
+      value: base64.encode(new TextEncoder().encode(JSON.stringify(balance))),
+    });
+  }
+
+  #debit(accountId: string, amount: bigint): void {
+    const account = this.#accounts.get(accountId);
+    if (account) account.amount -= amount;
   }
 
   #sendAnswer(hash: string, waitUntil: string) {
@@ -478,5 +603,49 @@ function outcomeOf(
       },
     },
     receipts_outcome: receipts,
+  };
+}
+
+/**
+ * A final relayer transaction holding one Transfer or FunctionCall, as `tx`
+ * reports it: the receipt on `receiver`, failed with `error` or succeeding
+ * with `value`, and the gas refund.
+ */
+function simpleOutcome(
+  txHash: string,
+  relayer: string,
+  receiver: string,
+  { error, value = "" }: { error?: unknown; value?: string },
+) {
+  const id = (n: number) => base58.encode(sha256(new TextEncoder().encode(`${txHash}/${n}`)));
+  const failure = error === undefined ? undefined : { ActionError: { index: 0, kind: error } };
+  const status = failure ? { Failure: failure } : { SuccessValue: value };
+  const receipt = (n: number, executor: string, receiptStatus: unknown) => ({
+    id: id(n),
+    outcome: {
+      executor_id: executor,
+      status: receiptStatus,
+      logs: [],
+      receipt_ids: [],
+      gas_burnt: 1,
+      tokens_burnt: "0",
+    },
+  });
+  return {
+    final_execution_status: "FINAL",
+    status,
+    transaction: { hash: txHash, signer_id: relayer, receiver_id: receiver, actions: [] },
+    transaction_outcome: {
+      id: txHash,
+      outcome: {
+        executor_id: relayer,
+        status: { SuccessReceiptId: id(1) },
+        logs: [],
+        receipt_ids: [id(1)],
+        gas_burnt: 1,
+        tokens_burnt: TOKENS_BURNT,
+      },
+    },
+    receipts_outcome: [receipt(1, receiver, status), receipt(2, relayer, { SuccessValue: "" })],
   };
 }

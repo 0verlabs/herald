@@ -1,4 +1,5 @@
 import type { Caip2 } from "../networks.ts";
+import type { NearImplicitAccount } from "../schemas.ts";
 
 /**
  * A Buyer's NEAR payment to relay: a NEP-366 signed delegate action (base64
@@ -27,6 +28,12 @@ export type NearSettlementResult =
   | { ok: false; message: string; transaction?: string };
 
 /**
+ * Setting up one Provider's NEAR Receiving Address on a NEAR network:
+ * creating `account`, the implicit account, and registering it on USDC.
+ */
+export type NearSetupJob = { network: Caip2; providerId: number; account: NearImplicitAccount };
+
+/**
  * The RPC interface the `NearChainQueue` Durable Object (in
  * `apps/facilitator`) offers, one object per NEAR network, named by its
  * CAIP-2 id (`NEAR_CHAIN_QUEUE.getByName("near:testnet")`). It holds the
@@ -37,6 +44,16 @@ export type NearSettlementResult =
 export interface NearChainQueueRpc {
   /** The relayer's account id: the implicit account of `NEAR_RELAYER_KEY`. */
   relayer(): Promise<string>;
+
+  /**
+   * Queues setting up a Provider's NEAR Receiving Address, at Herald's cost:
+   * the relayer creates the implicit account and registers it on USDC, and
+   * the outcome is recorded on the Provider (`setNearSetupStatus`).
+   * Idempotent: a job it already has is ignored, and one it finished is
+   * reported as `created` again. Refuses (`ok: false`) a job it can't take,
+   * such as one for another network.
+   */
+  queueSetup(job: NearSetupJob): Promise<{ ok: true } | { ok: false; message: string }>;
 
   /**
    * Wraps a Buyer's signed delegate action in a relayer transaction, sends
