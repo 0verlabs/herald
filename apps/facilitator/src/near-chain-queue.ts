@@ -1,4 +1,10 @@
-import { Caip2Schema, NearImplicitAccountSchema, networkRegistry, type Caip2 } from "@herald/core";
+import {
+  Caip2Schema,
+  NearImplicitAccountSchema,
+  networkRegistry,
+  type Caip2,
+  type Network,
+} from "@herald/core";
 import {
   delegateAction,
   finalBlock,
@@ -15,6 +21,7 @@ import {
   type NearAction,
   type NearChainQueueRpc,
   type NearOutcome,
+  type NearQueueRefusal,
   type NearRpc,
   type NearSettlementResult,
   type NearSettlementSubmission,
@@ -37,12 +44,12 @@ const RPC_TIMEOUT_MS = 8_000;
 // How often a sent transaction's status is read until it is final.
 const FINAL_POLL_MS = 500;
 
-// A signed delegate holding one ft_transfer is a few hundred bytes.
-const SettlementSubmissionSchema = z.object({
+// A settlement or Sweep submission. A signed delegate holding one
+// ft_transfer is a few hundred bytes.
+const SubmissionSchema = z.object({
   network: Caip2Schema,
   signedDelegateAction: z.string().min(1).max(4096),
 });
-const SweepSubmissionSchema = SettlementSubmissionSchema;
 
 // A Sweep's delegate action this close to its `max_block_height` is refused
 // rather than sent: the final height lags the chain's head by a few blocks,
@@ -95,6 +102,17 @@ type SettlementRow = {
   delegate_hash: string;
   tx_hash: string | null;
   submitted_at: number;
+};
+
+type Refusal = NearQueueRefusal;
+
+type NearNetwork = Extract<Network, { kind: "near" }>;
+
+/** A signed delegate action that passed `#relayable`, decoded. */
+type Relayable = {
+  network: NearNetwork;
+  signedDelegateAction: string;
+  delegate: ReturnType<typeof decodeSignedDelegateB64>["delegate"];
 };
 
 /** A relayer transaction that was sent: its hash, and its bytes when at hand for a rebroadcast. */
@@ -180,16 +198,11 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
    * queue gave up on starts over. Refuses a malformed job or one for a
    * network this Herald environment doesn't list.
    */
-  async queueSetup(input: NearSetupJob): Promise<{ ok: true } | { ok: false; message: string }> {
+  async queueSetup(input: NearSetupJob): Promise<{ ok: true } | Refusal> {
     const parsed = SetupJobSchema.safeParse(input);
-    if (!parsed.success) return { ok: false, message: "Not a NEAR setup job" };
+    if (!parsed.success) return refusal("Not a NEAR setup job");
     const job = parsed.data;
-    if (!this.#nearNetwork(job.network)) {
-      return {
-        ok: false,
-        message: `${job.network} is not a Herald NEAR network on ${this.env.HERALD_ENV}`,
-      };
-    }
+    if (!this.#nearNetwork(job.network)) return this.#unlisted(job.network);
     const [existing] = this.ctx.storage.sql
       .exec<SetupJobRow>("SELECT * FROM setup_jobs WHERE account = ?", job.account)
       .toArray();
@@ -239,23 +252,9 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
    * environment doesn't list, and one it was given before.
    */
   async submitSettlement(input: NearSettlementSubmission): Promise<NearSettlementResult> {
-    const parsed = SettlementSubmissionSchema.safeParse(input);
-    if (!parsed.success) return { ok: false, message: "Not a NEAR settlement submission" };
-    const { network, signedDelegateAction } = parsed.data;
-    const listed = this.#nearNetwork(network);
-    if (!listed) {
-      return {
-        ok: false,
-        message: `${network} is not a Herald NEAR network on ${this.env.HERALD_ENV}`,
-      };
-    }
-    const problem = delegateProblem(
-      signedDelegateAction,
-      listed.usdc.address,
-      nearRelayerKey(this.env).accountId,
-    );
-    if (problem) return { ok: false, message: problem };
-    const sender = decodeSignedDelegateB64(signedDelegateAction).delegate.senderId;
+    const relayable = this.#relayable(input, "Not a NEAR settlement submission");
+    if (!relayable.ok) return relayable;
+    const { network, signedDelegateAction, delegate } = relayable;
 
     // Claimed before anything is awaited, so of two calls with the same
     // delegate action only the first gets past here.
@@ -279,22 +278,27 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
     );
 
     const sent = await this.#enqueue(() =>
-      this.#broadcast(network, sender, [delegateAction(base64.decode(signedDelegateAction))], {
-        // Recorded before broadcasting, so a lost answer or an eviction
-        // mid-broadcast can't lead to the delegate action being sent twice.
-        record: (transaction) =>
-          this.ctx.storage.sql.exec(
-            "UPDATE settlements SET tx_hash = ? WHERE delegate_hash = ?",
-            transaction?.hash ?? null,
-            delegateHash,
-          ),
-      }),
+      this.#broadcast(
+        network.caip2,
+        delegate.senderId,
+        [delegateAction(base64.decode(signedDelegateAction))],
+        {
+          // Recorded before broadcasting, so a lost answer or an eviction
+          // mid-broadcast can't lead to the delegate action being sent twice.
+          record: (transaction) =>
+            this.ctx.storage.sql.exec(
+              "UPDATE settlements SET tx_hash = ? WHERE delegate_hash = ?",
+              transaction?.hash ?? null,
+              delegateHash,
+            ),
+        },
+      ),
     );
     if (!sent.ok) {
       this.#release(delegateHash);
       return sent;
     }
-    return this.#settlementOutcome(network, delegateHash, listed.usdc.address, sent.transaction);
+    return this.#settlementOutcome(network, delegateHash, sent.transaction);
   }
 
   /**
@@ -308,16 +312,15 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
   async awaitPendingSettlement(
     input: NearSettlementSubmission,
   ): Promise<NearSettlementResult | null> {
-    const parsed = SettlementSubmissionSchema.safeParse(input);
+    const parsed = SubmissionSchema.safeParse(input);
     if (!parsed.success) return null;
-    const { network, signedDelegateAction } = parsed.data;
-    const listed = this.#nearNetwork(network);
-    if (!listed) return null;
-    const delegateHash = settlementCacheKey(signedDelegateAction);
+    const network = this.#nearNetwork(parsed.data.network);
+    if (!network) return null;
+    const delegateHash = settlementCacheKey(parsed.data.signedDelegateAction);
     const txHash = this.#pending.get(delegateHash);
     if (!txHash) return null;
     this.#pending.delete(delegateHash);
-    return this.#settlementOutcome(network, delegateHash, listed.usdc.address, { hash: txHash });
+    return this.#settlementOutcome(network, delegateHash, { hash: txHash });
   }
 
   /**
@@ -326,18 +329,17 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
    * for the resource server's retry, and answered `pending`.
    */
   async #settlementOutcome(
-    network: Caip2,
+    network: NearNetwork,
     delegateHash: string,
-    usdc: string,
     transaction: SentTransaction,
   ): Promise<NearSettlementResult> {
-    const final = await this.#awaitFinal(network, transaction);
+    const final = await this.#awaitFinal(network.caip2, transaction);
     if (!final) {
       this.#pending.set(delegateHash, transaction.hash);
       console.warn(
         JSON.stringify({
           event: "near_settlement_pending",
-          network,
+          network: network.caip2,
           transaction: transaction.hash,
         }),
       );
@@ -351,7 +353,7 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
     return {
       ok: true,
       transaction: transaction.hash,
-      innerReceipt: ftTransferOutcome(final, usdc),
+      innerReceipt: ftTransferOutcome(final, network.usdc.address),
     };
   }
 
@@ -365,23 +367,11 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
    * blocks of its `max_block_height`.
    */
   async submitSweep(input: NearSweepSubmission): Promise<NearSweepSubmissionResult> {
-    const parsed = SweepSubmissionSchema.safeParse(input);
-    if (!parsed.success) return { ok: false, message: "Not a NEAR Sweep submission" };
-    const { network, signedDelegateAction } = parsed.data;
-    const listed = this.#nearNetwork(network);
-    if (!listed) {
-      return {
-        ok: false,
-        message: `${network} is not a Herald NEAR network on ${this.env.HERALD_ENV}`,
-      };
-    }
-    const problem = delegateProblem(
-      signedDelegateAction,
-      listed.usdc.address,
-      nearRelayerKey(this.env).accountId,
-    );
-    if (problem) return { ok: false, message: problem };
-    const { senderId, maxBlockHeight } = decodeSignedDelegateB64(signedDelegateAction).delegate;
+    const relayable = this.#relayable(input, "Not a NEAR Sweep submission");
+    if (!relayable.ok) return relayable;
+    const { signedDelegateAction } = relayable;
+    const network = relayable.network.caip2;
+    const { senderId, maxBlockHeight } = relayable.delegate;
     const delegateHash = settlementCacheKey(signedDelegateAction);
     const sent = this.#sentSweep(delegateHash);
     if (sent) return this.#answerSweep(network, sent);
@@ -394,10 +384,9 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
       throw new Error(`Herald couldn't read the NEAR block height: ${String(error)}`);
     }
     if (height + BigInt(SWEEP_EXPIRY_MARGIN_BLOCKS) >= maxBlockHeight) {
-      return {
-        ok: false,
-        message: `The signed delegate action expired at block ${maxBlockHeight} (NEAR is at ${height})`,
-      };
+      return refusal(
+        `The signed delegate action expired at block ${maxBlockHeight} (NEAR is at ${height})`,
+      );
     }
 
     return this.#enqueue(async () => {
@@ -464,9 +453,35 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
     return run;
   }
 
-  #nearNetwork(caip2: string) {
+  #nearNetwork(caip2: string): NearNetwork | undefined {
     const network = networkRegistry[heraldEnvOf(this.env)].find((n) => n.caip2 === caip2);
     return network?.kind === "near" ? network : undefined;
+  }
+
+  #unlisted(network: string): Refusal {
+    return refusal(`${network} is not a Herald NEAR network on ${this.env.HERALD_ENV}`);
+  }
+
+  /**
+   * The signed delegate action in a settlement or Sweep submission, if
+   * Herald relays it (`delegateProblem`) on a NEAR network this Herald
+   * environment lists; otherwise why not, `malformed` for a submission that
+   * isn't one at all.
+   */
+  #relayable(input: unknown, malformed: string): ({ ok: true } & Relayable) | Refusal {
+    const parsed = SubmissionSchema.safeParse(input);
+    if (!parsed.success) return refusal(malformed);
+    const { signedDelegateAction } = parsed.data;
+    const network = this.#nearNetwork(parsed.data.network);
+    if (!network) return this.#unlisted(parsed.data.network);
+    const problem = delegateProblem(
+      signedDelegateAction,
+      network.usdc.address,
+      nearRelayerKey(this.env).accountId,
+    );
+    if (problem) return refusal(problem);
+    const { delegate } = decodeSignedDelegateB64(signedDelegateAction);
+    return { ok: true, network, signedDelegateAction, delegate };
   }
 
   /**
@@ -484,7 +499,7 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
     receiverId: string,
     actions: NearAction[],
     { record }: { record?: (transaction: SignedNearTransaction | null) => void } = {},
-  ): Promise<{ ok: true; transaction: SignedNearTransaction } | { ok: false; message: string }> {
+  ): Promise<{ ok: true; transaction: SignedNearTransaction } | Refusal> {
     const relayer = nearRelayerKey(this.env);
     for (let attempt = 1; ; attempt++) {
       let transaction: SignedNearTransaction;
@@ -498,10 +513,7 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
         record?.(transaction);
         this.#useNonce(nonce);
       } catch (error) {
-        return {
-          ok: false,
-          message: `Herald couldn't prepare the relayer transaction: ${String(error)}`,
-        };
+        return refusal(`Herald couldn't prepare the relayer transaction: ${String(error)}`);
       }
       try {
         await this.#send(network, transaction);
@@ -523,10 +535,9 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
           this.ctx.storage.sql.exec("DELETE FROM relayer_nonce");
           continue;
         }
-        return {
-          ok: false,
-          message: `The NEAR node refused the relayer transaction: ${JSON.stringify(error.info)}`,
-        };
+        return refusal(
+          `The NEAR node refused the relayer transaction: ${JSON.stringify(error.info)}`,
+        );
       }
     }
   }
@@ -771,6 +782,10 @@ function delegateProblem(
   if (delegate.senderId === relayer) return "Herald's relayer can't be the payer";
   if (!decoded.verifySignature()) return "The delegate action's signature doesn't verify";
   return null;
+}
+
+function refusal(message: string): Refusal {
+  return { ok: false, message };
 }
 
 function isInvalidNonce(info: unknown): boolean {

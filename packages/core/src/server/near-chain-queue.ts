@@ -2,6 +2,12 @@ import type { Caip2 } from "../networks.ts";
 import type { NearImplicitAccount } from "../schemas.ts";
 
 /**
+ * What `NearChainQueueRpc` answers when it won't do what it was asked, and
+ * why. It sends nothing for that request.
+ */
+export type NearQueueRefusal = { ok: false; message: string };
+
+/**
  * A Buyer's NEAR payment to relay: a NEP-366 signed delegate action (base64
  * Borsh) holding one `ft_transfer` on the network's USDC contract, as the
  * stock `@x402/near` exact scheme carries it.
@@ -28,7 +34,7 @@ export type NearReceiptStatus =
 export type NearSettlementResult =
   | { ok: true; transaction: string; innerReceipt: NearReceiptStatus }
   | { ok: false; pending: true; message: string; transaction: string }
-  | { ok: false; pending?: never; message: string; transaction?: string };
+  | (NearQueueRefusal & { pending?: never; transaction?: string });
 
 /**
  * A Provider's NEAR Sweep to relay: the signed delegate action (base64
@@ -41,9 +47,7 @@ export type NearSweepSubmission = { network: Caip2; signedDelegateAction: string
  * final). `ok: false` when Herald didn't send it: a malformed or expired
  * delegate action, or a node that refused it.
  */
-export type NearSweepSubmissionResult =
-  | { ok: true; transaction: string }
-  | { ok: false; message: string };
+export type NearSweepSubmissionResult = { ok: true; transaction: string } | NearQueueRefusal;
 
 /**
  * Herald's NEAR chain queue for Sweeps: the relayer's account id, and
@@ -83,7 +87,7 @@ export interface NearChainQueueRpc {
    * reported as `created` again. Refuses (`ok: false`) a job it can't take,
    * such as one for another network.
    */
-  queueSetup(job: NearSetupJob): Promise<{ ok: true } | { ok: false; message: string }>;
+  queueSetup(job: NearSetupJob): Promise<{ ok: true } | NearQueueRefusal>;
 
   /**
    * Wraps a Buyer's signed delegate action in a relayer transaction, sends
