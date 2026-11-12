@@ -17,7 +17,7 @@ import { Route as DashboardApiKeysRouteImport } from './routes/_dashboard/api-ke
 import { Route as DashboardIntegrationRouteImport } from './routes/_dashboard/integration'
 import { Route as DashboardOverviewRouteImport } from './routes/_dashboard/overview'
 import { Route as DashboardPaymentsRouteImport } from './routes/_dashboard/payments'
-import { Route as DashboardSweepRouteImport } from './routes/_dashboard/sweep'
+import { Route as DashboardWithdrawRouteImport } from './routes/_dashboard/withdraw'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 
 const IndexRoute = IndexRouteImport.update({
@@ -59,9 +59,9 @@ const DashboardPaymentsRoute = DashboardPaymentsRouteImport.update({
   path: '/payments',
   getParentRoute: () => DashboardRoute,
 } as any)
-const DashboardSweepRoute = DashboardSweepRouteImport.update({
-  id: '/sweep',
-  path: '/sweep',
+const DashboardWithdrawRoute = DashboardWithdrawRouteImport.update({
+  id: '/withdraw',
+  path: '/withdraw',
   getParentRoute: () => DashboardRoute,
 } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
@@ -78,7 +78,7 @@ export interface FileRoutesByFullPath {
   '/integration': typeof DashboardIntegrationRoute
   '/overview': typeof DashboardOverviewRoute
   '/payments': typeof DashboardPaymentsRoute
-  '/sweep': typeof DashboardSweepRoute
+  '/withdraw': typeof DashboardWithdrawRoute
   '/api/health': typeof ApiHealthRoute
 }
 export interface FileRoutesByTo {
@@ -89,7 +89,7 @@ export interface FileRoutesByTo {
   '/integration': typeof DashboardIntegrationRoute
   '/overview': typeof DashboardOverviewRoute
   '/payments': typeof DashboardPaymentsRoute
-  '/sweep': typeof DashboardSweepRoute
+  '/withdraw': typeof DashboardWithdrawRoute
   '/api/health': typeof ApiHealthRoute
 }
 export interface FileRoutesById {
@@ -102,7 +102,7 @@ export interface FileRoutesById {
   '/_dashboard/integration': typeof DashboardIntegrationRoute
   '/_dashboard/overview': typeof DashboardOverviewRoute
   '/_dashboard/payments': typeof DashboardPaymentsRoute
-  '/_dashboard/sweep': typeof DashboardSweepRoute
+  '/_dashboard/withdraw': typeof DashboardWithdrawRoute
   '/api/health': typeof ApiHealthRoute
 }
 export interface FileRouteTypes {
@@ -115,7 +115,7 @@ export interface FileRouteTypes {
     | '/integration'
     | '/overview'
     | '/payments'
-    | '/sweep'
+    | '/withdraw'
     | '/api/health'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -126,7 +126,7 @@ export interface FileRouteTypes {
     | '/integration'
     | '/overview'
     | '/payments'
-    | '/sweep'
+    | '/withdraw'
     | '/api/health'
   id:
     | '__root__'
@@ -138,7 +138,7 @@ export interface FileRouteTypes {
     | '/_dashboard/integration'
     | '/_dashboard/overview'
     | '/_dashboard/payments'
-    | '/_dashboard/sweep'
+    | '/_dashboard/withdraw'
     | '/api/health'
   fileRoutesById: FileRoutesById
 }
@@ -208,11 +208,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardPaymentsRouteImport
       parentRoute: typeof DashboardRoute
     }
-    '/_dashboard/sweep': {
-      id: '/_dashboard/sweep'
-      path: '/sweep'
-      fullPath: '/sweep'
-      preLoaderRoute: typeof DashboardSweepRouteImport
+    '/_dashboard/withdraw': {
+      id: '/_dashboard/withdraw'
+      path: '/withdraw'
+      fullPath: '/withdraw'
+      preLoaderRoute: typeof DashboardWithdrawRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/api/health': {
@@ -230,7 +230,7 @@ interface DashboardRouteChildren {
   DashboardIntegrationRoute: typeof DashboardIntegrationRoute
   DashboardOverviewRoute: typeof DashboardOverviewRoute
   DashboardPaymentsRoute: typeof DashboardPaymentsRoute
-  DashboardSweepRoute: typeof DashboardSweepRoute
+  DashboardWithdrawRoute: typeof DashboardWithdrawRoute
 }
 
 const DashboardRouteChildren: DashboardRouteChildren = {
@@ -238,7 +238,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardIntegrationRoute: DashboardIntegrationRoute,
   DashboardOverviewRoute: DashboardOverviewRoute,
   DashboardPaymentsRoute: DashboardPaymentsRoute,
-  DashboardSweepRoute: DashboardSweepRoute,
+  DashboardWithdrawRoute: DashboardWithdrawRoute,
 }
 
 const DashboardRouteWithChildren = DashboardRoute._addFileChildren(

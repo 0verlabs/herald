@@ -1,67 +1,99 @@
-import { facilitatorUrls } from "@herald/core";
+import { networkRegistry } from "@herald/core";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { CopyableCode } from "@/components/copyable-code";
-import { CopyableValue } from "@/components/copyable-value";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState } from "react";
+import { CreateKeyButton } from "@/components/developers/api-keys";
+import { SetupStep } from "@/components/developers/setup-step";
+import { PageHeader } from "@/components/layout/page-header";
+import { CoinLogo } from "@/components/money/coin-logo";
+import { NetworkLogo } from "@/components/money/network-logo";
+import { CodeBlock } from "@/components/shared/code-block";
+import { Badge } from "@/components/ui/badge";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { environmentLabels } from "@/lib/environment";
 import {
-  API_KEY_ENV_VAR,
   envFileSnippet,
   frameworkLabels,
-  frameworks,
   integrationSnippet,
+  runtimes,
+  type Runtime,
 } from "@/lib/integration-snippets";
+import { USDC } from "@/lib/stablecoins";
 
 export const Route = createFileRoute("/_dashboard/integration")({
-  head: () => ({ meta: [{ title: "Integration · Herald" }] }),
+  head: () => ({ meta: [{ title: "Connect your API · Herald" }] }),
   component: Integration,
 });
 
+const runtimeOptions = Object.entries(runtimes) as [Runtime, (typeof runtimes)[Runtime]][];
+
 function Integration() {
   const { account, heraldEnv } = Route.useRouteContext();
+  const [runtime, setRuntime] = useState<Runtime>("node");
+  const networks = networkRegistry[heraldEnv];
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="font-heading text-xl font-medium">Integration</h1>
-        <p className="text-muted-foreground">
-          Keep your stock x402 server. Point its facilitator client at Herald with your API key, and
-          build each route's Payment Options with <code>accepts()</code>. Buyers then pay from any
-          chain Herald lists, with any stock x402 library.
-        </p>
-      </div>
+    <>
+      <PageHeader
+        title="Connect your API"
+        description="Charge for your API one request at a time. Once it's connected, a paid route asks the caller for a small stablecoin payment before it answers, and the money lands in your payment addresses."
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>1. Store your API key</CardTitle>
-          <CardDescription>
-            Create a key on the <Link to="/api-keys">API keys</Link> page and put it in your
-            server's environment. Keep it out of your code.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <CopyableCode label=".env" code={envFileSnippet(heraldEnv)} />
-        </CardContent>
-      </Card>
+      <ol className="flex flex-col">
+        <SetupStep
+          number={1}
+          title="Store your API key"
+          description={
+            <>
+              Your server sends this key to Herald with every payment. Keep it in your server's
+              environment, never in your code. You can manage keys on the{" "}
+              <Link to="/api-keys">API keys</Link> page.
+            </>
+          }
+        >
+          <CodeBlock label=".env" language="dotenv" code={envFileSnippet(heraldEnv)} />
+          <CreateKeyButton align="start" showSetupLink={false} />
+        </SetupStep>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>2. Add Herald to your server</CardTitle>
-          <CardDescription>
-            A Node.js server, filled in for {account.accountId} on Herald's {heraldEnv} facilitator.
-            Change the route and the Price to suit your API.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Tabs defaultValue="hono">
+        <SetupStep
+          number={2}
+          title="Add Herald to your server"
+          description={
+            <>
+              Filled in for {account.accountId} in {environmentLabels[heraldEnv]}. Change the route
+              and the price to suit your API.
+            </>
+          }
+        >
+          <FieldGroup>
+            <Field>
+              <FieldLabel>Language</FieldLabel>
+              <ToggleGroup
+                value={[runtime]}
+                onValueChange={(value) => {
+                  const next = runtimeOptions.find(([key]) => key === value[0]);
+                  if (next) setRuntime(next[0]);
+                }}
+                variant="outline"
+              >
+                {runtimeOptions.map(([key, option]) => (
+                  <ToggleGroupItem key={key} value={key} className="px-3">
+                    {option.label}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </Field>
+          </FieldGroup>
+          <Tabs key={runtime} defaultValue={runtimes[runtime].frameworks[0]} className="gap-4">
             <TabsList>
-              {frameworks.map((framework) => (
-                <TabsTrigger key={framework} value={framework}>
+              {runtimes[runtime].frameworks.map((framework) => (
+                <TabsTrigger key={framework} value={framework} className="px-3">
                   {frameworkLabels[framework]}
                 </TabsTrigger>
               ))}
             </TabsList>
-            {frameworks.map((framework) => {
+            {runtimes[runtime].frameworks.map((framework) => {
               const snippet = integrationSnippet({
                 framework,
                 providerAccount: account.accountId,
@@ -69,28 +101,47 @@ function Integration() {
               });
               return (
                 <TabsContent key={framework} value={framework} className="flex flex-col gap-4">
-                  <CopyableCode label="Terminal" code={snippet.install} />
-                  <CopyableCode label="server.ts" code={snippet.code} />
+                  <CodeBlock label="Terminal" language="bash" code={snippet.install} />
+                  <CodeBlock
+                    label="server.ts"
+                    language="typescript"
+                    code={snippet.code}
+                    lineNumbers
+                  />
                 </TabsContent>
               );
             })}
           </Tabs>
-        </CardContent>
-      </Card>
+        </SetupStep>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Herald's facilitator</CardTitle>
-          <CardDescription>
-            <code>facilitatorUrls.{heraldEnv}</code> in the snippet. Its <code>/supported</code> is
-            public; <code>/verify</code> and <code>/settle</code> need the key in{" "}
-            <code>{API_KEY_ENV_VAR}</code>.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <CopyableValue label="Facilitator URL" value={facilitatorUrls[heraldEnv]} />
-        </CardContent>
-      </Card>
-    </div>
+        <SetupStep
+          number={3}
+          title="Supported payment networks"
+          description={`Your API accepts payments on every one of these in ${environmentLabels[heraldEnv]}.`}
+          last
+        >
+          <ul className="flex flex-col divide-y rounded-xl border">
+            {networks.map((network) => (
+              <li
+                key={network.caip2}
+                className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3"
+              >
+                <NetworkLogo label={network.label} size="md" />
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate font-medium">{network.label}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {network.kind === "evm" ? "EVM" : "Solana"}
+                  </span>
+                </span>
+                <Badge variant="outline" className="h-6 gap-1.5 pl-1">
+                  <CoinLogo symbol={USDC.symbol} size="sm" className="size-4 text-[0.5rem]" />
+                  {USDC.symbol}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        </SetupStep>
+      </ol>
+    </>
   );
 }
