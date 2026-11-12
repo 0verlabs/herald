@@ -1,5 +1,9 @@
 import { env, exports } from "cloudflare:workers";
 import { describe, expect, test } from "vite-plus/test";
+// Loaded while the file is collected. Otherwise the first `exports.default`
+// request imports the Worker's whole module graph inside the test, which
+// outlasts the 5 s test timeout when every package's tests run at once.
+import "../src/index.ts";
 
 describe("GET /health", () => {
   test("reports the Worker healthy once D1 answers", async () => {

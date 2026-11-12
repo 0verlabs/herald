@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./schema": "./src/schema.ts",
-    "./testing": "./testing.ts"
+    "./testing": "./testing.ts",
+    "./apply-migrations": "./src/apply-migrations.ts"
   },
   "scripts": {
     "generate": "drizzle-kit generate",

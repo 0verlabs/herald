@@ -1,6 +1,8 @@
-import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
+import { applyMigrations } from "../src/apply-migrations.ts";
 
-// Setup files can run more than once; applyD1Migrations() skips migrations
-// that are already applied.
-await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+// Not applyD1Migrations() from cloudflare:test: a setup file importing
+// cloudflare:test makes workerd exit before the next test file on the same
+// pool worker (see applyMigrations). Setup files run once per test file;
+// applied migrations are skipped.
+await applyMigrations(env.DB, env.TEST_MIGRATIONS);
