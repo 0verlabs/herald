@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { environmentLabels } from "@/lib/environment";
 import {
+  buyerSnippet,
   envFileSnippet,
   frameworkLabels,
   integrationSnippet,
@@ -37,6 +38,7 @@ function Integration() {
   const { account, heraldEnv } = Route.useRouteContext();
   const [runtime, setRuntime] = useState<Runtime>("node");
   const networks = networkRegistry[heraldEnv];
+  const buyer = buyerSnippet({ env: heraldEnv });
 
   return (
     <>
@@ -121,6 +123,15 @@ function Integration() {
 
         <SetupStep
           number={3}
+          title="Pay it as a Buyer"
+          description="Any stock x402 client can pay your API. This one registers a chain only when its key is set. Set the NEAR key only if you hold USDC on NEAR: the client pays with the first option it supports without checking your balance, and NEAR is listed first."
+        >
+          <CodeBlock label="Terminal" language="bash" code={buyer.install} />
+          <CodeBlock label="buyer.ts" language="typescript" code={buyer.code} lineNumbers />
+        </SetupStep>
+
+        <SetupStep
+          number={4}
           title="Supported payment networks"
           description={`Your API accepts payments on every one of these in ${environmentLabels[heraldEnv]}.`}
           last
