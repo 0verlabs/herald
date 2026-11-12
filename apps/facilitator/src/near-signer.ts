@@ -14,6 +14,12 @@ type ViewResult = { result?: number[]; error?: string };
  * network's `NearChainQueue`, which holds the relayer key and its nonce.
  * Errors never name the endpoint: the mechanism hands them to the
  * Provider's server as `errorMessage`.
+ *
+ * Without a usable `NEAR_RELAYER_KEY` the signer has no relayer: the network
+ * stays listed in `/supported` (so Providers' routes offering it still
+ * initialize), and the stock mechanism refuses its payments with
+ * `invalid_exact_near_no_relayer_configured` before reading the chain. Other
+ * chains are unaffected.
  */
 export function facilitatorNearSigner(
   env: CloudflareBindings,
@@ -21,7 +27,7 @@ export function facilitatorNearSigner(
 ): FacilitatorNearSigner {
   // Synchronous, as the mechanism's `getSigners` needs: the relayer is the
   // implicit account of its key.
-  const relayer = nearRelayerKey(env).accountId;
+  const relayers = relayerIds(env, network);
   const query = (params: Record<string, unknown>) =>
     nearRpc(env, network, "query", { finality: "final", ...params }, VIEW_TIMEOUT_MS);
   const view = async (contract: string, method: string, args: unknown): Promise<unknown> => {
@@ -36,7 +42,7 @@ export function facilitatorNearSigner(
   };
 
   return {
-    getRelayerIds: () => [relayer],
+    getRelayerIds: () => relayers,
 
     getCurrentBlockHeight: async () => {
       const block = (await nearRpc(
@@ -113,4 +119,25 @@ export function facilitatorNearSigner(
       return { transaction: settled.transaction, innerReceipt: settled.innerReceipt };
     },
   };
+}
+
+/**
+ * The relayer's account id, or none if `NEAR_RELAYER_KEY` is missing or
+ * invalid. That is logged (never the key) on each request that builds the
+ * facilitator, until the secret is fixed.
+ */
+function relayerIds(env: CloudflareBindings, network: Caip2): string[] {
+  try {
+    return [nearRelayerKey(env).accountId];
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: "near_relayer_unavailable",
+        network,
+        // nearRelayerKey's messages describe the expected format only.
+        message: `${error instanceof Error ? error.message : "NEAR_RELAYER_KEY is unusable"}. Payments on ${network} are refused until it is fixed.`,
+      }),
+    );
+    return [];
+  }
 }

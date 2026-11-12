@@ -30,7 +30,10 @@
 //   key>`) of the NEAR relayer, an implicit account (its id is the hex of
 //   the public key). It pays the gas of NEAR settlements; only the
 //   NearChainQueue Durable Object uses it. scripts/near-relayer-wizard.sh
-//   creates it.
+//   creates it. Required only where Herald lists a NEAR network (local and
+//   testnet; production once NEAR mainnet is listed). Without a usable key,
+//   NEAR payments are refused with `invalid_exact_near_no_relayer_configured`
+//   and the other chains keep working.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "herald-facilitator",
@@ -147,7 +150,6 @@
           "SOLANA_RPC_URL",
           "ARBITRUM_RPC_URL",
           "NEAR_RPC_URL",
-          "NEAR_RELAYER_KEY",
           "POLYGON_RPC_URL",
           "AVALANCHE_RPC_URL",
         ],

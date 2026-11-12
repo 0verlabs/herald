@@ -204,11 +204,12 @@ export function nearRelayerKey(env: CloudflareBindings): {
   publicKey: Uint8Array;
   accountId: string;
 } {
+  const encoded = env.NEAR_RELAYER_KEY;
+  if (!encoded) throw new Error("The NEAR_RELAYER_KEY secret is not set");
   const invalid = new Error(
     "The NEAR_RELAYER_KEY secret must be ed25519: and a base58 64-byte secret key",
   );
-  const encoded = env.NEAR_RELAYER_KEY;
-  if (!encoded?.startsWith("ed25519:")) throw invalid;
+  if (!encoded.startsWith("ed25519:")) throw invalid;
   let key: Uint8Array;
   try {
     key = base58.decode(encoded.slice("ed25519:".length));

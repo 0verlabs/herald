@@ -41,6 +41,7 @@ export type FakeNetwork = {
  * account id and public key.
  */
 export function nearRelayer(): { accountId: string; publicKey: string } {
+  if (!env.NEAR_RELAYER_KEY) throw new Error("Tests need NEAR_RELAYER_KEY (vite.config.ts)");
   const key = base58.decode(env.NEAR_RELAYER_KEY.replace(/^ed25519:/, ""));
   const publicKey = key.subarray(32);
   return { accountId: bytesToHex(publicKey), publicKey: `ed25519:${base58.encode(publicKey)}` };
@@ -64,8 +65,14 @@ type RpcHandler = { handle(call: never): Promise<unknown>; faults: { unreachable
  *   changes `nearRootKeys`.
  *
  * Any other request fails the test.
+ *
+ * `bindings` overrides the facilitator apps' bindings (not the chain queues'),
+ * as a misconfigured deployment would have them.
  */
-export function installFakeNetwork(): FakeNetwork {
+export function installFakeNetwork(
+  options: { bindings?: Partial<CloudflareBindings> } = {},
+): FakeNetwork {
+  const appEnv: CloudflareBindings = { ...env, ...options.bindings };
   const app = createApp();
   const otherApp = createApp();
   const { contractId, rootKeys } = mpcSigners.testnet;
@@ -115,10 +122,10 @@ export function installFakeNetwork(): FakeNetwork {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const request = new Request(input, init);
     if (request.url.startsWith(FACILITATOR_URL)) {
-      return app.fetch(request, env, createExecutionContext());
+      return app.fetch(request, appEnv, createExecutionContext());
     }
     if (request.url.startsWith(OTHER_FACILITATOR_URL)) {
-      return otherApp.fetch(request, env, createExecutionContext());
+      return otherApp.fetch(request, appEnv, createExecutionContext());
     }
     const handler = handlersByUrl.get(request.url);
     if (handler?.faults.unreachable) {
