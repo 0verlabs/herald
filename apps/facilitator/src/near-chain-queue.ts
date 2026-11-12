@@ -779,7 +779,7 @@ function delegateProblem(
   } catch {
     return "The ft_transfer arguments aren't a receiver and an amount";
   }
-  if (delegate.senderId === relayer) return "Herald's relayer can't be the payer";
+  if (delegate.senderId === relayer) return "The Buyer can't be Herald's relayer";
   if (!decoded.verifySignature()) return "The delegate action's signature doesn't verify";
   return null;
 }

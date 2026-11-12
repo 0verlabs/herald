@@ -38,7 +38,7 @@ function setupBadge(setup: { label: string; variant: "outline" | "destructive" }
 }
 
 /**
- * The addresses customers pay into, one row per kind of network, in Payment
+ * The addresses Buyers pay into, one row per kind of network, in Payment
  * Option order: NEAR (where Herald lists it), EVM, then Solana.
  */
 export function PaymentAddressesCard({ overview }: { overview: ProviderOverview }) {

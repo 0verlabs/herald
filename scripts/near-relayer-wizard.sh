@@ -480,7 +480,7 @@ note "Private key: only in $(key_file "$RELAYER") (mode 0600), never shown."
 say ""
 warn "The relayer must never be a Buyer's account. Don't use this key in the"
 warn "example buyer or any wallet that pays Herald Providers: stock @x402/near"
-warn "refuses a payment whose payer is the relayer."
+warn "refuses a payment whose Buyer is the relayer."
 pause
 
 # ── 3 ─────────────────────────────────────────────────────────────────────
