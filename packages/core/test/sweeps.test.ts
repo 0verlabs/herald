@@ -21,6 +21,7 @@ import {
 import {
   FakeChainQueue,
   FakeNear,
+  FakeNearUsdc,
   FakeOneClick,
   FakeSolana,
   fakeReceipts,
@@ -29,6 +30,9 @@ import {
 } from "./support/sweeps.ts";
 
 const db = () => createDb(env.DB);
+
+// A NEAR these tests never Sweep from.
+const nearUsdc = new FakeNearUsdc();
 
 const BASE_SEPOLIA = "eip155:84532";
 const BASE_SEPOLIA_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
@@ -258,6 +262,17 @@ describe("getSweepOptions", () => {
 
     expect(options).toEqual({
       chains: [
+        // NEAR Testnet's seeded minimum is 0.001 USDC (#37).
+        {
+          network: "near:testnet",
+          kind: "near",
+          label: "NEAR Testnet",
+          address: provider.nearAddress,
+          balance: { ok: true, amount: "0" },
+          minimum: "1000",
+          oneClick: false,
+          sweepAll: false,
+        },
         {
           network: BASE_SEPOLIA,
           kind: "evm",
@@ -305,6 +320,7 @@ describe("getSweepOptions", () => {
     );
 
     expect(options?.chains.map((chain) => [chain.label, chain.sweepAll])).toEqual([
+      ["NEAR Testnet", false],
       ["Base Sepolia", false],
       ["Solana Devnet", false],
       ["Arbitrum Sepolia", true],
@@ -704,6 +720,8 @@ function planDeps(readUsdcBalance: UsdcBalanceReader) {
     readUsdcBalance,
     readSolana: solana.reader,
     solanaQueue: solana.queue,
+    readNear: nearUsdc.reader,
+    nearQueue: nearUsdc.queue,
     oneClick: new FakeOneClick().client,
   };
 }
@@ -717,6 +735,8 @@ function sweepDeps(near: FakeNear, queue: FakeChainQueue, receipts = fakeReceipt
     readReceipt: receipts.read,
     readSolana: solana.reader,
     solanaQueue: solana.queue,
+    readNear: nearUsdc.reader,
+    nearQueue: nearUsdc.queue,
     oneClick: new FakeOneClick().client,
   };
 }

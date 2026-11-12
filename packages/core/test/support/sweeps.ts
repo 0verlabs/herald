@@ -1,6 +1,6 @@
 import { createDb, providers } from "@herald/db";
 import { ed25519 } from "@noble/curves/ed25519.js";
-import { hexToBytes } from "@noble/curves/utils.js";
+import { bytesToHex, hexToBytes } from "@noble/curves/utils.js";
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { address } from "@solana/kit";
 import { base58, base64 } from "@scure/base";
@@ -19,6 +19,10 @@ import type {
   EvmSweepSubmission,
   EvmSweepSubmitter,
   MpcSignRequest,
+  NearSweepQueue,
+  NearSweepReader,
+  NearSweepStatus,
+  NearSweepSubmission,
   NearTransactionOutcome,
   NearTransactionReader,
   OneClickClient,
@@ -41,7 +45,8 @@ export function solanaKeyPair(): { secretKey: Uint8Array; address: SolanaAddress
 
 /**
  * A testnet Provider whose Receiving Addresses belong to throwaway keys the
- * test holds (`receivingKey` on EVM, `solanaKey` on Solana), standing in for
+ * test holds (`receivingKey` on EVM, `solanaKey` on Solana, `nearKey` on
+ * NEAR), standing in for
  * the keys the MPC network derives for the Provider Account. Its row is
  * written directly: `registerProvider` would derive addresses from the real
  * MPC root keys, which no test can sign for.
@@ -50,10 +55,15 @@ export async function sweepingProvider(accountId: string) {
   const receivingKey = generatePrivateKey();
   const evmAddress = privateKeyToAccount(receivingKey).address.toLowerCase() as EvmAddress;
   const solana = solanaKeyPair();
-  await db().insert(providers).values({ accountId, evmAddress, solanaAddress: solana.address });
+  // A NEAR Receiving Address is an ed25519 key too, in hex.
+  const near = solanaKeyPair();
+  const nearAddress = bytesToHex(base58.decode(near.address));
+  await db()
+    .insert(providers)
+    .values({ accountId, evmAddress, solanaAddress: solana.address, nearAddress });
   const [row] = await db().select().from(providers).where(eq(providers.accountId, accountId));
   const provider: Provider = ProviderSchema.parse(row);
-  return { provider, receivingKey, solanaKey: solana.secretKey };
+  return { provider, receivingKey, solanaKey: solana.secretKey, nearKey: near.secretKey };
 }
 
 /** USDC balances keyed by owner address (any network); everyone else holds 0. */
@@ -275,6 +285,91 @@ export class FakeSolana {
 
   #read() {
     if (this.readsFail) throw new Error("Solana Devnet RPC request failed (TypeError)");
+  }
+}
+
+/**
+ * A fake NEAR network with USDC on it, and Herald's NEAR chain queue. The
+ * `reader` answers what Herald reads to plan and follow Sweeps: access-key
+ * nonces of implicit accounts (`addAccount`), USDC storage registration
+ * (`registered`), the final block height and relayer transactions'
+ * outcomes (`statuses`, unknown ones not executed yet). The `queue` is the
+ * chain queue: it records each Sweep submission and answers a relayer
+ * transaction hash, the same one for the same signed delegate action.
+ */
+export class FakeNearUsdc {
+  /** Herald's relayer, an implicit account. */
+  readonly relayer = bytesToHex(crypto.getRandomValues(new Uint8Array(32)));
+  /** Accounts registered on USDC (NEP-145). */
+  readonly registered = new Set<string>();
+  /** How each relayer transaction ended; those not listed haven't executed. */
+  readonly statuses = new Map<string, NearSweepStatus>();
+  readonly submissions: NearSweepSubmission[] = [];
+  height = 200_000_000;
+  /** Fail every RPC read, as when the endpoint is down. */
+  readsFail = false;
+  /** Refuse submissions with this message, as the queue does for an expired delegate. */
+  refuseWith: string | null = null;
+  /** Throw instead of answering, as when the queue can't be reached. */
+  queueUnreachable = false;
+  readonly #keyNonces = new Map<string, bigint>();
+  readonly #transactions = new Map<string, string>();
+
+  /**
+   * Creates the implicit account `accountId` (64 hex characters) with its
+   * own key as a full-access key, registered on USDC, as Herald's setup
+   * does. Its key nonce starts at the creation height × 10^6.
+   */
+  addAccount(accountId: string): void {
+    this.#keyNonces.set(accountId, BigInt(this.height) * 1_000_000n);
+    this.registered.add(accountId);
+  }
+
+  keyNonceOf(accountId: string): bigint | undefined {
+    return this.#keyNonces.get(accountId);
+  }
+
+  readonly reader: NearSweepReader = {
+    accessKeyNonce: async ({ accountId, publicKey }) => {
+      this.#read();
+      // An implicit account's key is the one its id names.
+      if (bytesToHex(publicKey) !== accountId) return null;
+      return this.#keyNonces.get(accountId) ?? null;
+    },
+    storageRegistered: async ({ accountId }) => {
+      this.#read();
+      return this.registered.has(accountId);
+    },
+    finalBlockHeight: async () => {
+      this.#read();
+      return this.height;
+    },
+    sweepStatus: async ({ txHash }) => {
+      this.#read();
+      return this.statuses.get(txHash) ?? null;
+    },
+  };
+
+  readonly queue: NearSweepQueue = {
+    relayer: async () => {
+      if (this.queueUnreachable) throw new Error("The NEAR chain queue didn't answer");
+      return this.relayer;
+    },
+    submitSweep: async (submission) => {
+      if (this.queueUnreachable) throw new Error("The NEAR chain queue didn't answer");
+      if (this.refuseWith) return { ok: false, message: this.refuseWith };
+      this.submissions.push(submission);
+      let transaction = this.#transactions.get(submission.signedDelegateAction);
+      if (!transaction) {
+        transaction = base58.encode(crypto.getRandomValues(new Uint8Array(32)));
+        this.#transactions.set(submission.signedDelegateAction, transaction);
+      }
+      return { ok: true, transaction };
+    },
+  };
+
+  #read() {
+    if (this.readsFail) throw new Error("NEAR RPC block request failed (TypeError)");
   }
 }
 

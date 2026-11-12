@@ -57,13 +57,15 @@ describe("Receiving Address schemas", () => {
 });
 
 describe("ProviderSchema", () => {
-  test("parses a Provider with its Receiving Addresses and token account status", () => {
+  test("parses a Provider with its Receiving Addresses, token account and NEAR setup status", () => {
     const provider = {
       id: 1,
       accountId: "herald-test.near",
       evmAddress,
       solanaAddress,
+      nearAddress: "d49d0273509b7e40dae820590462736b7453aafbaf9ca1f133296667c1e933a1",
       solanaTokenAccountStatus: "queued",
+      nearSetupStatus: "created",
       createdAt: new Date("2026-11-10T00:00:00Z"),
     };
     expect(ProviderSchema.parse(provider)).toEqual(provider);

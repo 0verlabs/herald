@@ -15,8 +15,7 @@ type Size = keyof typeof sizes;
  * word, lowercased ("Base Sepolia" is base.svg). A network without a file
  * falls back to the first two letters of its name.
  */
-const logoOf = (label: string) =>
-  `/logos/networks/${label.split(" ")[0]?.toLowerCase() ?? ""}.svg`;
+const logoOf = (label: string) => `/logos/networks/${label.split(" ")[0]?.toLowerCase() ?? ""}.svg`;
 
 /** A network's logo, as a round avatar. */
 export function NetworkLogo({
@@ -32,10 +31,7 @@ export function NetworkLogo({
   src?: string;
 }) {
   return (
-    <Avatar
-      aria-hidden="true"
-      className={cn(sizes[size], className)}
-    >
+    <Avatar aria-hidden="true" className={cn(sizes[size], className)}>
       <AvatarImage src={src ?? logoOf(label)} alt="" />
       <AvatarFallback className="bg-secondary font-semibold text-secondary-foreground">
         {label.slice(0, 2)}

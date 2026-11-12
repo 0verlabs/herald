@@ -15,6 +15,7 @@ import { createMiddleware, createServerFn, createServerOnlyFn } from "@tanstack/
 import { deleteCookie, getCookie, getRequest, setCookie } from "@tanstack/react-start/server";
 import { env } from "cloudflare:workers";
 import { readHeraldEnv } from "./herald-env";
+import { nearSetupQueue } from "./near-chain-queue";
 import { solanaTokenAccountQueue } from "./solana-chain-queue";
 
 // Every `env`, cookie and request read stays inside a server function,
@@ -94,9 +95,9 @@ export const getSignInChallenge = createServerFn({ method: "POST" }).handler(asy
 
 /**
  * Signs the Provider in from its wallet's signature over a challenge,
- * registering it on first sign-in and queueing its Solana USDC token account
- * with the facilitator's Solana chain queue, and starts a session in a fresh
- * cookie.
+ * registering it on first sign-in, queueing its Solana USDC token account
+ * and its NEAR Receiving Address setup with the facilitator's chain queues,
+ * and starts a session in a fresh cookie.
  */
 export const signInWithSignature = createServerFn({ method: "POST" })
   .validator(SignInSignatureSchema)
@@ -107,6 +108,7 @@ export const signInWithSignature = createServerFn({ method: "POST" })
         db: createDb(env.DB),
         readAccessKey: nearRpcAccessKeyReader(env.NEAR_RPC_URL),
         queueSolanaTokenAccount: solanaTokenAccountQueue(),
+        queueNearSetup: nearSetupQueue(),
       },
       { env: readHeraldEnv(), recipient: signInRecipient(), signature: data },
     );

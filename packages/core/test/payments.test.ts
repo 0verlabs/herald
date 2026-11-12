@@ -45,12 +45,34 @@ describe("getRevenue", () => {
 
     expect(await getRevenue(db(), { providerId: provider.id, env: "testnet" })).toEqual({
       chains: [
+        { network: "near:testnet", label: "NEAR Testnet", allTime: "0", last7Days: "0" },
         { network: BASE_SEPOLIA, label: "Base Sepolia", allTime: "12500", last7Days: "12500" },
         { network: SOLANA_DEVNET, label: "Solana Devnet", allTime: "1", last7Days: "1" },
         { network: "eip155:421614", label: "Arbitrum Sepolia", allTime: "0", last7Days: "0" },
       ],
       total: { allTime: "12501", last7Days: "12501" },
     });
+  });
+
+  test("counts NEAR payments, recorded with the Buyer's NEAR account", async () => {
+    const { provider, pay } = await providerWithKey("revenue-near.testnet");
+    await pay({
+      network: "near:testnet",
+      asset: "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+      amount: "4000",
+      buyer: "buyer.testnet",
+    });
+    await pay({ network: BASE_SEPOLIA, asset: BASE_SEPOLIA_USDC, amount: "1000" });
+
+    const revenue = await getRevenue(db(), { providerId: provider.id, env: "testnet" });
+
+    expect(revenue.chains[0]).toEqual({
+      network: "near:testnet",
+      label: "NEAR Testnet",
+      allTime: "4000",
+      last7Days: "4000",
+    });
+    expect(revenue.total).toEqual({ allTime: "5000", last7Days: "5000" });
   });
 
   test("leaves payments settled more than 7 days ago out of the last 7 days", async () => {
@@ -70,7 +92,10 @@ describe("getRevenue", () => {
 
     expect(sixDaysOn.total).toEqual({ allTime: "10000", last7Days: "10000" });
     expect(eightDaysOn.total).toEqual({ allTime: "10000", last7Days: "0" });
-    expect(eightDaysOn.chains[0]).toMatchObject({ allTime: "10000", last7Days: "0" });
+    expect(eightDaysOn.chains.find((chain) => chain.network === BASE_SEPOLIA)).toMatchObject({
+      allTime: "10000",
+      last7Days: "0",
+    });
   });
 
   test("counts only the Provider's own payments", async () => {
@@ -100,6 +125,7 @@ describe("getRevenue", () => {
 
     expect(await getRevenue(db(), { providerId: provider.id, env: "testnet" })).toMatchObject({
       chains: [
+        { label: "NEAR Testnet", allTime: "0", last7Days: "0" },
         { label: "Base Sepolia", allTime: "0", last7Days: "0" },
         { label: "Solana Devnet", allTime: "0", last7Days: "0" },
         { label: "Arbitrum Sepolia", allTime: "0", last7Days: "0" },

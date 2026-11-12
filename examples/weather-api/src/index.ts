@@ -3,6 +3,7 @@ import { HTTPFacilitatorClient } from "@x402/core/server";
 import type { SupportedResponse } from "@x402/core/types";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
+import { ExactNearScheme } from "@x402/near/exact/server";
 import { ExactSvmScheme } from "@x402/svm/exact/server";
 import { Hono } from "hono";
 
@@ -39,7 +40,10 @@ app.use("*", (c, next) => {
     },
   });
 
+  // One scheme per chain family `accepts()` offers: the resource server
+  // refuses a route that lists a network it has no scheme for.
   const server = new x402ResourceServer(facilitator)
+    .register("near:*", new ExactNearScheme())
     .register("eip155:*", new ExactEvmScheme())
     .register("solana:*", new ExactSvmScheme());
 

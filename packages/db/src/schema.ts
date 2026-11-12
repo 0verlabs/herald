@@ -22,9 +22,15 @@ export const providers = sqliteTable("providers", {
   accountId: text("account_id").notNull().unique(),
   evmAddress: text("evm_address").notNull(),
   solanaAddress: text("solana_address").notNull(),
+  // Null only on rows from before the NEAR migration, until core derives
+  // and stores it (see `providerFromRow` in @herald/core/server).
+  nearAddress: text("near_address"),
   solanaTokenAccountStatus: text("solana_token_account_status", {
     enum: ["not_queued", "queued", "created", "failed"],
   })
+    .notNull()
+    .default("not_queued"),
+  nearSetupStatus: text("near_setup_status", { enum: ["not_queued", "queued", "created"] })
     .notNull()
     .default("not_queued"),
   createdAt: createdAt(),
@@ -110,6 +116,8 @@ export const sweepMinimums = sqliteTable(
  * - `solana`: an SPL transfer from the Receiving Address's USDC token
  *   account; `solana_transaction` is the unsigned transaction, whose message
  *   is the payload.
+ * - `near`: a NEP-366 delegate action from the NEAR Receiving Address
+ *   holding one USDC `ft_transfer`; `payload_hash` is its NEP-461 hash.
  *
  * The Provider's NEAR wallet asks the MPC signer to sign the payload in the
  * NEAR transaction `near_tx_hash`.
@@ -124,7 +132,7 @@ export const sweeps = sqliteTable(
     providerId: integer("provider_id")
       .notNull()
       .references(() => providers.id),
-    sourceKind: text("source_kind", { enum: ["evm", "solana"] }).notNull(),
+    sourceKind: text("source_kind", { enum: ["evm", "solana", "near"] }).notNull(),
     sourceNetwork: text("source_network").notNull(),
     asset: text().notNull(),
     /** Base units of `asset`, as a decimal string. */
@@ -168,12 +176,18 @@ export const sweeps = sqliteTable(
      * is the exact limit).
      */
     validBefore: integer("valid_before").notNull(),
-    /** EVM: the EIP-712 hash of the authorization. */
+    /** EVM: the EIP-712 hash of the authorization. NEAR: the delegate action's NEP-461 hash. */
     payloadHash: text("payload_hash"),
     /** Solana: the unsigned transaction, base64 wire format. */
     solanaTransaction: text("solana_transaction"),
     /** Solana: the last block height at which the transaction can land. */
     lastValidBlockHeight: integer("last_valid_block_height"),
+    /** NEAR: the unsigned NEP-366 delegate action, base64 Borsh (no NEP-461 prefix). */
+    nearDelegateAction: text("near_delegate_action"),
+    /** NEAR: the delegate action's nonce, above the Receiving Address key's. */
+    nearNonce: integer("near_nonce"),
+    /** NEAR: the last block height at which the delegate action can land. */
+    nearMaxBlockHeight: integer("near_max_block_height"),
     nearTxHash: text("near_tx_hash").unique(),
     sourceTxHash: text("source_tx_hash"),
     status: text({

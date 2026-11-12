@@ -9,6 +9,8 @@ import type { Caip2 } from "./networks.ts";
  * named after the chain. Each Herald environment sets it to that
  * environment's network: on testnet `BASE_RPC_URL` is Base Sepolia and
  * `SOLANA_RPC_URL` Solana Devnet. Both Workers read the same secrets.
+ * `NEAR_RPC_URL` also serves NEAR reads unrelated to payments (sign-in, the
+ * MPC root-key check, Sweep signatures).
  */
 const rpcUrlSecrets = {
   "eip155:8453": "BASE_RPC_URL",
@@ -19,6 +21,8 @@ const rpcUrlSecrets = {
   "eip155:421614": "ARBITRUM_RPC_URL",
   "eip155:137": "POLYGON_RPC_URL",
   "eip155:43114": "AVALANCHE_RPC_URL",
+  "near:testnet": "NEAR_RPC_URL",
+  "near:mainnet": "NEAR_RPC_URL",
 } as const satisfies Record<Caip2, string>;
 
 export type RpcUrlSecret = (typeof rpcUrlSecrets)[keyof typeof rpcUrlSecrets];

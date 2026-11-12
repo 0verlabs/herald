@@ -1,11 +1,21 @@
 import { providers } from "@herald/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { findNetwork, networkRegistry, type Caip2, type Network } from "../networks.ts";
+import {
+  Caip2Schema,
+  findNetwork,
+  networkRegistry,
+  unhandledKind,
+  type Caip2,
+  type Network,
+} from "../networks.ts";
 import { decimalToBaseUnits } from "../price.ts";
-import { callJsonRpc } from "../rpc.ts";
-import { ProviderSchema, type HeraldEnv } from "../schemas.ts";
+import { receivingAddressOn } from "../receiving-addresses.ts";
+import { callJsonRpc, rpcUrlSecret } from "../rpc.ts";
+import type { HeraldEnv } from "../schemas.ts";
 import type { Db } from "./db.ts";
+import { callViewFunction, nearRpcAt, viewAccount } from "./near-protocol.ts";
+import { providerFromRow } from "./providers.ts";
 
 /**
  * Reads how much USDC `owner` holds on `network`, in base units as a decimal
@@ -41,11 +51,11 @@ export async function getProviderBalances(
 ): Promise<ChainBalance[] | null> {
   const [row] = await deps.db.select().from(providers).where(eq(providers.id, input.providerId));
   if (!row) return null;
-  const provider = ProviderSchema.parse(row);
+  const provider = await providerFromRow(deps.db, row, input.env);
   const timeoutMs = deps.timeoutMs ?? BALANCE_READ_TIMEOUT_MS;
   return Promise.all(
     networkRegistry[input.env].map(async (network): Promise<ChainBalance> => {
-      const address = network.kind === "evm" ? provider.evmAddress : provider.solanaAddress;
+      const address = receivingAddressOn(provider, network);
       const chain = { network: network.caip2, label: network.label, address };
       try {
         const amount = await withTimeout(
@@ -92,7 +102,8 @@ const BALANCE_OF_SELECTOR = "0x70a08231";
  * A `UsdcBalanceReader` over each chain's JSON-RPC endpoint, from `rpcUrls`
  * keyed by CAIP-2 network. EVM chains answer `balanceOf` on the USDC
  * contract at the latest block; Solana sums the owner's USDC token accounts
- * at `confirmed` commitment. A network without an endpoint fails to read.
+ * at `confirmed` commitment; NEAR answers `ft_balance_of` on the USDC
+ * contract at final finality. A network without an endpoint fails to read.
  * Errors never include the endpoint, whose URL may carry an API key.
  */
 export function rpcUsdcBalanceReader(
@@ -105,32 +116,49 @@ export function rpcUsdcBalanceReader(
     const call = (method: string, params: unknown[]) =>
       jsonRpc(fetchFn, url, network.label, method, params);
 
-    if (network.kind === "evm") {
-      const data = BALANCE_OF_SELECTOR + owner.slice(2).toLowerCase().padStart(64, "0");
-      const result = await call("eth_call", [{ to: network.usdc.address, data }, "latest"]);
-      if (typeof result !== "string" || !/^0x[0-9a-fA-F]{1,64}$/.test(result)) {
-        throw new Error(`${network.label} answered balanceOf with ${JSON.stringify(result)}`);
+    switch (network.kind) {
+      case "evm": {
+        const data = BALANCE_OF_SELECTOR + owner.slice(2).toLowerCase().padStart(64, "0");
+        const result = await call("eth_call", [{ to: network.usdc.address, data }, "latest"]);
+        if (typeof result !== "string" || !/^0x[0-9a-fA-F]{1,64}$/.test(result)) {
+          throw new Error(`${network.label} answered balanceOf with ${JSON.stringify(result)}`);
+        }
+        return BigInt(result).toString();
       }
-      return BigInt(result).toString();
-    }
-
-    const result = (await call("getTokenAccountsByOwner", [
-      owner,
-      { mint: network.usdc.address },
-      { encoding: "jsonParsed", commitment: "confirmed" },
-    ])) as { value?: { account?: { data?: { parsed?: { info?: TokenInfo } } } }[] } | null;
-    if (!Array.isArray(result?.value)) {
-      throw new Error(`${network.label} answered getTokenAccountsByOwner without accounts`);
-    }
-    let total = 0n;
-    for (const { account } of result.value) {
-      const amount = account?.data?.parsed?.info?.tokenAmount?.amount;
-      if (typeof amount !== "string" || !/^\d+$/.test(amount)) {
-        throw new Error(`${network.label} answered a token account without an amount`);
+      case "solana": {
+        const result = (await call("getTokenAccountsByOwner", [
+          owner,
+          { mint: network.usdc.address },
+          { encoding: "jsonParsed", commitment: "confirmed" },
+        ])) as { value?: { account?: { data?: { parsed?: { info?: TokenInfo } } } }[] } | null;
+        if (!Array.isArray(result?.value)) {
+          throw new Error(`${network.label} answered getTokenAccountsByOwner without accounts`);
+        }
+        let total = 0n;
+        for (const { account } of result.value) {
+          const amount = account?.data?.parsed?.info?.tokenAmount?.amount;
+          if (typeof amount !== "string" || !/^\d+$/.test(amount)) {
+            throw new Error(`${network.label} answered a token account without an amount`);
+          }
+          total += BigInt(amount);
+        }
+        return total.toString();
       }
-      total += BigInt(amount);
+      case "near": {
+        const amount = await callViewFunction(
+          nearRpcAt(fetchFn, url, `${network.label} RPC`, BALANCE_READ_TIMEOUT_MS),
+          network.usdc.address,
+          "ft_balance_of",
+          { account_id: owner },
+        );
+        if (typeof amount !== "string" || !/^\d+$/.test(amount)) {
+          throw new Error(`${network.label} answered ft_balance_of without an amount`);
+        }
+        return amount;
+      }
+      default:
+        return unhandledKind(network);
     }
-    return total.toString();
   };
 }
 
@@ -150,15 +178,16 @@ function jsonRpc(
 
 /**
  * The address of Herald's gas wallet on `network`, from the chain queue that
- * holds its key: one EVM wallet shared by every EVM network, and the Solana
- * fee payer. Rejects if the queue can't be reached.
+ * holds its key: one EVM wallet shared by every EVM network, the Solana
+ * fee payer, and the NEAR relayer. Rejects if the queue can't name it, as
+ * the NEAR queue can't without its relayer key.
  */
 export type GasWalletAddressReader = (network: Network) => Promise<string>;
 
 /**
  * Reads how much of `network`'s native token (`network.native`) `owner`
- * holds, in base units as a decimal string: wei, lamports. Rejects if the
- * chain can't be read.
+ * holds, in base units as a decimal string: wei, lamports, yoctoNEAR.
+ * Rejects if the chain can't be read.
  */
 export type NativeBalanceReader = (request: { network: Network; owner: string }) => Promise<string>;
 
@@ -166,16 +195,23 @@ export type NativeBalanceReader = (request: { network: Network; owner: string })
  * Below which native balance each network's gas wallet counts as low, keyed
  * by CAIP-2 network, in whole tokens (`{ "eip155:8453": "0.005" }`). It is
  * configuration, so a JSON string of the same object reads too. A network
- * without one is never low; a key that isn't a network Herald lists is
- * refused, since it would never warn either.
+ * without one is never low. A key must be a network Herald knows: one it
+ * lists, or one it has an RPC endpoint for ahead of listing it (NEAR
+ * mainnet), so the threshold is in place the day it is listed. Anything else,
+ * such as a typo, is refused, since it would never warn.
  */
 const LowBalanceThresholdsSchema = z.preprocess(
   (raw) => (typeof raw === "string" ? JSON.parse(raw) : raw),
   z.record(
-    z.string().refine((key) => findNetwork(key) !== undefined),
+    z.string().refine((key) => findNetwork(key) !== undefined || isCaip2WithRpc(key)),
     z.string().regex(/^\d+(\.\d+)?$/, "must be an amount like 0.005"),
   ),
 );
+
+function isCaip2WithRpc(key: string): boolean {
+  const caip2 = Caip2Schema.safeParse(key);
+  return caip2.success && rpcUrlSecret(caip2.data) !== undefined;
+}
 
 /**
  * Herald's gas wallet on one network, its native balance, and whether that
@@ -267,7 +303,7 @@ export async function getGasWallets(
           address,
           message:
             address === null
-              ? `Herald couldn't reach the ${network.label} chain queue for its gas wallet.`
+              ? `Herald couldn't get its ${network.label} gas wallet from the chain queue.`
               : `Herald couldn't read the gas wallet's balance from ${network.label}.`,
         };
       }
@@ -278,8 +314,10 @@ export async function getGasWallets(
 /**
  * A `NativeBalanceReader` over each chain's JSON-RPC endpoint, from
  * `rpcUrls` keyed by CAIP-2 network: `eth_getBalance` at the latest block
- * on EVM chains, `getBalance` at `confirmed` commitment on Solana. A network
- * without an endpoint fails to read. Errors never include the endpoint.
+ * on EVM chains, `getBalance` at `confirmed` commitment on Solana, and
+ * `view_account` at final finality on NEAR (0 for an account that doesn't
+ * exist). A network without an endpoint fails to read. Errors never include
+ * the endpoint.
  */
 export function rpcNativeBalanceReader(
   rpcUrls: Partial<Record<Caip2, string>>,
@@ -289,25 +327,47 @@ export function rpcNativeBalanceReader(
     const url = rpcUrls[network.caip2];
     if (!url) throw new Error(`Herald has no RPC endpoint for ${network.label}`);
 
-    if (network.kind === "evm") {
-      const result = await jsonRpc(fetchFn, url, network.label, "eth_getBalance", [
-        owner,
-        "latest",
-      ]);
-      if (typeof result !== "string" || !/^0x[0-9a-fA-F]{1,64}$/.test(result)) {
-        throw new Error(`${network.label} answered eth_getBalance with ${JSON.stringify(result)}`);
+    switch (network.kind) {
+      case "evm": {
+        const result = await jsonRpc(fetchFn, url, network.label, "eth_getBalance", [
+          owner,
+          "latest",
+        ]);
+        if (typeof result !== "string" || !/^0x[0-9a-fA-F]{1,64}$/.test(result)) {
+          throw new Error(
+            `${network.label} answered eth_getBalance with ${JSON.stringify(result)}`,
+          );
+        }
+        return BigInt(result).toString();
       }
-      return BigInt(result).toString();
+      case "solana": {
+        const result = (await jsonRpc(fetchFn, url, network.label, "getBalance", [
+          owner,
+          { commitment: "confirmed" },
+        ])) as { value?: unknown } | null;
+        const lamports = result?.value;
+        if (typeof lamports !== "number" || !Number.isSafeInteger(lamports) || lamports < 0) {
+          throw new Error(`${network.label} answered getBalance without a balance`);
+        }
+        return BigInt(lamports).toString();
+      }
+      case "near": {
+        // `amount` is the liquid balance (staked NEAR is `locked`). It
+        // includes the few thousandths of a NEAR the account's own storage
+        // holds back, which doesn't matter against a 0.5 NEAR threshold.
+        const account = await viewAccount(
+          nearRpcAt(fetchFn, url, `${network.label} RPC`, BALANCE_READ_TIMEOUT_MS),
+          owner,
+        );
+        // A relayer that was never created holds nothing, and warns low.
+        const amount = account === null ? "0" : account.amount;
+        if (typeof amount !== "string" || !/^\d+$/.test(amount)) {
+          throw new Error(`${network.label} answered view_account without a balance`);
+        }
+        return amount;
+      }
+      default:
+        return unhandledKind(network);
     }
-
-    const result = (await jsonRpc(fetchFn, url, network.label, "getBalance", [
-      owner,
-      { commitment: "confirmed" },
-    ])) as { value?: unknown } | null;
-    const lamports = result?.value;
-    if (typeof lamports !== "number" || !Number.isSafeInteger(lamports) || lamports < 0) {
-      throw new Error(`${network.label} answered getBalance without a balance`);
-    }
-    return BigInt(lamports).toString();
   };
 }

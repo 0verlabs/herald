@@ -17,11 +17,11 @@ _Avoid_: Customer, client, payer
 ### Money
 
 **Provider Account**:
-The NEAR account that controls all of a Provider's Receiving Addresses.
+The NEAR account that controls all of a Provider's Receiving Addresses. It never receives payments itself, not even on NEAR.
 _Avoid_: Herald account, wallet, master key
 
 **Receiving Address**:
-An ordinary address on one chain, derived from the Provider Account, that Buyers pay into.
+An ordinary address on one chain, derived from the Provider Account, that Buyers pay into. On NEAR it is an account of its own, separate from the Provider Account.
 _Avoid_: Derived address, deposit address, payTo, wallet
 
 **Sweep**:

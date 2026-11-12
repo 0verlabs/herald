@@ -24,6 +24,15 @@ export const NearAccountIdSchema = z
   .regex(/^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/, "Invalid NEAR account id");
 export type NearAccountId = z.infer<typeof NearAccountIdSchema>;
 
+/**
+ * A NEAR implicit account id: the lowercase hex of an ed25519 public key, 64
+ * characters. NEAR Receiving Addresses are implicit accounts (ADR-0009).
+ */
+export const NearImplicitAccountSchema = z
+  .string()
+  .regex(/^[0-9a-f]{64}$/, "Invalid NEAR implicit account id");
+export type NearImplicitAccount = z.infer<typeof NearImplicitAccountSchema>;
+
 /** A 20-byte EVM address. One is shared by every EVM chain Herald lists. */
 export const EvmAddressSchema = z.string().regex(/^0x[0-9a-fA-F]{40}$/, "Invalid EVM address");
 export type EvmAddress = z.infer<typeof EvmAddressSchema>;
@@ -48,16 +57,34 @@ export const SolanaTokenAccountStatusSchema = z.enum(["not_queued", "queued", "c
 export type SolanaTokenAccountStatus = z.infer<typeof SolanaTokenAccountStatusSchema>;
 
 /**
+ * Where a Provider's NEAR Receiving Address stands: Herald creates the
+ * implicit account and registers it on USDC (NEP-145) before NEAR payments
+ * to it can verify.
+ *
+ * - `not_queued`: not handed to the NEAR chain queue yet, handing it over
+ *   failed, or the queue gave up after retrying.
+ * - `queued`: the NEAR chain queue has it and is setting it up.
+ * - `created`: the account exists and is registered on USDC.
+ */
+export const NearSetupStatusSchema = z.enum(["not_queued", "queued", "created"]);
+export type NearSetupStatus = z.infer<typeof NearSetupStatusSchema>;
+
+/**
  * A Provider, identified by its Provider Account, with the Receiving
- * Addresses derived from it and the state of its Solana USDC token account.
- * `packages/db` keeps the `providers` table in line with this schema.
+ * Addresses derived from it, the state of its Solana USDC token account and
+ * the setup of its NEAR Receiving Address.
+ * `packages/db` keeps the `providers` table in line with this schema, except
+ * that `near_address` is null on rows from before NEAR until core fills it
+ * in (`providerFromRow`).
  */
 export const ProviderSchema = z.object({
   id: z.number().int().positive(),
   accountId: NearAccountIdSchema,
   evmAddress: EvmAddressSchema,
   solanaAddress: SolanaAddressSchema,
+  nearAddress: NearImplicitAccountSchema,
   solanaTokenAccountStatus: SolanaTokenAccountStatusSchema,
+  nearSetupStatus: NearSetupStatusSchema,
   createdAt: z.date(),
 });
 export type Provider = z.infer<typeof ProviderSchema>;
@@ -271,10 +298,33 @@ export const SolanaSweepSchema = z.object({
 export type SolanaSweep = z.infer<typeof SolanaSweepSchema>;
 
 /**
- * A Sweep: moving `amount` (base units of `asset`) out of a Provider's
- * Receiving Address on `sourceNetwork`, an EVM or a Solana one
- * (`sourceKind`). `packages/db` keeps the `sweeps` table in line with this
- * schema: one table, with the other kind's columns null.
+ * A Sweep from the NEAR Receiving Address: `nearDelegateAction`, an
+ * unsigned NEP-366 delegate action (base64 Borsh, without the NEP-461
+ * prefix) holding one USDC `ft_transfer`, with the access-key nonce
+ * `nearNonce`, landing up to block `nearMaxBlockHeight`, which
+ * `validBefore` (Unix seconds) estimates. `payloadHash` is its NEP-461
+ * hash, what the MPC signer signs. `sourceTxHash` is the relayer
+ * transaction that carries it.
  */
-export const SweepSchema = z.discriminatedUnion("sourceKind", [EvmSweepSchema, SolanaSweepSchema]);
+export const NearSweepSchema = z.object({
+  ...sweepFields,
+  sourceKind: z.literal("near"),
+  nearDelegateAction: z.string().min(1),
+  nearNonce: z.number().int().nonnegative(),
+  nearMaxBlockHeight: z.number().int().nonnegative(),
+  payloadHash: Hex32Schema,
+});
+export type NearSweep = z.infer<typeof NearSweepSchema>;
+
+/**
+ * A Sweep: moving `amount` (base units of `asset`) out of a Provider's
+ * Receiving Address on `sourceNetwork`, an EVM, Solana or NEAR one
+ * (`sourceKind`). `packages/db` keeps the `sweeps` table in line with this
+ * schema: one table, with the other kinds' columns null.
+ */
+export const SweepSchema = z.discriminatedUnion("sourceKind", [
+  EvmSweepSchema,
+  SolanaSweepSchema,
+  NearSweepSchema,
+]);
 export type Sweep = z.infer<typeof SweepSchema>;

@@ -2,7 +2,7 @@ import { revokeApiKey } from "@herald/core/server";
 import { createDb } from "@herald/db";
 import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
-import { FACILITATOR_URL, installFakeNetwork } from "./support/network.ts";
+import { FACILITATOR_URL, installFakeNetwork, NEAR_TESTNET } from "./support/network.ts";
 import { buyerPayment, facilitatorClient, registeredProvider } from "./support/parties.ts";
 
 afterEach(() => {
@@ -91,5 +91,53 @@ describe("payTo checks", () => {
       /Facilitator settle failed \(403\): .*"error":"pay_to_mismatch"/,
     );
     expect(fake.chains[network]?.submissions).toEqual([]);
+  });
+});
+
+describe("payTo and asset checks on NEAR", () => {
+  test("rejects a NEAR payment into another Provider's NEAR Receiving Address with 403", async () => {
+    const fake = installFakeNetwork();
+    const other = await registeredProvider("near-someone-else.testnet");
+    fake.near.registerStorage(other.provider.nearAddress);
+    const { secret } = await registeredProvider("near-not-the-payee.testnet");
+    const { payload, requirements } = await buyerPayment({
+      providerAccount: "near-someone-else.testnet",
+      network: NEAR_TESTNET,
+      apiKey: other.secret,
+      near: fake.near,
+    });
+    const client = facilitatorClient(secret);
+
+    await expect(client.verify(payload, requirements)).rejects.toThrow(
+      /Facilitator verify failed \(403\): .*"error":"pay_to_mismatch"/,
+    );
+    await expect(client.settle(payload, requirements)).rejects.toThrow(
+      /Facilitator settle failed \(403\): .*"error":"pay_to_mismatch"/,
+    );
+    expect(fake.near.transfers).toEqual([]);
+  });
+
+  test("rejects a NEAR payment in another token than USDC with 400", async () => {
+    const fake = installFakeNetwork();
+    const { provider, secret } = await registeredProvider("near-wrong-asset.testnet");
+    fake.near.registerStorage(provider.nearAddress);
+    const { payload, requirements } = await buyerPayment({
+      providerAccount: "near-wrong-asset.testnet",
+      network: NEAR_TESTNET,
+      apiKey: secret,
+      near: fake.near,
+    });
+    // The same payment, claimed to be in `usdc.testnet`, a token Herald
+    // doesn't settle.
+    const otherToken = { ...requirements, asset: "usdc.testnet" };
+    const client = facilitatorClient(secret);
+
+    await expect(client.verify({ ...payload, accepted: otherToken }, otherToken)).rejects.toThrow(
+      /Facilitator verify failed \(400\): .*"error":"unsupported_asset"/,
+    );
+    await expect(client.settle({ ...payload, accepted: otherToken }, otherToken)).rejects.toThrow(
+      /Facilitator settle failed \(400\): .*"error":"unsupported_asset"/,
+    );
+    expect(fake.near.transfers).toEqual([]);
   });
 });

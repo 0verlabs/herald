@@ -1,4 +1,4 @@
-import { networkRegistry } from "@herald/core";
+import { networkRegistry, type NetworkKind } from "@herald/core";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { CreateKeyButton } from "@/components/developers/api-keys";
@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { environmentLabels } from "@/lib/environment";
 import {
+  buyerSnippet,
   envFileSnippet,
   frameworkLabels,
   integrationSnippet,
@@ -26,12 +27,18 @@ export const Route = createFileRoute("/_dashboard/integration")({
   component: Integration,
 });
 
+const kindLabels = { evm: "EVM", solana: "Solana", near: "NEAR" } as const satisfies Record<
+  NetworkKind,
+  string
+>;
+
 const runtimeOptions = Object.entries(runtimes) as [Runtime, (typeof runtimes)[Runtime]][];
 
 function Integration() {
   const { account, heraldEnv } = Route.useRouteContext();
   const [runtime, setRuntime] = useState<Runtime>("node");
   const networks = networkRegistry[heraldEnv];
+  const buyer = buyerSnippet({ env: heraldEnv });
 
   return (
     <>
@@ -116,6 +123,15 @@ function Integration() {
 
         <SetupStep
           number={3}
+          title="Pay it as a Buyer"
+          description="Any stock x402 client can pay your API. This one registers a chain only when its key is set. Set the NEAR key only if you hold USDC on NEAR: the client pays with the first option it supports without checking your balance, and NEAR is listed first."
+        >
+          <CodeBlock label="Terminal" language="bash" code={buyer.install} />
+          <CodeBlock label="buyer.ts" language="typescript" code={buyer.code} lineNumbers />
+        </SetupStep>
+
+        <SetupStep
+          number={4}
           title="Supported payment networks"
           description={`Your API accepts payments on every one of these in ${environmentLabels[heraldEnv]}.`}
           last
@@ -129,9 +145,7 @@ function Integration() {
                 <NetworkLogo label={network.label} size="md" />
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate font-medium">{network.label}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {network.kind === "evm" ? "EVM" : "Solana"}
-                  </span>
+                  <span className="text-xs text-muted-foreground">{kindLabels[network.kind]}</span>
                 </span>
                 <Badge variant="outline" className="h-6 gap-1.5 pl-1">
                   <CoinLogo symbol={USDC.symbol} size="sm" className="size-4 text-[0.5rem]" />

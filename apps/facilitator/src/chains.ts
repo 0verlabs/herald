@@ -7,6 +7,9 @@ import {
   type Caip2,
   type HeraldEnv,
 } from "@herald/core";
+import { nearRpcAt, type NearRpc } from "@herald/core/server";
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { bytesToHex, equalBytes } from "@noble/curves/utils.js";
 import { base58 } from "@scure/base";
 import {
   address,
@@ -189,4 +192,49 @@ export async function confirmSolanaTransaction(
     }
     await new Promise((resolve) => setTimeout(resolve, CONFIRMATION_POLL_MS));
   }
+}
+
+/**
+ * Herald's NEAR relayer key, `NEAR_RELAYER_KEY` in near-cli format:
+ * `ed25519:` and the base58 64-byte secret key (the 32-byte seed, then the
+ * public key). The relayer is the implicit account of its public key.
+ */
+export function nearRelayerKey(env: CloudflareBindings): {
+  seed: Uint8Array;
+  publicKey: Uint8Array;
+  accountId: string;
+} {
+  const encoded = env.NEAR_RELAYER_KEY;
+  if (!encoded) throw new Error("The NEAR_RELAYER_KEY secret is not set");
+  const invalid = new Error(
+    "The NEAR_RELAYER_KEY secret must be ed25519: and a base58 64-byte secret key",
+  );
+  if (!encoded.startsWith("ed25519:")) throw invalid;
+  let key: Uint8Array;
+  try {
+    key = base58.decode(encoded.slice("ed25519:".length));
+  } catch {
+    throw invalid;
+  }
+  const seed = key.subarray(0, 32);
+  const publicKey = key.subarray(32);
+  if (key.length !== 64 || !equalBytes(ed25519.getPublicKey(seed), publicKey)) throw invalid;
+  return { seed, publicKey, accountId: bytesToHex(publicKey) };
+}
+
+/**
+ * A NEAR network's JSON-RPC endpoint (`NEAR_RPC_URL`), each call giving up
+ * after `timeoutMs`. An error answer rejects with core's `NearRpcError`,
+ * carrying the node's cause; a failed request with core's
+ * `requestFailedError`. Neither names the URL. The secret and `fetch` are
+ * read on each call, so a missing `NEAR_RPC_URL` fails the call, not the
+ * caller building it.
+ */
+export function nearRpc(env: CloudflareBindings, network: Caip2, timeoutMs: number): NearRpc {
+  const name = rpcName(network);
+  return {
+    name,
+    call: (method, params) =>
+      nearRpcAt(fetch, rpcUrl(env, network), name, timeoutMs).call(method, params),
+  };
 }

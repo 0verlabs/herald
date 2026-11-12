@@ -3,7 +3,15 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { bytesToHex, bytesToNumberBE, bytesToNumberLE } from "@noble/curves/utils.js";
 import { keccak_256, sha3_256 } from "@noble/hashes/sha3.js";
 import { base58 } from "@scure/base";
-import type { EvmAddress, HeraldEnv, NearAccountId, SolanaAddress } from "./schemas.ts";
+import { unhandledKind, type Network } from "./networks.ts";
+import type {
+  EvmAddress,
+  HeraldEnv,
+  NearAccountId,
+  NearImplicitAccount,
+  Provider,
+  SolanaAddress,
+} from "./schemas.ts";
 
 /**
  * NEAR's MPC signer contract per Herald environment, and the root public keys of
@@ -36,14 +44,20 @@ export const mpcSigners = {
 /**
  * The signing domain of each curve on the MPC contract (`domain_id`), and the
  * fixed derivation path Herald uses for it. One EVM address serves every EVM
- * network.
+ * network. Changing a path or curve changes every Provider's Receiving
+ * Address on that kind (ADR-0009 for NEAR).
  */
 export const receivingAddressPaths = {
   evm: { path: "ethereum-1", domainId: 0, curve: "secp256k1" },
   solana: { path: "solana-1", domainId: 1, curve: "ed25519" },
+  near: { path: "near-1", domainId: 1, curve: "ed25519" },
 } as const;
 
-export type ReceivingAddresses = { evm: EvmAddress; solana: SolanaAddress };
+export type ReceivingAddresses = {
+  evm: EvmAddress;
+  solana: SolanaAddress;
+  near: NearImplicitAccount;
+};
 
 /**
  * Derives a Provider Account's Receiving Addresses offline, the same way the
@@ -59,9 +73,11 @@ export function deriveReceivingAddresses(
       rootKeys.secp256k1,
       tweak(providerAccount, receivingAddressPaths.evm.path),
     ),
-    solana: deriveSolanaAddress(
-      rootKeys.ed25519,
-      tweak(providerAccount, receivingAddressPaths.solana.path),
+    solana: base58.encode(
+      deriveEd25519Key(rootKeys.ed25519, tweak(providerAccount, receivingAddressPaths.solana.path)),
+    ),
+    near: bytesToHex(
+      deriveEd25519Key(rootKeys.ed25519, tweak(providerAccount, receivingAddressPaths.near.path)),
     ),
   };
 }
@@ -84,15 +100,52 @@ function deriveEvmAddress(rootKey: string, tweakBytes: Uint8Array): EvmAddress {
   return `0x${bytesToHex(keccak_256(derived).subarray(-20))}`;
 }
 
-// ed25519 reads the tweak little-endian, reduced mod the group order.
-function deriveSolanaAddress(rootKey: string, tweakBytes: Uint8Array): SolanaAddress {
+// ed25519 reads the tweak little-endian, reduced mod the group order. A
+// Solana address is the derived key in base58; a NEAR implicit account is
+// the same key in lowercase hex.
+function deriveEd25519Key(rootKey: string, tweakBytes: Uint8Array): Uint8Array {
   const root = ed25519.Point.fromBytes(decodeNearKey(rootKey, "ed25519"));
   const scalar = bytesToNumberLE(tweakBytes) % ed25519.Point.Fn.ORDER;
-  return base58.encode(root.add(ed25519.Point.BASE.multiply(scalar)).toBytes());
+  return root.add(ed25519.Point.BASE.multiply(scalar)).toBytes();
 }
 
 function decodeNearKey(key: string, curve: "secp256k1" | "ed25519"): Uint8Array {
   const prefix = `${curve}:`;
   if (!key.startsWith(prefix)) throw new Error(`Expected a ${curve} key, got ${key}`);
   return base58.decode(key.slice(prefix.length));
+}
+
+/** A Provider's Receiving Address on `network`. */
+export function receivingAddressOn(
+  provider: Pick<Provider, "evmAddress" | "solanaAddress" | "nearAddress">,
+  network: Network,
+): string {
+  switch (network.kind) {
+    case "evm":
+      return provider.evmAddress;
+    case "solana":
+      return provider.solanaAddress;
+    case "near":
+      return provider.nearAddress;
+    default:
+      return unhandledKind(network);
+  }
+}
+
+/**
+ * Whether two addresses on a network of this kind are the same. EVM
+ * addresses compare case-insensitively (checksum casing is optional);
+ * Solana's base58 addresses are case-sensitive, and NEAR account ids are
+ * lowercase, so both compare exactly.
+ */
+export function sameAddress(kind: Network["kind"], a: string, b: string): boolean {
+  switch (kind) {
+    case "evm":
+      return a.toLowerCase() === b.toLowerCase();
+    case "solana":
+    case "near":
+      return a === b;
+    default:
+      return unhandledKind(kind);
+  }
 }

@@ -30,6 +30,7 @@ import {
 import {
   FakeChainQueue,
   FakeNear,
+  FakeNearUsdc,
   FakeOneClick,
   FakeSolana,
   fakeReceipts,
@@ -44,6 +45,9 @@ import {
 // chain queues and 1Click.
 
 const db = () => createDb(env.DB);
+
+// A NEAR these tests never Sweep from.
+const nearUsdc = new FakeNearUsdc();
 
 const BASE = "eip155:8453";
 const BASE_USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -85,6 +89,8 @@ async function mainnetProvider(accountId: string) {
     }),
     readSolana: solana.reader,
     solanaQueue: solana.queue,
+    readNear: nearUsdc.reader,
+    nearQueue: nearUsdc.queue,
     oneClick: oneClick.client,
   };
   const deps = {
@@ -94,6 +100,8 @@ async function mainnetProvider(accountId: string) {
     readReceipt: receipts.read,
     readSolana: solana.reader,
     solanaQueue: solana.queue,
+    readNear: nearUsdc.reader,
+    nearQueue: nearUsdc.queue,
     oneClick: oneClick.client,
   };
   const base = { providerId: context.provider.id, env: "mainnet" as const };

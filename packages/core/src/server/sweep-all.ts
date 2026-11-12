@@ -1,4 +1,4 @@
-import type { Caip2 } from "../networks.ts";
+import { unhandledKind, type Caip2 } from "../networks.ts";
 import type { HeraldEnv, Sweep } from "../schemas.ts";
 import {
   getSweepOptions,
@@ -16,14 +16,19 @@ import {
  * Where "Sweep all" sends each chain's USDC:
  *
  * - `same_chain`: to an address on the chain itself, `evmDestination` on
- *   every EVM chain and `solanaDestination` on Solana. A kind of chain
- *   without one is left out.
+ *   every EVM chain, `solanaDestination` on Solana and `nearDestination`
+ *   on NEAR. A kind of chain without one is left out.
  * - `cross_chain`: to `destination` on `destinationNetwork`. That chain
  *   Sweeps on itself (`same_chain`); the others go through 1Click.
  * - `intents`: into the Provider Account's NEAR Intents account.
  */
 export type SweepAllTarget =
-  | { destinationKind: "same_chain"; evmDestination?: string; solanaDestination?: string }
+  | {
+      destinationKind: "same_chain";
+      evmDestination?: string;
+      solanaDestination?: string;
+      nearDestination?: string;
+    }
   | { destinationKind: "cross_chain"; destinationNetwork: string; destination: string }
   | { destinationKind: "intents" };
 
@@ -137,11 +142,27 @@ function worthSweeping(chain: SweepChainOption): boolean {
   return chain.balance.ok ? chain.sweepAll : chain.minimum !== null;
 }
 
+function sameChainDestination(
+  chain: SweepChainOption,
+  target: Extract<SweepAllTarget, { destinationKind: "same_chain" }>,
+): string | undefined {
+  switch (chain.kind) {
+    case "evm":
+      return target.evmDestination;
+    case "solana":
+      return target.solanaDestination;
+    case "near":
+      return target.nearDestination;
+    default:
+      return unhandledKind(chain.kind);
+  }
+}
+
 /** Where `target` sends this chain's USDC, or null if it leaves the chain out. */
 function targetFor(chain: SweepChainOption, target: SweepAllTarget): SweepTarget | null {
   switch (target.destinationKind) {
     case "same_chain": {
-      const destination = chain.kind === "evm" ? target.evmDestination : target.solanaDestination;
+      const destination = sameChainDestination(chain, target);
       return destination?.trim() ? { destinationKind: "same_chain", destination } : null;
     }
     case "cross_chain":

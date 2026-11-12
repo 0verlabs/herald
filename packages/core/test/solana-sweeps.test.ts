@@ -31,6 +31,7 @@ import {
 import {
   FakeChainQueue,
   FakeNear,
+  FakeNearUsdc,
   FakeOneClick,
   FakeSolana,
   fakeReceipts,
@@ -42,6 +43,9 @@ import {
 } from "./support/sweeps.ts";
 
 const db = () => createDb(env.DB);
+
+// A NEAR these tests never Sweep from.
+const nearUsdc = new FakeNearUsdc();
 
 const SOLANA_DEVNET = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
 const DEVNET_USDC = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
@@ -58,6 +62,8 @@ async function solanaProvider(accountId: string, balance = "5000000") {
     readUsdcBalance: usdcBalances({ [context.provider.solanaAddress]: balance }),
     readSolana: solana.reader,
     solanaQueue: solana.queue,
+    readNear: nearUsdc.reader,
+    nearQueue: nearUsdc.queue,
     oneClick: new FakeOneClick().client,
   };
   return { ...context, solana, destination, deps };
@@ -305,6 +311,8 @@ async function plannedSolanaSweep(accountId: string) {
     readReceipt: fakeReceipts().read,
     readSolana: context.solana.reader,
     solanaQueue: context.solana.queue,
+    readNear: nearUsdc.reader,
+    nearQueue: nearUsdc.queue,
     oneClick: new FakeOneClick().client,
   };
   const sign = (options: { key?: Uint8Array; payload?: Hex; pending?: boolean } = {}) =>
@@ -537,6 +545,8 @@ describe("the daily cap", () => {
       readReceipt: fakeReceipts().read,
       readSolana: context.solana.reader,
       solanaQueue: context.solana.queue,
+      readNear: nearUsdc.reader,
+      nearQueue: nearUsdc.queue,
       oneClick: new FakeOneClick().client,
     };
     const planOne = () =>

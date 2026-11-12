@@ -20,9 +20,10 @@
 // SESSIONS holds dashboard sessions. SIGN_IN_RATE_LIMITER allows 20 sign-in
 // requests (challenges and signatures) per minute per client IP.
 //
-// SOLANA_CHAIN_QUEUE and EVM_CHAIN_QUEUE are the facilitator's chain queues
-// (ADR-0006), bound across Workers with `script_name`: the facilitator Worker
-// of the same environment. Registration queues each Provider's Solana USDC
+// SOLANA_CHAIN_QUEUE, EVM_CHAIN_QUEUE and NEAR_CHAIN_QUEUE are the
+// facilitator's chain queues (ADR-0006), bound across Workers with
+// `script_name`: the facilitator Worker of the same environment. The NEAR one
+// names Herald's NEAR relayer for the admin page. Registration queues each Provider's Solana USDC
 // token account on the Solana one; Sweeps submit their signed transfers
 // through the queue of their chain, which pays the gas (on Solana, as the
 // transaction's fee payer). Locally, run the facilitator with `wrangler dev`
@@ -41,9 +42,11 @@
 // comma-separated ("ops.near, alice.near"). Empty means nobody. The page
 // shows each chain's gas wallet (its address from the chain queue, its
 // balance over <CHAIN>_RPC_URL) and warns when a balance falls below
-// GAS_LOW_BALANCE_THRESHOLDS: whole native tokens (ETH, SOL, POL, AVAX) keyed
-// by CAIP-2 network. A network left out never warns. Admins also edit the
-// Sweep minimums there, in D1, without a deploy.
+// GAS_LOW_BALANCE_THRESHOLDS: whole native tokens (NEAR, ETH, SOL, POL, AVAX)
+// keyed by CAIP-2 network. A network left out never warns. NEAR's gas wallet
+// is the relayer, at 0.5 NEAR in both environments; `near:mainnet` is set
+// ahead of Herald listing NEAR on mainnet and takes effect once it does.
+// Admins also edit the Sweep minimums there, in D1, without a deploy.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "herald-web",
@@ -55,6 +58,7 @@
     "HERALD_ENV": "testnet",
     "HERALD_ADMINS": "",
     "GAS_LOW_BALANCE_THRESHOLDS": {
+      "near:testnet": "0.5",
       "eip155:84532": "0.01",
       "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "0.5",
       "eip155:421614": "0.01",
@@ -73,6 +77,11 @@
       {
         "name": "EVM_CHAIN_QUEUE",
         "class_name": "EvmChainQueue",
+        "script_name": "herald-facilitator",
+      },
+      {
+        "name": "NEAR_CHAIN_QUEUE",
+        "class_name": "NearChainQueue",
         "script_name": "herald-facilitator",
       },
     ],
@@ -101,6 +110,7 @@
         "HERALD_ENV": "testnet",
         "HERALD_ADMINS": "",
         "GAS_LOW_BALANCE_THRESHOLDS": {
+          "near:testnet": "0.5",
           "eip155:84532": "0.01",
           "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "0.5",
           "eip155:421614": "0.01",
@@ -119,6 +129,11 @@
           {
             "name": "EVM_CHAIN_QUEUE",
             "class_name": "EvmChainQueue",
+            "script_name": "herald-facilitator-testnet",
+          },
+          {
+            "name": "NEAR_CHAIN_QUEUE",
+            "class_name": "NearChainQueue",
             "script_name": "herald-facilitator-testnet",
           },
         ],
@@ -147,6 +162,7 @@
         "HERALD_ENV": "mainnet",
         "HERALD_ADMINS": "",
         "GAS_LOW_BALANCE_THRESHOLDS": {
+          "near:mainnet": "0.5",
           "eip155:8453": "0.002",
           "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "0.05",
           "eip155:42161": "0.002",
@@ -174,6 +190,11 @@
           {
             "name": "EVM_CHAIN_QUEUE",
             "class_name": "EvmChainQueue",
+            "script_name": "herald-facilitator-mainnet",
+          },
+          {
+            "name": "NEAR_CHAIN_QUEUE",
+            "class_name": "NearChainQueue",
             "script_name": "herald-facilitator-mainnet",
           },
         ],

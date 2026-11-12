@@ -1,4 +1,10 @@
-import { EvmAddressSchema, SolanaAddressSchema, type SweepStatus } from "@herald/core";
+import {
+  EvmAddressSchema,
+  NearAccountIdSchema,
+  SolanaAddressSchema,
+  unhandledKind,
+  type SweepStatus,
+} from "@herald/core";
 import type { SweepChainOption, SweepEntry } from "@herald/core/server";
 
 // A Sweep is a withdrawal on screen: the code keeps the domain's words,
@@ -9,12 +15,36 @@ export type Step = "idle" | "planning" | "quoting" | "signing" | "submitting";
 
 /** Why `address` isn't one to withdraw to on a network of this kind, or null if it is. */
 export function addressProblem(address: string, kind: SweepChainOption["kind"]): string | null {
-  if (kind === "evm") {
-    return EvmAddressSchema.safeParse(address).success
-      ? null
-      : "Enter an address that starts with 0x and has 40 more characters.";
+  switch (kind) {
+    case "evm":
+      return EvmAddressSchema.safeParse(address).success
+        ? null
+        : "Enter an address that starts with 0x and has 40 more characters.";
+    case "solana":
+      return SolanaAddressSchema.safeParse(address).success
+        ? null
+        : "Enter a Solana wallet address.";
+    case "near":
+      return NearAccountIdSchema.safeParse(address).success
+        ? null
+        : "Enter a NEAR account id, such as alice.near, or a 64-character implicit account. It's lowercase, without spaces.";
+    default:
+      return unhandledKind(kind);
   }
-  return SolanaAddressSchema.safeParse(address).success ? null : "Enter a Solana wallet address.";
+}
+
+/** The hint in an empty address field for a network of this kind. */
+export function addressPlaceholder(kind: SweepChainOption["kind"]): string {
+  switch (kind) {
+    case "evm":
+      return "0x…";
+    case "solana":
+      return "Solana wallet address";
+    case "near":
+      return "NEAR account id";
+    default:
+      return unhandledKind(kind);
+  }
 }
 
 /** Seconds as `4:05`. */

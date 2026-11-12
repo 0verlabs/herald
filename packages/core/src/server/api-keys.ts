@@ -5,12 +5,12 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   apiKeyPrefixes,
   ApiKeySchema,
-  ProviderSchema,
   type ApiKey,
   type HeraldEnv,
   type Provider,
 } from "../schemas.ts";
 import type { Db } from "./db.ts";
+import { providerFromRow } from "./providers.ts";
 
 // `hk_test_` plus four characters of the random part: enough to tell keys
 // apart in the dashboard, far too little to guess the rest.
@@ -108,7 +108,7 @@ export async function authenticateApiKey(
   return {
     ok: true,
     apiKey: ApiKeySchema.parse(row.apiKey),
-    provider: ProviderSchema.parse(row.provider),
+    provider: await providerFromRow(db, row.provider, env),
   };
 }
 

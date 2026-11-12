@@ -1,4 +1,4 @@
-import { rpcUrlsFrom, SweepMinimumEditSchema } from "@herald/core";
+import { rpcUrlsFrom, SweepMinimumEditSchema, unhandledKind } from "@herald/core";
 import {
   getGasWallets,
   listSweepMinimums,
@@ -13,6 +13,7 @@ import { env } from "cloudflare:workers";
 import { sessionToken } from "./auth";
 import { evmGasWallet } from "./evm-chain-queue";
 import { readHeraldEnv } from "./herald-env";
+import { nearRelayer } from "./near-chain-queue";
 import { solanaSweepQueue } from "./solana-chain-queue";
 
 // The admin page and its server functions are for the Herald admins in the
@@ -50,8 +51,18 @@ export const getGasWalletStatuses = createServerFn({ method: "GET" })
     const solana = solanaSweepQueue();
     return getGasWallets(
       {
-        gasWalletAddress: (network) =>
-          network.kind === "evm" ? evmGasWallet(network.caip2) : solana.feePayer(network.caip2),
+        gasWalletAddress: (network) => {
+          switch (network.kind) {
+            case "evm":
+              return evmGasWallet(network.caip2);
+            case "solana":
+              return solana.feePayer(network.caip2);
+            case "near":
+              return nearRelayer(network.caip2);
+            default:
+              return unhandledKind(network);
+          }
+        },
         readNativeBalance: rpcNativeBalanceReader(rpcUrlsFrom(env)),
       },
       { env: readHeraldEnv(), lowBalanceThresholds: env.GAS_LOW_BALANCE_THRESHOLDS },
