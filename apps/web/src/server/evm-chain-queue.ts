@@ -1,3 +1,4 @@
+import type { Caip2 } from "@herald/core";
 import type { EvmChainQueueRpc, EvmSweepSubmitter } from "@herald/core/server";
 import { createServerOnlyFn } from "@tanstack/react-start";
 import { env } from "cloudflare:workers";
@@ -7,6 +8,15 @@ import { env } from "cloudflare:workers";
 // refresh submits again (the queue answers the same hash for the same
 // authorization).
 const SUBMIT_TIMEOUT_MS = 30_000;
+
+/**
+ * Herald's EVM gas wallet, as the facilitator's EVM chain queue for
+ * `network` names it. Server only.
+ */
+export const evmGasWallet = createServerOnlyFn((network: Caip2): Promise<string> => {
+  const queue = env.EVM_CHAIN_QUEUE.getByName(network) as DurableObjectStub & EvmChainQueueRpc;
+  return queue.gasWallet();
+});
 
 /**
  * Submits a Sweep's signed transfer through the facilitator's EVM chain

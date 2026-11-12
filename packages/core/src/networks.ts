@@ -22,6 +22,9 @@ export type Caip2 = `${string}:${string}`;
  * payments and Sweeps) commit to. `txExplorer` is a block explorer's page
  * for a transaction, with `{txHash}` where the hash goes (see
  * `explorerTxUrl`).
+ *
+ * `native` is the chain's own token, which pays its gas: Herald's gas
+ * wallet holds it.
  */
 export type Network =
   | {
@@ -29,6 +32,7 @@ export type Network =
       caip2: Caip2;
       label: string;
       usdc: { address: string; decimals: number; eip712: { name: string; version: string } };
+      native: NativeToken;
       txExplorer: string;
     }
   | {
@@ -36,8 +40,15 @@ export type Network =
       caip2: Caip2;
       label: string;
       usdc: { address: string; decimals: number };
+      native: NativeToken;
       txExplorer: string;
     };
+
+/** A chain's native token: its symbol and decimals (18 for ETH, 9 for SOL). */
+export type NativeToken = { symbol: string; decimals: number };
+
+const ETH: NativeToken = { symbol: "ETH", decimals: 18 };
+const SOL: NativeToken = { symbol: "SOL", decimals: 9 };
 
 // Domains were read from each contract's `name()` / `version()` on
 // 2026-11-10; the opt-in live test in live.test.ts re-checks them. Testnet
@@ -54,6 +65,7 @@ const mainnet: readonly Network[] = [
       decimals: USDC_DECIMALS,
       eip712: USD_COIN_V2,
     },
+    native: ETH,
     txExplorer: "https://basescan.org/tx/{txHash}",
   },
   {
@@ -61,6 +73,7 @@ const mainnet: readonly Network[] = [
     caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
     label: "Solana",
     usdc: { address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", decimals: USDC_DECIMALS },
+    native: SOL,
     txExplorer: "https://explorer.solana.com/tx/{txHash}",
   },
   {
@@ -72,6 +85,7 @@ const mainnet: readonly Network[] = [
       decimals: USDC_DECIMALS,
       eip712: USD_COIN_V2,
     },
+    native: ETH,
     txExplorer: "https://arbiscan.io/tx/{txHash}",
   },
   {
@@ -83,6 +97,7 @@ const mainnet: readonly Network[] = [
       decimals: USDC_DECIMALS,
       eip712: USD_COIN_V2,
     },
+    native: { symbol: "POL", decimals: 18 },
     txExplorer: "https://polygonscan.com/tx/{txHash}",
   },
   {
@@ -94,6 +109,7 @@ const mainnet: readonly Network[] = [
       decimals: USDC_DECIMALS,
       eip712: USD_COIN_V2,
     },
+    native: { symbol: "AVAX", decimals: 18 },
     txExplorer: "https://snowtrace.io/tx/{txHash}",
   },
 ];
@@ -109,6 +125,7 @@ const testnet: readonly Network[] = [
       decimals: USDC_DECIMALS,
       eip712: { name: "USDC", version: "2" },
     },
+    native: ETH,
     txExplorer: "https://sepolia.basescan.org/tx/{txHash}",
   },
   {
@@ -116,6 +133,7 @@ const testnet: readonly Network[] = [
     caip2: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
     label: "Solana Devnet",
     usdc: { address: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", decimals: USDC_DECIMALS },
+    native: SOL,
     txExplorer: "https://explorer.solana.com/tx/{txHash}?cluster=devnet",
   },
   {
@@ -127,6 +145,7 @@ const testnet: readonly Network[] = [
       decimals: USDC_DECIMALS,
       eip712: USD_COIN_V2,
     },
+    native: ETH,
     txExplorer: "https://sepolia.arbiscan.io/tx/{txHash}",
   },
 ];
