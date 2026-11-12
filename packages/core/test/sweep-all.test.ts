@@ -1,6 +1,7 @@
 import { createDb } from "@herald/db";
 import { env } from "cloudflare:workers";
 import { describe, expect, test } from "vite-plus/test";
+import type { Sweep } from "../src/schemas.ts";
 import {
   completeSweep,
   planSweep,
@@ -22,9 +23,12 @@ import {
 
 const db = () => createDb(env.DB);
 
-// A NEAR these tests never Sweep from.
+// A NEAR the mainnet tests never Sweep from.
 const nearUsdc = new FakeNearUsdc();
 
+const NEAR_TESTNET = "near:testnet";
+/** A named NEAR account registered on USDC. */
+const NEAR_DESTINATION = "alice.testnet";
 const BASE_SEPOLIA = "eip155:84532";
 const ARBITRUM_SEPOLIA = "eip155:421614";
 const SOLANA_DEVNET = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
@@ -47,13 +51,19 @@ function balancesByNetwork(balances: Record<string, string>): UsdcBalanceReader 
   };
 }
 
-/** A testnet Provider with the given balances, a Solana wallet to Sweep to, and the fakes it Sweeps through. */
+/**
+ * A testnet Provider with the given balances, a Solana wallet to Sweep to,
+ * its NEAR Receiving Address set up, and the fakes it Sweeps through.
+ */
 async function testnetProvider(accountId: string, balances: Record<string, string>) {
   const context = await sweepingProvider(accountId);
   const solana = new FakeSolana();
   await solana.addTokenAccount(context.provider.solanaAddress, DEVNET_USDC);
   const solanaDestination = solanaKeyPair().address;
   solana.accounts.set(solanaDestination, SYSTEM_PROGRAM);
+  const nearChain = new FakeNearUsdc();
+  nearChain.addAccount(context.provider.nearAddress);
+  nearChain.registered.add(NEAR_DESTINATION);
   const near = new FakeNear();
   const queue = new FakeChainQueue();
   const oneClick = new FakeOneClick();
@@ -62,8 +72,8 @@ async function testnetProvider(accountId: string, balances: Record<string, strin
     readUsdcBalance: balancesByNetwork(balances),
     readSolana: solana.reader,
     solanaQueue: solana.queue,
-    readNear: nearUsdc.reader,
-    nearQueue: nearUsdc.queue,
+    readNear: nearChain.reader,
+    nearQueue: nearChain.queue,
     oneClick: oneClick.client,
   };
   const receipts = fakeReceipts();
@@ -74,8 +84,8 @@ async function testnetProvider(accountId: string, balances: Record<string, strin
     readReceipt: receipts.read,
     readSolana: solana.reader,
     solanaQueue: solana.queue,
-    readNear: nearUsdc.reader,
-    nearQueue: nearUsdc.queue,
+    readNear: nearChain.reader,
+    nearQueue: nearChain.queue,
     oneClick: oneClick.client,
   };
   const base = { providerId: context.provider.id, env: "testnet" as const };
@@ -88,6 +98,7 @@ async function testnetProvider(accountId: string, balances: Record<string, strin
     ...context,
     solana,
     solanaDestination,
+    nearChain,
     near,
     queue,
     receipts,
@@ -131,6 +142,189 @@ describe("planSweepAll", () => {
       "solana-1",
     ]);
     expect(plan.skipped).toEqual([]);
+  });
+
+  test("plans a NEAR Sweep of the whole NEAR balance to the NEAR destination, alongside the other chains", async () => {
+    const context = await testnetProvider("all-near.testnet", {
+      [NEAR_TESTNET]: "4000000",
+      [BASE_SEPOLIA]: "2000000",
+      [SOLANA_DEVNET]: "3000000",
+    });
+
+    const plan = await planSweepAll(context.planDeps, {
+      ...context.base,
+      target: { ...context.target, nearDestination: NEAR_DESTINATION },
+    });
+
+    if (!plan.ok) throw new Error(plan.message);
+    // NEAR is the first Payment Option.
+    expect(plan.planned.map(({ sweep }) => sweep)).toEqual([
+      expect.objectContaining({
+        sourceKind: "near",
+        sourceNetwork: NEAR_TESTNET,
+        amount: "4000000",
+        destinationKind: "same_chain",
+        destinationAddress: NEAR_DESTINATION,
+        status: "planned",
+      }),
+      expect.objectContaining({ sourceNetwork: BASE_SEPOLIA, amount: "2000000" }),
+      expect.objectContaining({ sourceNetwork: SOLANA_DEVNET, amount: "3000000" }),
+    ]);
+    // Each Sweep is its own MPC `sign` call, for its own NEAR transaction.
+    expect(plan.planned.map(({ signRequest }) => signRequest.args.request.path)).toEqual([
+      "near-1",
+      "ethereum-1",
+      "solana-1",
+    ]);
+    expect(plan.skipped).toEqual([]);
+  });
+
+  test("leaves NEAR out when it holds less than its minimum, as it does any chain", async () => {
+    // NEAR's minimum is 0.001 USDC.
+    const context = await testnetProvider("all-near-dust.testnet", {
+      [NEAR_TESTNET]: "999",
+      [BASE_SEPOLIA]: "2000000",
+    });
+    const target = { ...context.target, nearDestination: NEAR_DESTINATION };
+
+    const plan = await planSweepAll(context.planDeps, { ...context.base, target });
+    const nearOnly = await planSweepAll(
+      { ...context.planDeps, readUsdcBalance: balancesByNetwork({ [NEAR_TESTNET]: "999" }) },
+      { ...context.base, target },
+    );
+
+    if (!plan.ok) throw new Error(plan.message);
+    expect(plan.planned.map(({ sweep }) => sweep.sourceNetwork)).toEqual([BASE_SEPOLIA]);
+    expect(plan.skipped).toEqual([]);
+    expect(nearOnly).toMatchObject({
+      ok: false,
+      reason: "nothing_to_sweep",
+      message: expect.stringContaining("minimum"),
+    });
+    expect(context.nearChain.submissions).toHaveLength(0);
+  });
+
+  test("skips NEAR with the reason when its balance or NEAR itself can't be read, and plans the others", async () => {
+    const unreadBalance = await testnetProvider("all-near-balance-down.testnet", {
+      [NEAR_TESTNET]: "down",
+      [BASE_SEPOLIA]: "2000000",
+    });
+    const nearDown = await testnetProvider("all-near-rpc-down.testnet", {
+      [NEAR_TESTNET]: "4000000",
+      [BASE_SEPOLIA]: "2000000",
+    });
+    nearDown.nearChain.readsFail = true;
+
+    const [balancePlan, chainPlan] = await Promise.all(
+      [unreadBalance, nearDown].map((context) =>
+        planSweepAll(context.planDeps, {
+          ...context.base,
+          target: { ...context.target, nearDestination: NEAR_DESTINATION },
+        }),
+      ),
+    );
+
+    for (const plan of [balancePlan, chainPlan]) {
+      if (!plan?.ok) throw new Error(plan?.message);
+      expect(plan.planned.map(({ sweep }) => sweep.sourceNetwork)).toEqual([BASE_SEPOLIA]);
+    }
+    expect(balancePlan).toMatchObject({
+      skipped: [{ network: NEAR_TESTNET, label: "NEAR Testnet", reason: "balance_unavailable" }],
+    });
+    expect(chainPlan).toMatchObject({
+      skipped: [{ network: NEAR_TESTNET, label: "NEAR Testnet", reason: "chain_unavailable" }],
+    });
+  });
+
+  test("counts a NEAR Sweep against the daily cap, and skips NEAR once the cap is reached", async () => {
+    const context = await testnetProvider("all-near-cap.testnet", {
+      [NEAR_TESTNET]: "4000000",
+      [BASE_SEPOLIA]: "20000000",
+      [SOLANA_DEVNET]: "3000000",
+    });
+    const target = { ...context.target, nearDestination: NEAR_DESTINATION };
+    // 9 of the 10 Sweeps allowed in 24 hours are already submitted.
+    for (let i = 0; i < 9; i++) {
+      const one = await planSweep(context.planDeps, {
+        ...context.base,
+        network: BASE_SEPOLIA,
+        amount: "150000",
+        destination: EVM_DESTINATION,
+      });
+      if (!one.ok) throw new Error(one.message);
+      const nearTxHash = await context.near.sign({
+        signerId: context.provider.accountId,
+        request: one.signRequest,
+        key: context.receivingKey,
+      });
+      await completeSweep(context.deps, { ...context.base, sweepId: one.sweep.id, nearTxHash });
+    }
+
+    const plan = await planSweepAll(context.planDeps, { ...context.base, target });
+    if (!plan.ok) throw new Error(plan.message);
+    const [nearSweep] = plan.planned;
+    if (!nearSweep) throw new Error("Expected a NEAR Sweep");
+    const nearTxHash = await context.near.sign({
+      signerId: context.provider.accountId,
+      request: nearSweep.signRequest,
+      key: context.nearKey,
+    });
+    const completed = await completeSweep(context.deps, {
+      ...context.base,
+      sweepId: nearSweep.sweep.id,
+      nearTxHash,
+    });
+    const afterCap = await planSweepAll(context.planDeps, { ...context.base, target });
+
+    // NEAR comes first, so it takes the last place.
+    expect(plan.planned.map(({ sweep }) => sweep.sourceNetwork)).toEqual([NEAR_TESTNET]);
+    expect(plan.skipped.map(({ network, reason }) => [network, reason])).toEqual([
+      [BASE_SEPOLIA, "daily_cap_reached"],
+      [SOLANA_DEVNET, "daily_cap_reached"],
+    ]);
+    expect(completed).toMatchObject({ ok: true, sweep: { status: "submitted" } });
+    // The NEAR Sweep was the 10th: nothing else fits, NEAR included.
+    if (!afterCap.ok) throw new Error(afterCap.message);
+    expect(afterCap.planned).toEqual([]);
+    expect(afterCap.skipped.map(({ network, reason }) => [network, reason])).toEqual([
+      [NEAR_TESTNET, "daily_cap_reached"],
+      [BASE_SEPOLIA, "daily_cap_reached"],
+      [SOLANA_DEVNET, "daily_cap_reached"],
+    ]);
+  });
+
+  test("Sweeps NEAR on itself when everything goes to a NEAR account, and skips the chains it can't bridge", async () => {
+    // The dashboard's "withdraw everything" sends everything to one network.
+    const context = await testnetProvider("all-to-near.testnet", {
+      [NEAR_TESTNET]: "4000000",
+      [BASE_SEPOLIA]: "2000000",
+    });
+
+    const plan = await planSweepAll(context.planDeps, {
+      ...context.base,
+      target: {
+        destinationKind: "cross_chain",
+        destinationNetwork: NEAR_TESTNET,
+        destination: NEAR_DESTINATION,
+      },
+    });
+
+    if (!plan.ok) throw new Error(plan.message);
+    expect(plan.planned.map(({ sweep, quote }) => [sweep, quote])).toEqual([
+      [
+        expect.objectContaining({
+          sourceKind: "near",
+          amount: "4000000",
+          destinationKind: "same_chain",
+          destinationNetwork: NEAR_TESTNET,
+          destinationAddress: NEAR_DESTINATION,
+        }),
+        null,
+      ],
+    ]);
+    expect(plan.skipped).toEqual([
+      expect.objectContaining({ network: BASE_SEPOLIA, reason: "unsupported_destination" }),
+    ]);
   });
 
   test("still plans the other chains when one can't be planned, and says why it was skipped", async () => {
@@ -366,5 +560,105 @@ describe("completing the Sweeps of a Sweep all", () => {
         [SOLANA_DEVNET]: "failed",
       },
     );
+  });
+});
+
+describe("completing the NEAR Sweep of a Sweep all", () => {
+  /** Plans a same-chain Sweep all from NEAR, Base Sepolia and Solana Devnet. */
+  async function plannedWithNear(accountId: string) {
+    const context = await testnetProvider(accountId, {
+      [NEAR_TESTNET]: "4000000",
+      [BASE_SEPOLIA]: "2000000",
+      [SOLANA_DEVNET]: "3000000",
+    });
+    const plan = await planSweepAll(context.planDeps, {
+      ...context.base,
+      target: { ...context.target, nearDestination: NEAR_DESTINATION },
+    });
+    if (!plan.ok) throw new Error(plan.message);
+    const keyOf = (sweep: Sweep) =>
+      sweep.sourceKind === "evm"
+        ? context.receivingKey
+        : sweep.sourceKind === "solana"
+          ? context.solanaKey
+          : context.nearKey;
+    /** Sends each `sign` call in its own NEAR transaction, failing `failOn`'s on NEAR, then hands each to Herald. */
+    const signAndComplete = async (failOn?: Sweep["sourceKind"]) => {
+      const signed = await Promise.all(
+        plan.planned.map(async ({ sweep, signRequest }) => ({
+          sweepId: sweep.id,
+          nearTxHash: await context.near.sign({
+            signerId: context.provider.accountId,
+            request: signRequest,
+            key: keyOf(sweep),
+            failure:
+              sweep.sourceKind === failOn
+                ? { ActionError: { kind: { FunctionCallError: { ExecutionError: "timed out" } } } }
+                : undefined,
+          }),
+        })),
+      );
+      return Promise.all(
+        signed.map((one) => completeSweep(context.deps, { ...context.base, ...one })),
+      );
+    };
+    const statuses = async () =>
+      Object.fromEntries(
+        (await refreshSweeps(context.deps, context.base)).map((sweep) => [
+          sweep.sourceNetwork,
+          sweep.status,
+        ]),
+      );
+    return { ...context, plan, signAndComplete, statuses };
+  }
+
+  test("the NEAR Sweep is relayed and confirms on its own while the Solana one fails", async () => {
+    const context = await plannedWithNear("all-near-complete.testnet");
+
+    const completed = await context.signAndComplete("solana");
+
+    expect(
+      completed.map((result) =>
+        result.ok ? [result.sweep.sourceNetwork, result.sweep.status] : result.message,
+      ),
+    ).toEqual([
+      [NEAR_TESTNET, "submitted"],
+      [BASE_SEPOLIA, "submitted"],
+      [SOLANA_DEVNET, "failed"],
+    ]);
+    expect(context.nearChain.submissions.map(({ network }) => network)).toEqual([NEAR_TESTNET]);
+    const nearSweep = completed[0];
+    if (!nearSweep?.ok || !nearSweep.sweep.sourceTxHash)
+      throw new Error("Expected a relayed NEAR Sweep");
+    context.nearChain.statuses.set(nearSweep.sweep.sourceTxHash, { kind: "success" });
+    expect(await context.statuses()).toEqual({
+      [NEAR_TESTNET]: "confirmed",
+      [BASE_SEPOLIA]: "submitted",
+      [SOLANA_DEVNET]: "failed",
+    });
+  });
+
+  test("a NEAR Sweep that fails leaves the other chains going", async () => {
+    const context = await plannedWithNear("all-near-fails.testnet");
+
+    const completed = await context.signAndComplete("near");
+    for (const sweep of await refreshSweeps(context.deps, context.base)) {
+      if (sweep.sourceKind === "evm" && sweep.sourceTxHash) {
+        context.receipts.receipts[sweep.sourceTxHash] = "success";
+      }
+    }
+
+    expect(completed.map((result) => result.ok && result.sweep.status)).toEqual([
+      "failed",
+      "submitted",
+      "submitted",
+    ]);
+    expect(context.nearChain.submissions).toHaveLength(0);
+    expect(context.solana.submissions).toHaveLength(1);
+    expect(await context.statuses()).toEqual({
+      [NEAR_TESTNET]: "failed",
+      [BASE_SEPOLIA]: "confirmed",
+      [SOLANA_DEVNET]: "submitted",
+    });
   });
 });

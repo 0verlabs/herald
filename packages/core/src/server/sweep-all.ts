@@ -16,14 +16,19 @@ import {
  * Where "Sweep all" sends each chain's USDC:
  *
  * - `same_chain`: to an address on the chain itself, `evmDestination` on
- *   every EVM chain and `solanaDestination` on Solana. A kind of chain
- *   without one is left out.
+ *   every EVM chain, `solanaDestination` on Solana and `nearDestination`
+ *   on NEAR. A kind of chain without one is left out.
  * - `cross_chain`: to `destination` on `destinationNetwork`. That chain
  *   Sweeps on itself (`same_chain`); the others go through 1Click.
  * - `intents`: into the Provider Account's NEAR Intents account.
  */
 export type SweepAllTarget =
-  | { destinationKind: "same_chain"; evmDestination?: string; solanaDestination?: string }
+  | {
+      destinationKind: "same_chain";
+      evmDestination?: string;
+      solanaDestination?: string;
+      nearDestination?: string;
+    }
   | { destinationKind: "cross_chain"; destinationNetwork: string; destination: string }
   | { destinationKind: "intents" };
 
@@ -147,10 +152,7 @@ function sameChainDestination(
     case "solana":
       return target.solanaDestination;
     case "near":
-      // "Sweep all" takes no NEAR destination yet (#38), so it leaves NEAR
-      // out of a same-chain Sweep all, as it does any kind of chain without
-      // one.
-      return undefined;
+      return target.nearDestination;
     default:
       return unhandledKind(chain.kind);
   }

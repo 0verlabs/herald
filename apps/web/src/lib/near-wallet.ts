@@ -1,4 +1,4 @@
-import type { HeraldEnv } from "@herald/core";
+import { receivingAddressPaths, type HeraldEnv } from "@herald/core";
 import type { MpcSignRequest } from "@herald/core/server";
 import type { NearConnector } from "@hot-labs/near-connect";
 
@@ -107,12 +107,25 @@ export type SignedCalls = {
 };
 
 /**
+ * The order to ask for approvals one at a time: Solana's first, since its
+ * transaction expires within about a minute of planning, then the rest as
+ * planned. A NEAR Sweep's delegate action, like an EVM authorization, stays
+ * valid for about 10 minutes (less if its 1Click quote expires sooner), so
+ * it can wait behind Solana's.
+ */
+function approvalOrder(requests: MpcSignRequest[]): number[] {
+  const indexes = requests.map((_, index) => index);
+  const isSolana = (index: number) =>
+    requests[index]?.args.request.path === receivingAddressPaths.solana.path;
+  return [...indexes.filter(isSolana), ...indexes.filter((index) => !isSolana(index))];
+}
+
+/**
  * Has the wallet send each MPC `sign` call in its own NEAR transaction: the
  * MPC network only answers a `sign` call alone in its transaction, so calls
  * are never batched into one. A wallet that sends several transactions at
- * once asks for one approval; any other asks once per call, Solana's first,
- * since its transaction expires within about a minute. Calls sent before
- * the wallet stops keep their hashes.
+ * once asks for one approval; any other asks once per call, in
+ * `approvalOrder`. Calls sent before the wallet stops keep their hashes.
  */
 export async function signEachInOwnTransaction(
   wallet: Wallet,
@@ -123,10 +136,7 @@ export async function signEachInOwnTransaction(
 
   if (!wallet.manifest.features.signAndSendTransactions) {
     const unsent = requests.map(() => true);
-    const order = requests
-      .map((request, index) => ({ index, solana: "Eddsa" in request.args.request.payload_v2 }))
-      .sort((a, b) => Number(b.solana) - Number(a.solana));
-    for (const { index } of order) {
+    for (const index of approvalOrder(requests)) {
       const request = requests[index];
       if (!request) continue;
       try {
