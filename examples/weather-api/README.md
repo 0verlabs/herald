@@ -33,9 +33,9 @@ Not run live yet: it needs the NEAR relayer funded (`scripts/near-relayer-wizard
    vp -C apps/facilitator run seed <provider>.testnet --env testnet  # or herald-testnet D1
    ```
 
-   It prints the Provider's NEAR Receiving Address, a 64-character implicit account. Set `PROVIDER_ACCOUNT` in `wrangler.jsonc` to `<provider>.testnet`.
+   It prints the Provider's NEAR Receiving Address, a 64-character implicit account, and its setup status. Set `PROVIDER_ACCOUNT` in `wrangler.jsonc` to `<provider>.testnet`.
 
-3. **Register the NEAR Receiving Address on USDC**, until Herald does it at registration (#33). Without it every NEAR payment is refused with `invalid_exact_near_recipient_not_registered_for_storage`. Any testnet account can pay the 0.00125 NEAR:
+3. **Let Herald set up the NEAR Receiving Address.** Herald creates the implicit account and registers it on USDC (`storage_deposit`) at its own cost, from the relayer. Locally, the seed script queues it with the running facilitator; on testnet, it is queued when the Provider signs in to the dashboard. Overview shows "Setting up USDC" until it's done. Until then every NEAR payment is refused with `invalid_exact_near_recipient_not_registered_for_storage`. If you can't wait, any testnet account can register an address itself for 0.00125 NEAR (Herald then skips that step):
 
    ```bash
    near contract call-function as-transaction 3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af \
@@ -80,7 +80,7 @@ If the payment is refused, the Buyer prints `HTTP 402: {"error":"<reason>"}`:
 
 | Reason                                                    | Fix                                                             |
 | --------------------------------------------------------- | --------------------------------------------------------------- |
-| `invalid_exact_near_recipient_not_registered_for_storage` | Step 3.                                                         |
+| `invalid_exact_near_recipient_not_registered_for_storage` | Herald hasn't set up the Receiving Address yet (step 3).        |
 | `invalid_exact_near_no_relayer_configured`                | The facilitator has no valid `NEAR_RELAYER_KEY` (step 1).       |
 | `insufficient_funds`                                      | The Buyer holds less than 0.001 USDC on NEAR testnet (step 4).  |
 | `invalid_exact_near_function_call_key_not_allowed`        | `BUYER_NEAR_KEY` is a function-call key; use a full-access key. |
