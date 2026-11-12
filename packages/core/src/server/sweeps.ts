@@ -6,7 +6,13 @@ import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { and, count, desc, eq, gte, inArray, isNotNull, ne, or } from "drizzle-orm";
 import { encodeFunctionData, hashTypedData, parseAbi, recoverAddress, type Hex } from "viem";
 import { z } from "zod";
-import { explorerTxUrl, networkRegistry, type Caip2, type Network } from "../networks.ts";
+import {
+  explorerTxUrl,
+  networkRegistry,
+  unhandledKind,
+  type Caip2,
+  type Network,
+} from "../networks.ts";
 import { USDC_DECIMALS } from "../price.ts";
 import { mpcSigners, receivingAddressPaths } from "../receiving-addresses.ts";
 import { callJsonRpc, postRpc } from "../rpc.ts";
@@ -363,10 +369,7 @@ export async function planSweep(
   const recipient = quote?.depositAddress ?? target.address;
 
   const context = { provider, network, amount, destination: recipient, now, signBy };
-  const plan =
-    network.kind === "evm"
-      ? planEvmColumns({ ...context, network })
-      : await planSolanaColumns(deps, { ...context, network });
+  const plan = await planColumns(deps, { ...context, network });
   if (!plan.ok) return plan;
 
   const [inserted] = await deps.db
@@ -447,10 +450,16 @@ type ResolvedTarget =
 
 type OneClickTarget = Exclude<ResolvedTarget, { kind: "same_chain" }>;
 
-const enterAddress = (network: Network) =>
-  network.kind === "evm"
-    ? "Enter an EVM address: 0x and 40 hex characters."
-    : "Enter a Solana wallet address.";
+function enterAddress(network: Network): string {
+  switch (network.kind) {
+    case "evm":
+      return "Enter an EVM address: 0x and 40 hex characters.";
+    case "solana":
+      return "Enter a Solana wallet address.";
+    default:
+      return unhandledKind(network);
+  }
+}
 
 /** Checks where a Sweep goes, or says why it can't go there. */
 function resolveTarget(
@@ -658,6 +667,22 @@ type PlanContext<N extends Network> = {
   signBy?: number;
 };
 
+/** Plans the chain-specific columns of a Sweep from `network`. */
+async function planColumns(
+  deps: Pick<SweepPlanDeps, "readSolana" | "solanaQueue">,
+  context: PlanContext<Network>,
+): Promise<PlannedRow> {
+  const { network } = context;
+  switch (network.kind) {
+    case "evm":
+      return planEvmColumns({ ...context, network });
+    case "solana":
+      return planSolanaColumns(deps, { ...context, network });
+    default:
+      return unhandledKind(network);
+  }
+}
+
 function planEvmColumns({
   provider,
   network,
@@ -778,7 +803,14 @@ function chainUnavailable(provider: Provider, network: Network, error: unknown):
 
 /** A Provider's Receiving Address on `network`. */
 function receivingAddressOn(provider: Provider, network: Network): string {
-  return network.kind === "evm" ? provider.evmAddress : provider.solanaAddress;
+  switch (network.kind) {
+    case "evm":
+      return provider.evmAddress;
+    case "solana":
+      return provider.solanaAddress;
+    default:
+      return unhandledKind(network);
+  }
 }
 
 /**
@@ -786,10 +818,14 @@ function receivingAddressOn(provider: Provider, network: Network): string {
  * one: 0x and 40 hex characters on EVM, a base58 32-byte key on Solana.
  */
 function parseDestination(destination: string, network: Network): string | null {
-  if (network.kind === "evm") {
-    return EvmAddressSchema.safeParse(destination).success ? destination : null;
+  switch (network.kind) {
+    case "evm":
+      return EvmAddressSchema.safeParse(destination).success ? destination : null;
+    case "solana":
+      return isAddress(destination) ? destination : null;
+    default:
+      return unhandledKind(network);
   }
-  return isAddress(destination) ? destination : null;
 }
 
 /**
@@ -1195,14 +1231,24 @@ async function advance(deps: SweepDeps, context: SweepContext): Promise<Sweep> {
       ) {
         return fail(deps.db, sweep, dailyCapMessage);
       }
-      return sweep.sourceKind === "evm"
-        ? submitEvmSweep(deps, { ...context, sweep }, signature.successValue)
-        : submitSolanaSweep(deps, { ...context, sweep }, signature.successValue);
+      switch (sweep.sourceKind) {
+        case "evm":
+          return submitEvmSweep(deps, { ...context, sweep }, signature.successValue);
+        case "solana":
+          return submitSolanaSweep(deps, { ...context, sweep }, signature.successValue);
+        default:
+          return unhandledKind(sweep);
+      }
     }
     case "submitted":
-      return sweep.sourceKind === "evm"
-        ? awaitReceipt(deps, { ...context, sweep }, nowSeconds)
-        : awaitSolanaTransaction(deps, { ...context, sweep });
+      switch (sweep.sourceKind) {
+        case "evm":
+          return awaitReceipt(deps, { ...context, sweep }, nowSeconds);
+        case "solana":
+          return awaitSolanaTransaction(deps, { ...context, sweep });
+        default:
+          return unhandledKind(sweep);
+      }
     case "confirmed":
     case "delivering":
       return sweep.destinationKind === "same_chain" ? sweep : followOneClick(deps, context);
@@ -1219,7 +1265,14 @@ function transferRecipient(sweep: Sweep): string {
 /** What `validBefore` is the expiry of, for messages. */
 function expiryOf(sweep: Sweep): string {
   if (sweep.destinationKind !== "same_chain") return "1Click quote";
-  return sweep.sourceKind === "evm" ? "authorization" : "transaction's blockhash";
+  switch (sweep.sourceKind) {
+    case "evm":
+      return "authorization";
+    case "solana":
+      return "transaction's blockhash";
+    default:
+      return unhandledKind(sweep);
+  }
 }
 
 /**
@@ -1704,9 +1757,14 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 /** Whether `address` is the Provider's own Receiving Address on `network`. */
 function isReceivingAddress(address: string, provider: Provider, network: Network): boolean {
   // EVM addresses are case-insensitive; Solana's base58 ones aren't.
-  return network.kind === "evm"
-    ? address.toLowerCase() === provider.evmAddress.toLowerCase()
-    : address === provider.solanaAddress;
+  switch (network.kind) {
+    case "evm":
+      return address.toLowerCase() === provider.evmAddress.toLowerCase();
+    case "solana":
+      return address === provider.solanaAddress;
+    default:
+      return unhandledKind(network);
+  }
 }
 
 /**
@@ -1717,11 +1775,16 @@ function isReceivingAddress(address: string, provider: Provider, network: Networ
  */
 function lostDestination(address: string, network: Network): string | null {
   const lost = `USDC sent to ${address} on ${network.label} is lost. Sweep to an address you control.`;
-  if (network.kind === "solana") {
-    return address === network.usdc.address || address === SYSTEM_PROGRAM_ADDRESS ? lost : null;
+  switch (network.kind) {
+    case "evm": {
+      const to = address.toLowerCase();
+      return to === ZERO_ADDRESS || to === network.usdc.address.toLowerCase() ? lost : null;
+    }
+    case "solana":
+      return address === network.usdc.address || address === SYSTEM_PROGRAM_ADDRESS ? lost : null;
+    default:
+      return unhandledKind(network);
   }
-  const to = address.toLowerCase();
-  return to === ZERO_ADDRESS || to === network.usdc.address.toLowerCase() ? lost : null;
 }
 
 /**
@@ -1775,17 +1838,25 @@ function authorizationPayload(
  */
 function signRequestFor(env: HeraldEnv, sweep: Sweep): MpcSignRequest {
   const { path, domainId } = receivingAddressPaths[sweep.sourceKind];
-  const payload =
-    sweep.sourceKind === "evm"
-      ? { Ecdsa: sweep.payloadHash.slice(2) }
-      : { Eddsa: bytesToHex(solanaTransactionMessage(sweep.solanaTransaction)).slice(2) };
   return {
     contractId: mpcSigners[env].contractId,
     methodName: "sign",
-    args: { request: { payload_v2: payload, path, domain_id: domainId } },
+    args: { request: { payload_v2: signPayloadOf(sweep), path, domain_id: domainId } },
     gas: MPC_SIGN_GAS,
     deposit: MPC_SIGN_DEPOSIT,
   };
+}
+
+/** The MPC `payload_v2` of a planned Sweep. */
+function signPayloadOf(sweep: Sweep): { Ecdsa: string } | { Eddsa: string } {
+  switch (sweep.sourceKind) {
+    case "evm":
+      return { Ecdsa: sweep.payloadHash.slice(2) };
+    case "solana":
+      return { Eddsa: bytesToHex(solanaTransactionMessage(sweep.solanaTransaction)).slice(2) };
+    default:
+      return unhandledKind(sweep);
+  }
 }
 
 /** The chain id of an `eip155:<id>` network. */

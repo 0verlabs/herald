@@ -44,6 +44,19 @@ export type Network =
       txExplorer: string;
     };
 
+/** The kind of chain a network is, which decides how Herald pays and Sweeps on it. */
+export type NetworkKind = Network["kind"];
+
+/**
+ * The `default` of a `switch` over a chain kind (or anything else) that
+ * handles every case. The type checker rejects the call when a case is
+ * missing, so adding a kind fails to compile at every branch that doesn't
+ * handle it. Throws if reached at run time with a value the types ruled out.
+ */
+export function unhandledKind(kind: never): never {
+  throw new Error(`Unhandled kind: ${JSON.stringify(kind)}`);
+}
+
 /** A chain's native token: its symbol and decimals (18 for ETH, 9 for SOL). */
 export type NativeToken = { symbol: string; decimals: number };
 

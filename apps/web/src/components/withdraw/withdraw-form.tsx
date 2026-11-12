@@ -36,7 +36,7 @@ import { discardPlannedSweep, finishSweep, startSweep } from "@/server/sweeps";
 import { OptionSelect, type Option } from "./option-select";
 import { QuoteReview, WithdrawSummary } from "./withdraw-review";
 import { WithdrawLayout } from "./withdraw-layout";
-import { addressProblem, type Step } from "./withdraw-shared";
+import { addressPlaceholder, addressProblem, sameAddress, type Step } from "./withdraw-shared";
 
 const stepLabels: Record<Exclude<Step, "idle">, string> = {
   planning: "Preparing your withdrawal…",
@@ -159,13 +159,9 @@ export function WithdrawFromNetwork(props: {
           ? `You have ${formatUsdc(balance)} USDC on ${chain.label}.`
           : null;
   const trimmedDestination = destination.trim();
-  // EVM addresses are case-insensitive; Solana's base58 ones aren't. A
-  // payment address on another network is fine: that's consolidating.
+  // A payment address on another network is fine: that's consolidating.
   const isOwnAddress =
-    kind === "same_chain" &&
-    (chain.kind === "evm"
-      ? trimmedDestination.toLowerCase() === chain.address.toLowerCase()
-      : trimmedDestination === chain.address);
+    kind === "same_chain" && sameAddress(trimmedDestination, chain.address, chain.kind);
   const destinationProblem =
     !addressChain || !destination
       ? null
@@ -349,7 +345,7 @@ export function WithdrawFromNetwork(props: {
             id="withdraw-destination"
             autoComplete="off"
             spellCheck={false}
-            placeholder={addressChain.kind === "evm" ? "0x…" : "Solana wallet address"}
+            placeholder={addressPlaceholder(addressChain.kind)}
             className="h-11 font-mono text-[0.8rem]"
             value={destination}
             disabled={busy}

@@ -1,4 +1,4 @@
-import type { Caip2 } from "../networks.ts";
+import { unhandledKind, type Caip2 } from "../networks.ts";
 import type { HeraldEnv, Sweep } from "../schemas.ts";
 import {
   getSweepOptions,
@@ -137,11 +137,25 @@ function worthSweeping(chain: SweepChainOption): boolean {
   return chain.balance.ok ? chain.sweepAll : chain.minimum !== null;
 }
 
+function sameChainDestination(
+  chain: SweepChainOption,
+  target: Extract<SweepAllTarget, { destinationKind: "same_chain" }>,
+): string | undefined {
+  switch (chain.kind) {
+    case "evm":
+      return target.evmDestination;
+    case "solana":
+      return target.solanaDestination;
+    default:
+      return unhandledKind(chain.kind);
+  }
+}
+
 /** Where `target` sends this chain's USDC, or null if it leaves the chain out. */
 function targetFor(chain: SweepChainOption, target: SweepAllTarget): SweepTarget | null {
   switch (target.destinationKind) {
     case "same_chain": {
-      const destination = chain.kind === "evm" ? target.evmDestination : target.solanaDestination;
+      const destination = sameChainDestination(chain, target);
       return destination?.trim() ? { destinationKind: "same_chain", destination } : null;
     }
     case "cross_chain":

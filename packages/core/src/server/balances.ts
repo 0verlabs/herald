@@ -1,10 +1,16 @@
 import { providers } from "@herald/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { findNetwork, networkRegistry, type Caip2, type Network } from "../networks.ts";
+import {
+  findNetwork,
+  networkRegistry,
+  unhandledKind,
+  type Caip2,
+  type Network,
+} from "../networks.ts";
 import { decimalToBaseUnits } from "../price.ts";
 import { callJsonRpc } from "../rpc.ts";
-import { ProviderSchema, type HeraldEnv } from "../schemas.ts";
+import { ProviderSchema, type HeraldEnv, type Provider } from "../schemas.ts";
 import type { Db } from "./db.ts";
 
 /**
@@ -45,7 +51,7 @@ export async function getProviderBalances(
   const timeoutMs = deps.timeoutMs ?? BALANCE_READ_TIMEOUT_MS;
   return Promise.all(
     networkRegistry[input.env].map(async (network): Promise<ChainBalance> => {
-      const address = network.kind === "evm" ? provider.evmAddress : provider.solanaAddress;
+      const address = receivingAddressOn(provider, network);
       const chain = { network: network.caip2, label: network.label, address };
       try {
         const amount = await withTimeout(
@@ -71,6 +77,17 @@ export async function getProviderBalances(
       }
     }),
   );
+}
+
+function receivingAddressOn(provider: Provider, network: Network): string {
+  switch (network.kind) {
+    case "evm":
+      return provider.evmAddress;
+    case "solana":
+      return provider.solanaAddress;
+    default:
+      return unhandledKind(network);
+  }
 }
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
@@ -105,32 +122,37 @@ export function rpcUsdcBalanceReader(
     const call = (method: string, params: unknown[]) =>
       jsonRpc(fetchFn, url, network.label, method, params);
 
-    if (network.kind === "evm") {
-      const data = BALANCE_OF_SELECTOR + owner.slice(2).toLowerCase().padStart(64, "0");
-      const result = await call("eth_call", [{ to: network.usdc.address, data }, "latest"]);
-      if (typeof result !== "string" || !/^0x[0-9a-fA-F]{1,64}$/.test(result)) {
-        throw new Error(`${network.label} answered balanceOf with ${JSON.stringify(result)}`);
+    switch (network.kind) {
+      case "evm": {
+        const data = BALANCE_OF_SELECTOR + owner.slice(2).toLowerCase().padStart(64, "0");
+        const result = await call("eth_call", [{ to: network.usdc.address, data }, "latest"]);
+        if (typeof result !== "string" || !/^0x[0-9a-fA-F]{1,64}$/.test(result)) {
+          throw new Error(`${network.label} answered balanceOf with ${JSON.stringify(result)}`);
+        }
+        return BigInt(result).toString();
       }
-      return BigInt(result).toString();
-    }
-
-    const result = (await call("getTokenAccountsByOwner", [
-      owner,
-      { mint: network.usdc.address },
-      { encoding: "jsonParsed", commitment: "confirmed" },
-    ])) as { value?: { account?: { data?: { parsed?: { info?: TokenInfo } } } }[] } | null;
-    if (!Array.isArray(result?.value)) {
-      throw new Error(`${network.label} answered getTokenAccountsByOwner without accounts`);
-    }
-    let total = 0n;
-    for (const { account } of result.value) {
-      const amount = account?.data?.parsed?.info?.tokenAmount?.amount;
-      if (typeof amount !== "string" || !/^\d+$/.test(amount)) {
-        throw new Error(`${network.label} answered a token account without an amount`);
+      case "solana": {
+        const result = (await call("getTokenAccountsByOwner", [
+          owner,
+          { mint: network.usdc.address },
+          { encoding: "jsonParsed", commitment: "confirmed" },
+        ])) as { value?: { account?: { data?: { parsed?: { info?: TokenInfo } } } }[] } | null;
+        if (!Array.isArray(result?.value)) {
+          throw new Error(`${network.label} answered getTokenAccountsByOwner without accounts`);
+        }
+        let total = 0n;
+        for (const { account } of result.value) {
+          const amount = account?.data?.parsed?.info?.tokenAmount?.amount;
+          if (typeof amount !== "string" || !/^\d+$/.test(amount)) {
+            throw new Error(`${network.label} answered a token account without an amount`);
+          }
+          total += BigInt(amount);
+        }
+        return total.toString();
       }
-      total += BigInt(amount);
+      default:
+        return unhandledKind(network);
     }
-    return total.toString();
   };
 }
 
@@ -289,25 +311,32 @@ export function rpcNativeBalanceReader(
     const url = rpcUrls[network.caip2];
     if (!url) throw new Error(`Herald has no RPC endpoint for ${network.label}`);
 
-    if (network.kind === "evm") {
-      const result = await jsonRpc(fetchFn, url, network.label, "eth_getBalance", [
-        owner,
-        "latest",
-      ]);
-      if (typeof result !== "string" || !/^0x[0-9a-fA-F]{1,64}$/.test(result)) {
-        throw new Error(`${network.label} answered eth_getBalance with ${JSON.stringify(result)}`);
+    switch (network.kind) {
+      case "evm": {
+        const result = await jsonRpc(fetchFn, url, network.label, "eth_getBalance", [
+          owner,
+          "latest",
+        ]);
+        if (typeof result !== "string" || !/^0x[0-9a-fA-F]{1,64}$/.test(result)) {
+          throw new Error(
+            `${network.label} answered eth_getBalance with ${JSON.stringify(result)}`,
+          );
+        }
+        return BigInt(result).toString();
       }
-      return BigInt(result).toString();
+      case "solana": {
+        const result = (await jsonRpc(fetchFn, url, network.label, "getBalance", [
+          owner,
+          { commitment: "confirmed" },
+        ])) as { value?: unknown } | null;
+        const lamports = result?.value;
+        if (typeof lamports !== "number" || !Number.isSafeInteger(lamports) || lamports < 0) {
+          throw new Error(`${network.label} answered getBalance without a balance`);
+        }
+        return BigInt(lamports).toString();
+      }
+      default:
+        return unhandledKind(network);
     }
-
-    const result = (await jsonRpc(fetchFn, url, network.label, "getBalance", [
-      owner,
-      { commitment: "confirmed" },
-    ])) as { value?: unknown } | null;
-    const lamports = result?.value;
-    if (typeof lamports !== "number" || !Number.isSafeInteger(lamports) || lamports < 0) {
-      throw new Error(`${network.label} answered getBalance without a balance`);
-    }
-    return BigInt(lamports).toString();
   };
 }
