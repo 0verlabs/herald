@@ -92,6 +92,8 @@ describe("getProviderOverview", () => {
 
     expect(await getProviderOverview(db, { providerId: provider.id, env: "mainnet" })).toEqual({
       accountId: "herald-test.near",
+      // Herald doesn't list NEAR on mainnet yet.
+      near: { address: mainnetNear, networks: [], setupStatus: "not_queued" },
       evm: {
         address: "0xf437261ba00ac4f34effb54d54df13a81b220e13",
         networks: ["Base", "Arbitrum", "Polygon", "Avalanche"],
@@ -101,8 +103,6 @@ describe("getProviderOverview", () => {
         networks: ["Solana"],
         tokenAccountStatus: "not_queued",
       },
-      // Herald mainnet doesn't list NEAR yet.
-      near: { address: mainnetNear, networks: [], setupStatus: "not_queued" },
     });
   });
 
@@ -146,6 +146,7 @@ describe("getProviderOverview", () => {
       await getProviderOverview(db, { providerId: provider.id, env: "testnet" }),
     ).toMatchObject({
       accountId: "overview.testnet",
+      near: { address: provider.nearAddress, networks: ["NEAR Testnet"] },
       evm: { networks: ["Base Sepolia", "Arbitrum Sepolia"] },
       solana: { networks: ["Solana Devnet"] },
     });

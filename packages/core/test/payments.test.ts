@@ -54,6 +54,27 @@ describe("getRevenue", () => {
     });
   });
 
+  test("counts NEAR payments, recorded with the Buyer's NEAR account", async () => {
+    const { provider, pay } = await providerWithKey("revenue-near.testnet");
+    await pay({
+      network: "near:testnet",
+      asset: "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+      amount: "4000",
+      buyer: "buyer.testnet",
+    });
+    await pay({ network: BASE_SEPOLIA, asset: BASE_SEPOLIA_USDC, amount: "1000" });
+
+    const revenue = await getRevenue(db(), { providerId: provider.id, env: "testnet" });
+
+    expect(revenue.chains[0]).toEqual({
+      network: "near:testnet",
+      label: "NEAR Testnet",
+      allTime: "4000",
+      last7Days: "4000",
+    });
+    expect(revenue.total).toEqual({ allTime: "5000", last7Days: "5000" });
+  });
+
   test("leaves payments settled more than 7 days ago out of the last 7 days", async () => {
     const { provider, pay } = await providerWithKey("revenue-window.testnet");
     await pay({ network: BASE_SEPOLIA, asset: BASE_SEPOLIA_USDC, amount: "10000" });

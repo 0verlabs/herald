@@ -38,11 +38,11 @@ function setupBadge(setup: { label: string; variant: "outline" | "destructive" }
 }
 
 /**
- * The addresses customers pay into, one row per kind of network: EVM, then
- * Solana, then NEAR where the Herald environment lists it.
+ * The addresses customers pay into, one row per kind of network, in Payment
+ * Option order: NEAR (where Herald lists it), EVM, then Solana.
  */
 export function PaymentAddressesCard({ overview }: { overview: ProviderOverview }) {
-  const { evm, solana, near } = overview;
+  const { near, evm, solana } = overview;
 
   return (
     <Card>
@@ -52,6 +52,15 @@ export function PaymentAddressesCard({ overview }: { overview: ProviderOverview 
       </CardHeader>
       <CardContent>
         <ul className="flex flex-col divide-y rounded-xl border">
+          {near.networks.length > 0 ? (
+            <AddressRow
+              title="NEAR"
+              label="NEAR payment address"
+              address={near.address}
+              networks={near.networks}
+              status={setupBadge(nearSetup[near.setupStatus])}
+            />
+          ) : null}
           <AddressRow
             title="EVM"
             label="EVM payment address"
@@ -66,15 +75,6 @@ export function PaymentAddressesCard({ overview }: { overview: ProviderOverview 
             networks={solana.networks}
             status={setupBadge(solanaSetup[solana.tokenAccountStatus])}
           />
-          {near.networks.length > 0 && (
-            <AddressRow
-              title="NEAR"
-              label="NEAR payment address"
-              address={near.address}
-              networks={near.networks}
-              status={setupBadge(nearSetup[near.setupStatus])}
-            />
-          )}
         </ul>
       </CardContent>
       <CardFooter className="gap-2 text-sm text-muted-foreground">
