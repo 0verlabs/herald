@@ -41,10 +41,9 @@ import {
   type OneClickSwap,
 } from "./one-click.ts";
 import type { NearSweepQueue, NearSweepSubmissionResult } from "./near-chain-queue.ts";
+import { nearDelegatePayloadHash, signedNearDelegate } from "./near-protocol.ts";
 import {
-  nearDelegatePayloadHash,
   nearSweepDelegateAction,
-  signedNearDelegate,
   type NearSweepReader,
   type NearSweepStatus,
 } from "./near-sweeps.ts";

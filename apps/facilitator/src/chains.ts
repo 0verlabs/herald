@@ -2,12 +2,12 @@ import {
   fetchPrivateEndpoint,
   findNetwork,
   HeraldEnvSchema,
-  postRpc,
   requestFailedError,
   rpcUrlSecret,
   type Caip2,
   type HeraldEnv,
 } from "@herald/core";
+import { nearRpcAt, type NearRpc } from "@herald/core/server";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { bytesToHex, equalBytes } from "@noble/curves/utils.js";
 import { base58 } from "@scure/base";
@@ -222,50 +222,19 @@ export function nearRelayerKey(env: CloudflareBindings): {
   return { seed, publicKey, accountId: bytesToHex(publicKey) };
 }
 
-/** An error a NEAR node answered. `rpcCause` is its `cause.name`, e.g. `INVALID_TRANSACTION`. */
-export class NearRpcError extends Error {
-  readonly rpcCause: string | undefined;
-  readonly info: unknown;
-
-  constructor(message: string, cause: string | undefined, info: unknown) {
-    super(message);
-    this.name = "NearRpcError";
-    this.rpcCause = cause;
-    this.info = info;
-  }
-}
-
 /**
- * Calls a NEAR JSON-RPC method (object params) on the network's endpoint and
- * returns its `result`, giving up after `timeoutMs`. An error answer throws
- * a `NearRpcError` with the node's cause; a failed request throws core's
- * `requestFailedError`. Neither names the URL.
+ * A NEAR network's JSON-RPC endpoint (`NEAR_RPC_URL`), each call giving up
+ * after `timeoutMs`. An error answer rejects with core's `NearRpcError`,
+ * carrying the node's cause; a failed request with core's
+ * `requestFailedError`. Neither names the URL. The secret and `fetch` are
+ * read on each call, so a missing `NEAR_RPC_URL` fails the call, not the
+ * caller building it.
  */
-export async function nearRpc(
-  env: CloudflareBindings,
-  network: Caip2,
-  method: string,
-  params: Record<string, unknown>,
-  timeoutMs: number,
-): Promise<unknown> {
-  const response = await postRpc(
-    fetch,
-    rpcUrl(env, network),
-    { jsonrpc: "2.0", id: "herald", method, params },
-    `${rpcName(network)} ${method}`,
-    AbortSignal.timeout(timeoutMs),
-  );
-  const body = (await response.json()) as {
-    result?: unknown;
-    error?: { name?: string; cause?: { name?: string; info?: unknown }; message?: string };
+export function nearRpc(env: CloudflareBindings, network: Caip2, timeoutMs: number): NearRpc {
+  const name = rpcName(network);
+  return {
+    name,
+    call: (method, params) =>
+      nearRpcAt(fetch, rpcUrl(env, network), name, timeoutMs).call(method, params),
   };
-  if (body.error) {
-    const cause = body.error.cause?.name;
-    throw new NearRpcError(
-      `${rpcName(network)} refused ${method}: ${cause ?? body.error.message ?? "error"}`,
-      cause,
-      body.error.cause?.info,
-    );
-  }
-  return body.result;
 }

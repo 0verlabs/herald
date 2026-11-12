@@ -1,28 +1,34 @@
 import { Caip2Schema, NearImplicitAccountSchema, networkRegistry, type Caip2 } from "@herald/core";
 import {
+  delegateAction,
+  finalBlock,
+  ftTransferOutcome,
+  functionCallAction,
+  isStorageRegistered,
+  NearRpcError,
+  outcomeFailure,
   setNearSetupStatus,
+  signedRelayerTransaction,
+  transferAction,
+  viewAccessKey,
+  viewAccount,
+  type NearAction,
   type NearChainQueueRpc,
-  type NearReceiptStatus,
+  type NearOutcome,
+  type NearRpc,
   type NearSettlementResult,
   type NearSettlementSubmission,
   type NearSetupJob,
   type NearSweepSubmission,
   type NearSweepSubmissionResult,
+  type SignedNearTransaction,
 } from "@herald/core/server";
 import { createDb } from "@herald/db";
 import { base58, base64 } from "@scure/base";
 import { decodeSignedDelegateB64, parseFtTransferArgs, settlementCacheKey } from "@x402/near";
 import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
-import { heraldEnvOf, NearRpcError, nearRelayerKey, nearRpc } from "./chains.ts";
-import {
-  delegateAction,
-  functionCallAction,
-  signedRelayerTransaction,
-  transferAction,
-  type NearAction,
-  type SignedNearTransaction,
-} from "./near-transactions.ts";
+import { heraldEnvOf, nearRelayerKey, nearRpc } from "./chains.ts";
 import { PendingSettlements } from "./pending-settlements.ts";
 
 // Each RPC call while the queue waits on it must fail fast rather than stall
@@ -89,11 +95,6 @@ type SettlementRow = {
   delegate_hash: string;
   tx_hash: string | null;
   submitted_at: number;
-};
-
-type Outcome = {
-  status?: { Failure?: unknown; SuccessValue?: string };
-  receipts_outcome?: { outcome?: { executor_id?: string; status?: Record<string, unknown> } }[];
 };
 
 /** A relayer transaction that was sent: its hash, and its bytes when at hand for a rebroadcast. */
@@ -350,7 +351,7 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
     return {
       ok: true,
       transaction: transaction.hash,
-      innerReceipt: innerReceiptOf(final, usdc),
+      innerReceipt: ftTransferOutcome(final, usdc),
     };
   }
 
@@ -387,7 +388,7 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
 
     let height: bigint;
     try {
-      height = await this.#finalHeight(network);
+      height = BigInt((await finalBlock(this.#rpc(network))).height);
     } catch (error) {
       // Unanswered rather than refused: core leaves the Sweep for a retry.
       throw new Error(`Herald couldn't read the NEAR block height: ${String(error)}`);
@@ -488,10 +489,11 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
     for (let attempt = 1; ; attempt++) {
       let transaction: SignedNearTransaction;
       try {
-        const [nonce, blockHash] = await Promise.all([
+        const [nonce, block] = await Promise.all([
           this.#nextNonce(network),
-          this.#finalBlockHash(network),
+          finalBlock(this.#rpc(network)),
         ]);
+        const blockHash = base58.decode(block.hash);
         transaction = signedRelayerTransaction({ relayer, receiverId, nonce, blockHash, actions });
         record?.(transaction);
         this.#useNonce(nonce);
@@ -606,7 +608,8 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
   async #setUp(job: SetupJobRow): Promise<void> {
     const network = this.#nearNetwork(job.network);
     if (!network) throw new Error(`${job.network} is not a Herald NEAR network`);
-    if (!(await this.#accountExists(job.network, job.account))) {
+    const rpc = this.#rpc(job.network);
+    if ((await viewAccount(rpc, job.account)) === null) {
       const transaction = await this.#sendAndAwait(job.network, job.account, [
         transferAction(ACCOUNT_CREATION_YOCTO),
       ]);
@@ -619,7 +622,7 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
         }),
       );
     }
-    if (!(await this.#registeredOn(job.network, network.usdc.address, job.account))) {
+    if (!(await isStorageRegistered(rpc, network.usdc.address, job.account))) {
       const transaction = await this.#sendAndAwait(job.network, network.usdc.address, [
         functionCallAction({
           methodName: "storage_deposit",
@@ -650,61 +653,21 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
     const final = await this.#awaitFinal(network, sent.transaction);
     if (!final)
       throw new Error(`Relayer transaction ${sent.transaction.hash} wasn't final in time`);
-    const failure = failureOf(final);
+    const failure = outcomeFailure(final);
     if (failure) throw new Error(`Relayer transaction ${sent.transaction.hash} failed: ${failure}`);
     return sent.transaction.hash;
   }
 
-  async #accountExists(network: Caip2, accountId: string): Promise<boolean> {
-    try {
-      await nearRpc(
-        this.env,
-        network,
-        "query",
-        { request_type: "view_account", finality: "final", account_id: accountId },
-        RPC_TIMEOUT_MS,
-      );
-      return true;
-    } catch (error) {
-      if (error instanceof NearRpcError && error.rpcCause === "UNKNOWN_ACCOUNT") return false;
-      throw error;
-    }
-  }
-
-  /** Whether `accountId` is registered on the NEP-145 contract `token`. */
-  async #registeredOn(network: Caip2, token: string, accountId: string): Promise<boolean> {
-    const answer = (await nearRpc(
-      this.env,
-      network,
-      "query",
-      {
-        request_type: "call_function",
-        finality: "final",
-        account_id: token,
-        method_name: "storage_balance_of",
-        args_base64: base64.encode(
-          new TextEncoder().encode(JSON.stringify({ account_id: accountId })),
-        ),
-      },
-      RPC_TIMEOUT_MS,
-    )) as { result?: unknown; error?: unknown };
-    if (!Array.isArray(answer.result)) {
-      throw new Error(`storage_balance_of failed: ${JSON.stringify(answer.error ?? null)}`);
-    }
-    const balance: unknown = JSON.parse(
-      new TextDecoder().decode(Uint8Array.from(answer.result as number[])),
-    );
-    return balance !== null;
+  /** The network's NEAR RPC endpoint, each call failing fast (`RPC_TIMEOUT_MS`). */
+  #rpc(network: Caip2): NearRpc {
+    return nearRpc(this.env, network, RPC_TIMEOUT_MS);
   }
 
   async #send(network: Caip2, transaction: SignedNearTransaction): Promise<void> {
-    await nearRpc(
-      this.env,
-      network,
-      "send_tx",
-      { signed_tx_base64: base64.encode(transaction.bytes), wait_until: "NONE" },
-      RPC_TIMEOUT_MS,
-    );
+    await this.#rpc(network).call("send_tx", {
+      signed_tx_base64: base64.encode(transaction.bytes),
+      wait_until: "NONE",
+    });
   }
 
   /**
@@ -718,22 +681,15 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
       .toArray();
     if (stored) return BigInt(stored.nonce) + 1n;
     const relayer = nearRelayerKey(this.env);
-    const key = (await nearRpc(
-      this.env,
-      network,
-      "query",
-      {
-        request_type: "view_access_key",
-        finality: "final",
-        account_id: relayer.accountId,
-        public_key: `ed25519:${base58.encode(relayer.publicKey)}`,
-      },
-      RPC_TIMEOUT_MS,
-    )) as { nonce?: unknown; error?: unknown };
-    if (typeof key.nonce !== "number") {
+    const key = await viewAccessKey(
+      this.#rpc(network),
+      relayer.accountId,
+      `ed25519:${base58.encode(relayer.publicKey)}`,
+    );
+    if (key === null) {
       throw new Error(`The relayer ${relayer.accountId} has no access key for NEAR_RELAYER_KEY`);
     }
-    return BigInt(key.nonce) + 1n;
+    return key.nonce + 1n;
   }
 
   #useNonce(nonce: bigint): void {
@@ -743,52 +699,25 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
     );
   }
 
-  async #finalHeight(network: Caip2): Promise<bigint> {
-    const block = (await nearRpc(
-      this.env,
-      network,
-      "block",
-      { finality: "final" },
-      RPC_TIMEOUT_MS,
-    )) as { header?: { height?: unknown } };
-    if (typeof block.header?.height !== "number") {
-      throw new Error("NEAR RPC block answered no height");
-    }
-    return BigInt(block.header.height);
-  }
-
-  async #finalBlockHash(network: Caip2): Promise<Uint8Array> {
-    const block = (await nearRpc(
-      this.env,
-      network,
-      "block",
-      { finality: "final" },
-      RPC_TIMEOUT_MS,
-    )) as {
-      header?: { hash?: unknown };
-    };
-    if (typeof block.header?.hash !== "string") throw new Error("NEAR RPC block answered no hash");
-    return base58.decode(block.header.hash);
-  }
-
   /**
    * Reads a sent transaction until it is final, its receipts included, for
    * up to `SETTLE_RECEIPT_TIMEOUT_MS`; null if it isn't by then. One the node
    * doesn't know is broadcast again when its bytes are at hand, in case the
    * first broadcast never reached it: a transaction lands at most once.
    */
-  async #awaitFinal(network: Caip2, transaction: SentTransaction): Promise<Outcome | null> {
+  async #awaitFinal(network: Caip2, transaction: SentTransaction): Promise<NearOutcome | null> {
     const relayer = nearRelayerKey(this.env).accountId;
     const deadline = Date.now() + Number(this.env.SETTLE_RECEIPT_TIMEOUT_MS);
     for (;;) {
       try {
-        return (await nearRpc(
-          this.env,
-          network,
+        return (await nearRpc(this.env, network, Math.max(deadline - Date.now(), 1_000)).call(
           "tx",
-          { tx_hash: transaction.hash, sender_account_id: relayer, wait_until: "FINAL" },
-          Math.max(deadline - Date.now(), 1_000),
-        )) as Outcome;
+          {
+            tx_hash: transaction.hash,
+            sender_account_id: relayer,
+            wait_until: "FINAL",
+          },
+        )) as NearOutcome;
       } catch (error) {
         if (error instanceof NearRpcError && error.rpcCause === "UNKNOWN_TRANSACTION") {
           const { hash, bytes } = transaction;
@@ -842,32 +771,6 @@ function delegateProblem(
   if (delegate.senderId === relayer) return "Herald's relayer can't be the payer";
   if (!decoded.verifySignature()) return "The delegate action's signature doesn't verify";
   return null;
-}
-
-/**
- * How a final relayer transaction's inner `ft_transfer` ended, the way the
- * stock `@x402/near` signer reads it: a failed transaction or receipt fails
- * it; otherwise it succeeded if the USDC contract's receipt has a
- * `SuccessValue`.
- */
-function innerReceiptOf(outcome: Outcome, usdc: string): NearReceiptStatus {
-  const failure = failureOf(outcome);
-  if (failure) return { kind: "failure", error: failure };
-  const receipts = outcome.receipts_outcome ?? [];
-  const transfer = receipts.find((r) => r.outcome?.executor_id === usdc);
-  const value = transfer?.outcome?.status?.["SuccessValue"];
-  return typeof value === "string"
-    ? { kind: "success", value }
-    : { kind: "failure", error: "inner_ft_transfer_receipt_not_successful" };
-}
-
-/** The failure of a final transaction or of one of its receipts, as JSON; null if none failed. */
-function failureOf(outcome: Outcome): string | null {
-  if (outcome.status?.Failure !== undefined) return JSON.stringify(outcome.status.Failure);
-  const failed = (outcome.receipts_outcome ?? []).find(
-    (r) => r.outcome?.status?.["Failure"] !== undefined,
-  );
-  return failed ? JSON.stringify(failed.outcome?.status?.["Failure"]) : null;
 }
 
 function isInvalidNonce(info: unknown): boolean {

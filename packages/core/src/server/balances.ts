@@ -10,9 +10,10 @@ import {
   type Network,
 } from "../networks.ts";
 import { decimalToBaseUnits } from "../price.ts";
-import { callJsonRpc, postRpc, rpcUrlSecret } from "../rpc.ts";
+import { callJsonRpc, rpcUrlSecret } from "../rpc.ts";
 import type { HeraldEnv, Provider } from "../schemas.ts";
 import type { Db } from "./db.ts";
+import { callViewFunction, nearRpcAt, viewAccount } from "./near-protocol.ts";
 import { providerFromRow } from "./providers.ts";
 
 /**
@@ -156,16 +157,12 @@ export function rpcUsdcBalanceReader(
         return total.toString();
       }
       case "near": {
-        const balance = await nearView(fetchFn, url, network.label, {
-          request_type: "call_function",
-          account_id: network.usdc.address,
-          method_name: "ft_balance_of",
-          args_base64: btoa(JSON.stringify({ account_id: owner })),
-        });
-        const bytes = (balance as { result?: unknown }).result;
-        const amount: unknown = Array.isArray(bytes)
-          ? JSON.parse(new TextDecoder().decode(Uint8Array.from(bytes as number[])))
-          : undefined;
+        const amount = await callViewFunction(
+          nearRpcAt(fetchFn, url, `${network.label} RPC`, BALANCE_READ_TIMEOUT_MS),
+          network.usdc.address,
+          "ft_balance_of",
+          { account_id: owner },
+        );
         if (typeof amount !== "string" || !/^\d+$/.test(amount)) {
           throw new Error(`${network.label} answered ft_balance_of without an amount`);
         }
@@ -189,46 +186,6 @@ function jsonRpc(
   // `getProviderBalances` stops waiting at its own timeout; this also
   // cancels the request itself.
   return callJsonRpc(fetchFn, url, label, method, params, BALANCE_READ_TIMEOUT_MS);
-}
-
-/**
- * A NEAR `query` (object params, unlike `callJsonRpc`) at final finality,
- * giving up after `BALANCE_READ_TIMEOUT_MS`. Returns the node's `result`.
- * An error answer, at the top level or as the view's own `result.error`
- * (a contract panic), throws naming `label` and the request type, never the
- * URL. With `unknownAccount`, a view of an account that doesn't exist
- * returns that instead of throwing.
- */
-async function nearView(
-  fetchFn: typeof fetch,
-  url: string,
-  label: string,
-  params: { request_type: string; account_id: string } & Record<string, string>,
-  unknownAccount?: object,
-): Promise<object> {
-  const what = `${label} RPC ${params.request_type}`;
-  const response = await postRpc(
-    fetchFn,
-    url,
-    { jsonrpc: "2.0", id: "herald", method: "query", params: { ...params, finality: "final" } },
-    what,
-    AbortSignal.timeout(BALANCE_READ_TIMEOUT_MS),
-  );
-  const body = (await response.json()) as {
-    result?: { error?: unknown };
-    error?: { cause?: { name?: unknown } };
-  };
-  if (body.error !== undefined) {
-    if (unknownAccount && body.error?.cause?.name === "UNKNOWN_ACCOUNT") return unknownAccount;
-    throw new Error(`${what} failed: ${JSON.stringify(body.error)}`);
-  }
-  if (typeof body.result !== "object" || body.result === null) {
-    throw new Error(`${what} answered without a result`);
-  }
-  if (body.result.error !== undefined) {
-    throw new Error(`${what} failed: ${JSON.stringify(body.result.error)}`);
-  }
-  return body.result;
 }
 
 /**
@@ -410,15 +367,12 @@ export function rpcNativeBalanceReader(
         // `amount` is the liquid balance (staked NEAR is `locked`). It
         // includes the few thousandths of a NEAR the account's own storage
         // holds back, which doesn't matter against a 0.5 NEAR threshold.
-        const account = await nearView(
-          fetchFn,
-          url,
-          network.label,
-          { request_type: "view_account", account_id: owner },
-          // A relayer that was never created holds nothing, and warns low.
-          { amount: "0" },
+        const account = await viewAccount(
+          nearRpcAt(fetchFn, url, `${network.label} RPC`, BALANCE_READ_TIMEOUT_MS),
+          owner,
         );
-        const amount = (account as { amount?: unknown }).amount;
+        // A relayer that was never created holds nothing, and warns low.
+        const amount = account === null ? "0" : account.amount;
         if (typeof amount !== "string" || !/^\d+$/.test(amount)) {
           throw new Error(`${network.label} answered view_account without a balance`);
         }

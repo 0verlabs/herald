@@ -1,57 +1,26 @@
-import { sha256 } from "@noble/hashes/sha2.js";
-import { concatBytes } from "@noble/hashes/utils.js";
-import { base58, base64 } from "@scure/base";
+import { base58 } from "@scure/base";
 import type { Network } from "../networks.ts";
-import { postRpc } from "../rpc.ts";
+import {
+  encodeDelegateAction,
+  finalBlock,
+  ftTransferOutcome,
+  functionCallAction,
+  isStorageRegistered,
+  NearRpcError,
+  nearRpcAt,
+  viewAccessKey,
+  type NearOutcome,
+} from "./near-protocol.ts";
 
 // A NEAR Sweep is a NEP-366 delegate action from the NEAR Receiving Address
 // (an implicit account) holding one USDC `ft_transfer`. The MPC signer
 // signs its NEP-461 hash for the Receiving Address, and Herald's relayer
 // submits it, paying the gas.
-// https://github.com/near/NEPs/blob/master/neps/nep-0366.md
-// https://github.com/near/NEPs/blob/master/neps/nep-0461.md
 
 type NearNetwork = Extract<Network, { kind: "near" }>;
 
 /** The gas a Sweep's `ft_transfer` gets: 30 Tgas, what NEP-141 wallets attach. */
 export const NEAR_FT_TRANSFER_GAS = 30_000_000_000_000n;
-
-// NEP-461's discriminant for a delegate action: 2^30 + 366.
-const NEP_366_PREFIX = 2 ** 30 + 366;
-
-const textEncoder = new TextEncoder();
-
-function u32(value: number): Uint8Array {
-  const bytes = new Uint8Array(4);
-  new DataView(bytes.buffer).setUint32(0, value, true);
-  return bytes;
-}
-
-function u64(value: bigint): Uint8Array {
-  const bytes = new Uint8Array(8);
-  new DataView(bytes.buffer).setBigUint64(0, value, true);
-  return bytes;
-}
-
-function u128(value: bigint): Uint8Array {
-  const bytes = new Uint8Array(16);
-  const view = new DataView(bytes.buffer);
-  view.setBigUint64(0, value & 0xffff_ffff_ffff_ffffn, true);
-  view.setBigUint64(8, value >> 64n, true);
-  return bytes;
-}
-
-function byteString(bytes: Uint8Array): Uint8Array {
-  return concatBytes(u32(bytes.length), bytes);
-}
-
-function string(value: string): Uint8Array {
-  return byteString(textEncoder.encode(value));
-}
-
-// `PublicKey` and `Signature` start with their key type; 0 is ed25519.
-const ED25519 = new Uint8Array([0]);
-const FUNCTION_CALL_TAG = new Uint8Array([2]);
 
 /**
  * The Borsh encoding of a Sweep's `DelegateAction` (without the NEP-461
@@ -70,37 +39,21 @@ export function nearSweepDelegateAction(input: {
   maxBlockHeight: bigint;
   publicKey: Uint8Array;
 }): Uint8Array {
-  const args = JSON.stringify({ receiver_id: input.receiverId, amount: input.amount });
-  const ftTransfer = concatBytes(
-    FUNCTION_CALL_TAG,
-    string("ft_transfer"),
-    byteString(textEncoder.encode(args)),
-    u64(NEAR_FT_TRANSFER_GAS),
-    u128(1n),
-  );
-  return concatBytes(
-    string(input.senderId),
-    string(input.usdc),
-    u32(1),
-    ftTransfer,
-    u64(input.nonce),
-    u64(input.maxBlockHeight),
-    ED25519,
-    input.publicKey,
-  );
-}
-
-/**
- * What the sender's key signs for a delegate action (NEP-461): SHA-256 of
- * the NEP-366 prefix and the Borsh-encoded action, 32 bytes.
- */
-export function nearDelegatePayloadHash(delegateAction: Uint8Array): Uint8Array {
-  return sha256(concatBytes(u32(NEP_366_PREFIX), delegateAction));
-}
-
-/** A `SignedDelegateAction` (base64 Borsh): the action, then its ed25519 signature. */
-export function signedNearDelegate(delegateAction: Uint8Array, signature: Uint8Array): string {
-  return base64.encode(concatBytes(delegateAction, ED25519, signature));
+  return encodeDelegateAction({
+    senderId: input.senderId,
+    receiverId: input.usdc,
+    actions: [
+      functionCallAction({
+        methodName: "ft_transfer",
+        args: { receiver_id: input.receiverId, amount: input.amount },
+        gas: NEAR_FT_TRANSFER_GAS,
+        deposit: 1n,
+      }),
+    ],
+    nonce: input.nonce,
+    maxBlockHeight: input.maxBlockHeight,
+    publicKey: input.publicKey,
+  });
 }
 
 /** How a relayed Sweep's `ft_transfer` ended: it moved the USDC, or it (or the delegate) failed. */
@@ -150,100 +103,27 @@ export function rpcNearSweepReader(
   relayerOf: (network: NearNetwork["caip2"]) => Promise<string>,
   fetchFn: typeof fetch = fetch,
 ): NearSweepReader {
-  const call = async (method: string, params: object, what: string): Promise<unknown> => {
-    const response = await postRpc(
-      fetchFn,
-      rpcUrl,
-      { jsonrpc: "2.0", id: "herald", method, params },
-      what,
-      AbortSignal.timeout(NEAR_VIEW_TIMEOUT_MS),
-    );
-    const body = (await response.json()) as {
-      result?: unknown;
-      error?: { cause?: { name?: string } };
-    };
-    if (body.error) {
-      throw new NearRpcAnswerError(what, body.error.cause?.name, JSON.stringify(body.error));
-    }
-    return body.result;
-  };
-  const view = async (network: NearNetwork, method: string, args: object): Promise<unknown> => {
-    const result = (await call(
-      "query",
-      {
-        request_type: "call_function",
-        finality: "final",
-        account_id: network.usdc.address,
-        method_name: method,
-        args_base64: base64.encode(textEncoder.encode(JSON.stringify(args))),
-      },
-      `NEAR RPC ${method}`,
-    )) as { result?: unknown; error?: unknown };
-    if (!Array.isArray(result?.result)) {
-      throw new Error(`NEAR RPC ${method} failed: ${JSON.stringify(result?.error ?? null)}`);
-    }
-    return JSON.parse(new TextDecoder().decode(Uint8Array.from(result.result as number[])));
-  };
-
+  const rpc = nearRpcAt(fetchFn, rpcUrl, "NEAR RPC", NEAR_VIEW_TIMEOUT_MS);
   return {
     accessKeyNonce: async ({ accountId, publicKey }) => {
-      let key: { nonce?: unknown; permission?: unknown; error?: unknown };
-      try {
-        key = (await call(
-          "query",
-          {
-            request_type: "view_access_key",
-            finality: "final",
-            account_id: accountId,
-            public_key: `ed25519:${base58.encode(publicKey)}`,
-          },
-          "NEAR RPC view_access_key",
-        )) as typeof key;
-      } catch (error) {
-        // Some nodes answer a missing key or account with an error.
-        if (
-          error instanceof NearRpcAnswerError &&
-          (error.rpcCause === "UNKNOWN_ACCESS_KEY" || error.rpcCause === "UNKNOWN_ACCOUNT")
-        ) {
-          return null;
-        }
-        throw error;
-      }
-      // Others answer it inside the result.
-      if (typeof key?.error === "string" && /does not exist/.test(key.error)) return null;
-      if (typeof key?.nonce !== "number") {
-        throw new Error(`NEAR RPC view_access_key answered no nonce`);
-      }
+      const key = await viewAccessKey(rpc, accountId, `ed25519:${base58.encode(publicKey)}`);
       // A function-call key can't attach the yoctoNEAR ft_transfer needs.
-      if (key.permission !== "FullAccess") return null;
-      return BigInt(key.nonce);
+      return key?.permission === "FullAccess" ? key.nonce : null;
     },
-    storageRegistered: async ({ network, accountId }) =>
-      (await view(network, "storage_balance_of", { account_id: accountId })) !== null,
-    finalBlockHeight: async () => {
-      const block = (await call("block", { finality: "final" }, "NEAR RPC block")) as {
-        header?: { height?: unknown };
-      };
-      if (typeof block?.header?.height !== "number") {
-        throw new Error("NEAR RPC block answered no height");
-      }
-      return block.header.height;
-    },
+    storageRegistered: ({ network, accountId }) =>
+      isStorageRegistered(rpc, network.usdc.address, accountId),
+    finalBlockHeight: async () => (await finalBlock(rpc)).height,
     sweepStatus: async ({ network, txHash }) => {
-      let outcome: SweepOutcome;
+      let outcome: NearOutcome | null;
       try {
-        outcome = (await call(
-          "tx",
-          {
-            tx_hash: txHash,
-            sender_account_id: await relayerOf(network.caip2),
-            wait_until: "NONE",
-          },
-          "NEAR RPC tx",
-        )) as SweepOutcome;
+        outcome = (await rpc.call("tx", {
+          tx_hash: txHash,
+          sender_account_id: await relayerOf(network.caip2),
+          wait_until: "NONE",
+        })) as NearOutcome | null;
       } catch (error) {
         if (
-          error instanceof NearRpcAnswerError &&
+          error instanceof NearRpcError &&
           (error.rpcCause === "UNKNOWN_TRANSACTION" || error.rpcCause === "TIMEOUT_ERROR")
         ) {
           return null;
@@ -253,44 +133,9 @@ export function rpcNearSweepReader(
       const executed =
         outcome?.final_execution_status === "EXECUTED" ||
         outcome?.final_execution_status === "FINAL";
-      if (!executed || outcome.status === undefined) return null;
-      return nearSweepOutcome(outcome, network.usdc.address);
+      if (!executed || outcome?.status === undefined) return null;
+      const transfer = ftTransferOutcome(outcome, network.usdc.address);
+      return transfer.kind === "success" ? { kind: "success" } : transfer;
     },
   };
-}
-
-type SweepOutcome = {
-  final_execution_status?: string;
-  status?: { Failure?: unknown; SuccessValue?: unknown } | string;
-  receipts_outcome?: { outcome?: { executor_id?: string; status?: Record<string, unknown> } }[];
-};
-
-/**
- * How a relayed Sweep ended, from its final outcome: failed if the
- * transaction or any receipt failed, else succeeded if the USDC contract's
- * receipt has a `SuccessValue`.
- */
-function nearSweepOutcome(outcome: SweepOutcome, usdc: string): NearSweepStatus {
-  const status = typeof outcome.status === "object" ? outcome.status : undefined;
-  if (status?.Failure !== undefined) {
-    return { kind: "failure", error: JSON.stringify(status.Failure) };
-  }
-  const receipts = outcome.receipts_outcome ?? [];
-  const failed = receipts.find((r) => r.outcome?.status?.["Failure"] !== undefined);
-  if (failed)
-    return { kind: "failure", error: JSON.stringify(failed.outcome?.status?.["Failure"]) };
-  const transfer = receipts.find((r) => r.outcome?.executor_id === usdc);
-  return typeof transfer?.outcome?.status?.["SuccessValue"] === "string"
-    ? { kind: "success" }
-    : { kind: "failure", error: "The USDC ft_transfer receipt didn't succeed" };
-}
-
-/** A NEAR RPC error answer; `rpcCause` is the node's `cause.name`. Never names the URL. */
-class NearRpcAnswerError extends Error {
-  readonly rpcCause: string | undefined;
-
-  constructor(what: string, cause: string | undefined, detail: string) {
-    super(`${what} failed: ${detail}`);
-    this.rpcCause = cause;
-  }
 }
