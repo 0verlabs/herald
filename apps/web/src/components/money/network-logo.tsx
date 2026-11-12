@@ -23,17 +23,20 @@ export function NetworkLogo({
   label,
   size = "sm",
   className,
+  src,
 }: {
   label: string;
   size?: Size;
   className?: string;
+  /** A logo file to use instead of the one derived from the label. */
+  src?: string;
 }) {
   return (
     <Avatar
       aria-hidden="true"
       className={cn(sizes[size], className)}
     >
-      <AvatarImage src={logoOf(label)} alt="" />
+      <AvatarImage src={src ?? logoOf(label)} alt="" />
       <AvatarFallback className="bg-secondary font-semibold text-secondary-foreground">
         {label.slice(0, 2)}
       </AvatarFallback>

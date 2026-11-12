@@ -1,7 +1,7 @@
 import type { ProviderOverview } from "@herald/core/server";
 import { ShieldCheckIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { NetworkStack } from "@/components/money/network-logo";
+import { NetworkLogo } from "@/components/money/network-logo";
 import { CopyButton } from "@/components/shared/copy-field";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -38,6 +38,7 @@ export function PaymentAddressesCard({ overview }: { overview: ProviderOverview 
             label="EVM payment address"
             address={evm.address}
             networks={evm.networks}
+            logo="/logos/networks/evm.svg"
           />
           <AddressRow
             title="Solana"
@@ -71,14 +72,14 @@ function AddressRow(props: {
   label: string;
   address: string;
   networks: string[];
+  /** The one logo for the address; by default the logo of its only network. */
+  logo?: string;
   status?: ReactNode;
 }) {
   return (
     <li className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 py-3.5 transition-colors hover:bg-muted/50 md:grid-cols-[15rem_minmax(0,1fr)_auto]">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="flex w-14 shrink-0">
-          <NetworkStack labels={props.networks} size="md" />
-        </span>
+        <NetworkLogo label={props.title} src={props.logo} size="md" className="shrink-0" />
         <span className="flex min-w-0 flex-col gap-0.5">
           <span className="font-medium">{props.title}</span>
           {props.status ?? (
