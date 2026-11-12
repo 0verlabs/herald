@@ -3,6 +3,7 @@ import {
   checkMpcRootKeys,
   nearRpcMpcRootKeyReader,
   networkRegistry,
+  unhandledKind,
   type HeraldEnv,
   type Network,
 } from "./index.ts";
@@ -52,23 +53,41 @@ function decodeString(hex: string): string {
 async function readUsdc(network: Network) {
   const url = rpcUrls[network.caip2];
   if (!url) throw new Error(`No RPC URL for ${network.caip2}`);
-  if (network.kind === "solana") {
-    const supply = (await jsonRpc(url, "getTokenSupply", [network.usdc.address])) as {
-      value: { decimals: number };
-    };
-    return { decimals: supply.value.decimals };
+  switch (network.kind) {
+    case "evm": {
+      const call = (data: string) =>
+        jsonRpc(url, "eth_call", [{ to: network.usdc.address, data }, "latest"]) as Promise<string>;
+      const [name, version, decimals] = await Promise.all([
+        call("0x06fdde03"),
+        call("0x54fd4d50"),
+        call("0x313ce567"),
+      ]);
+      return {
+        decimals: Number(BigInt(decimals)),
+        eip712: { name: decodeString(name), version: decodeString(version) },
+      };
+    }
+    case "solana": {
+      const supply = (await jsonRpc(url, "getTokenSupply", [network.usdc.address])) as {
+        value: { decimals: number };
+      };
+      return { decimals: supply.value.decimals };
+    }
+    default:
+      return unhandledKind(network);
   }
-  const call = (data: string) =>
-    jsonRpc(url, "eth_call", [{ to: network.usdc.address, data }, "latest"]) as Promise<string>;
-  const [name, version, decimals] = await Promise.all([
-    call("0x06fdde03"),
-    call("0x54fd4d50"),
-    call("0x313ce567"),
-  ]);
-  return {
-    decimals: Number(BigInt(decimals)),
-    eip712: { name: decodeString(name), version: decodeString(version) },
-  };
+}
+
+/** What Herald pins about a network's USDC, as `readUsdc` reads it from the chain. */
+function pinnedUsdc(network: Network) {
+  switch (network.kind) {
+    case "evm":
+      return { decimals: network.usdc.decimals, eip712: network.usdc.eip712 };
+    case "solana":
+      return { decimals: network.usdc.decimals };
+    default:
+      return unhandledKind(network);
+  }
 }
 
 const allNetworks = Object.values(networkRegistry).flat();
@@ -77,11 +96,7 @@ describe.runIf(enabled)("live: network registry", () => {
   test.each(allNetworks.map((network) => [network.label, network] as const))(
     "%s USDC matches its on-chain name(), version() and decimals()",
     async (_label, network) => {
-      const expected =
-        network.kind === "evm"
-          ? { decimals: network.usdc.decimals, eip712: network.usdc.eip712 }
-          : { decimals: network.usdc.decimals };
-      expect(await readUsdc(network)).toEqual(expected);
+      expect(await readUsdc(network)).toEqual(pinnedUsdc(network));
     },
     30_000,
   );

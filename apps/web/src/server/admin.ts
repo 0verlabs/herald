@@ -1,4 +1,4 @@
-import { rpcUrlsFrom, SweepMinimumEditSchema } from "@herald/core";
+import { rpcUrlsFrom, SweepMinimumEditSchema, unhandledKind } from "@herald/core";
 import {
   getGasWallets,
   listSweepMinimums,
@@ -50,8 +50,16 @@ export const getGasWalletStatuses = createServerFn({ method: "GET" })
     const solana = solanaSweepQueue();
     return getGasWallets(
       {
-        gasWalletAddress: (network) =>
-          network.kind === "evm" ? evmGasWallet(network.caip2) : solana.feePayer(network.caip2),
+        gasWalletAddress: (network) => {
+          switch (network.kind) {
+            case "evm":
+              return evmGasWallet(network.caip2);
+            case "solana":
+              return solana.feePayer(network.caip2);
+            default:
+              return unhandledKind(network);
+          }
+        },
         readNativeBalance: rpcNativeBalanceReader(rpcUrlsFrom(env)),
       },
       { env: readHeraldEnv(), lowBalanceThresholds: env.GAS_LOW_BALANCE_THRESHOLDS },

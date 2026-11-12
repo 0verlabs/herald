@@ -1,7 +1,13 @@
 import { apiKeys, payments } from "@herald/db/schema";
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { explorerTxUrl, networkRegistry, type Caip2, type Network } from "../networks.ts";
+import {
+  explorerTxUrl,
+  networkRegistry,
+  unhandledKind,
+  type Caip2,
+  type Network,
+} from "../networks.ts";
 import { PaymentSchema, type HeraldEnv, type Payment, type Provider } from "../schemas.ts";
 import type { Db } from "./db.ts";
 
@@ -39,7 +45,7 @@ export function checkReceivingAddress(
       message: `Herald settles only USDC (${network.usdc.address}) on ${network.label}.`,
     };
   }
-  const receivingAddress = network.kind === "evm" ? provider.evmAddress : provider.solanaAddress;
+  const receivingAddress = receivingAddressOn(network, provider);
   if (!sameAddress(network, requirement.payTo, receivingAddress)) {
     return {
       ok: false,
@@ -50,10 +56,28 @@ export function checkReceivingAddress(
   return { ok: true, network };
 }
 
+function receivingAddressOn(network: Network, provider: Provider): string {
+  switch (network.kind) {
+    case "evm":
+      return provider.evmAddress;
+    case "solana":
+      return provider.solanaAddress;
+    default:
+      return unhandledKind(network);
+  }
+}
+
 // EVM addresses compare case-insensitively (checksum casing is optional);
 // Solana's base58 addresses are case-sensitive.
 function sameAddress(network: Network, a: string, b: string): boolean {
-  return network.kind === "evm" ? a.toLowerCase() === b.toLowerCase() : a === b;
+  switch (network.kind) {
+    case "evm":
+      return a.toLowerCase() === b.toLowerCase();
+    case "solana":
+      return a === b;
+    default:
+      return unhandledKind(network);
+  }
 }
 
 const NewPaymentSchema = PaymentSchema.omit({ id: true, settledAt: true });

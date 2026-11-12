@@ -1,4 +1,4 @@
-import { mpcSigners, networkRegistry, rpcUrlsFrom, type Caip2 } from "@herald/core";
+import { mpcSigners, networkRegistry, rpcUrlsFrom, unhandledKind, type Caip2 } from "@herald/core";
 import { createExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { vi } from "vite-plus/test";
@@ -53,17 +53,23 @@ export function installFakeNetwork(): FakeNetwork {
     const configured = rpcUrls[listed.caip2];
     if (!configured) throw new Error(`No test RPC endpoint for ${listed.label}`);
     const url = new URL(configured).href;
-    if (listed.kind === "evm") {
-      const chain = new FakeEvmChain(
-        Number(listed.caip2.split(":")[1]),
-        listed.usdc.address as Address,
-      );
-      chains[listed.caip2] = chain;
-      handlersByUrl.set(url, chain);
-    } else {
-      solana = new FakeSolanaChain(listed.usdc.address);
-      handlersByUrl.set(url, solana);
-      handlersByUrl.set(new URL(STOCK_DEVNET_RPC_URL).href, solana);
+    switch (listed.kind) {
+      case "evm": {
+        const chain = new FakeEvmChain(
+          Number(listed.caip2.split(":")[1]),
+          listed.usdc.address as Address,
+        );
+        chains[listed.caip2] = chain;
+        handlersByUrl.set(url, chain);
+        break;
+      }
+      case "solana":
+        solana = new FakeSolanaChain(listed.usdc.address);
+        handlersByUrl.set(url, solana);
+        handlersByUrl.set(new URL(STOCK_DEVNET_RPC_URL).href, solana);
+        break;
+      default:
+        unhandledKind(listed);
     }
   }
   if (!solana) throw new Error("Herald testnet lists no Solana network");

@@ -28,7 +28,7 @@ import { discardPlannedSweep, finishSweep, startSweepAll } from "@/server/sweeps
 import { OptionSelect, type Option } from "./option-select";
 import { IntentsLogo } from "./withdraw-form";
 import { WithdrawLayout } from "./withdraw-layout";
-import { addressProblem, formatCountdown, type Step } from "./withdraw-shared";
+import { addressPlaceholder, addressProblem, formatCountdown, type Step } from "./withdraw-shared";
 
 const stepLabels: Record<Exclude<Step, "idle">, string> = {
   planning: "Preparing your withdrawals…",
@@ -317,7 +317,7 @@ export function WithdrawEverything(props: {
             id="withdraw-all-destination"
             autoComplete="off"
             spellCheck={false}
-            placeholder={destinationChain.kind === "solana" ? "Solana wallet address" : "0x…"}
+            placeholder={addressPlaceholder(destinationChain.kind)}
             className="h-11 font-mono text-[0.8rem]"
             value={destination}
             disabled={busy}

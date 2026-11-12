@@ -6,8 +6,10 @@ import {
   networkRegistry,
   PriceSchema,
   priceToBaseUnits,
+  unhandledKind,
   type Caip2,
   type HeraldEnv,
+  type Network,
 } from "@herald/core";
 import { z } from "zod";
 
@@ -84,10 +86,23 @@ export function accepts(options: AcceptsOptions): PaymentOption[] {
       price: {
         asset: network.usdc.address,
         amount: priceToBaseUnits(price, network.usdc.decimals),
-        ...(network.kind === "evm" && { extra: { ...network.usdc.eip712 } }),
+        ...extraFor(network),
       },
       maxTimeoutSeconds: MAX_TIMEOUT_SECONDS,
     }));
+}
+
+// EVM options carry the USDC contract's EIP-712 domain, which the Buyer's
+// EIP-3009 signature commits to.
+function extraFor(network: Network): { extra?: { name: string; version: string } } {
+  switch (network.kind) {
+    case "evm":
+      return { extra: { ...network.usdc.eip712 } };
+    case "solana":
+      return {};
+    default:
+      return unhandledKind(network);
+  }
 }
 
 // One message per field: a short account id also fails the pattern, and

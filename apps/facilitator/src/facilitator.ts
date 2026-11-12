@@ -1,4 +1,4 @@
-import { networkRegistry } from "@herald/core";
+import { networkRegistry, unhandledKind } from "@herald/core";
 import { x402Facilitator } from "@x402/core/facilitator";
 import { ExactEvmScheme } from "@x402/evm/exact/facilitator";
 import { ExactSvmScheme } from "@x402/svm/exact/facilitator";
@@ -15,20 +15,25 @@ import { facilitatorSvmSigner, solanaPendingSettlementStore } from "./svm-signer
 export function createFacilitator(env: CloudflareBindings): x402Facilitator {
   const facilitator = new x402Facilitator();
   for (const network of networkRegistry[heraldEnvOf(env)]) {
-    if (network.kind === "evm") {
-      facilitator.register(
-        network.caip2,
-        new ExactEvmScheme(facilitatorEvmSigner(env, network.caip2), {
-          pendingSettlementStore: pendingSettlementStore(env, network.caip2),
-        }),
-      );
-    } else {
-      facilitator.register(
-        network.caip2,
-        new ExactSvmScheme(facilitatorSvmSigner(env, network.caip2), undefined, {
-          pendingSettlementStore: solanaPendingSettlementStore(env, network.caip2),
-        }),
-      );
+    switch (network.kind) {
+      case "evm":
+        facilitator.register(
+          network.caip2,
+          new ExactEvmScheme(facilitatorEvmSigner(env, network.caip2), {
+            pendingSettlementStore: pendingSettlementStore(env, network.caip2),
+          }),
+        );
+        break;
+      case "solana":
+        facilitator.register(
+          network.caip2,
+          new ExactSvmScheme(facilitatorSvmSigner(env, network.caip2), undefined, {
+            pendingSettlementStore: solanaPendingSettlementStore(env, network.caip2),
+          }),
+        );
+        break;
+      default:
+        unhandledKind(network);
     }
   }
   return facilitator;

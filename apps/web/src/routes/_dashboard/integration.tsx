@@ -1,4 +1,4 @@
-import { networkRegistry } from "@herald/core";
+import { networkRegistry, type NetworkKind } from "@herald/core";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { CreateKeyButton } from "@/components/developers/api-keys";
@@ -25,6 +25,8 @@ export const Route = createFileRoute("/_dashboard/integration")({
   head: () => ({ meta: [{ title: "Connect your API · Herald" }] }),
   component: Integration,
 });
+
+const kindLabels = { evm: "EVM", solana: "Solana" } as const satisfies Record<NetworkKind, string>;
 
 const runtimeOptions = Object.entries(runtimes) as [Runtime, (typeof runtimes)[Runtime]][];
 
@@ -129,9 +131,7 @@ function Integration() {
                 <NetworkLogo label={network.label} size="md" />
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate font-medium">{network.label}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {network.kind === "evm" ? "EVM" : "Solana"}
-                  </span>
+                  <span className="text-xs text-muted-foreground">{kindLabels[network.kind]}</span>
                 </span>
                 <Badge variant="outline" className="h-6 gap-1.5 pl-1">
                   <CoinLogo symbol={USDC.symbol} size="sm" className="size-4 text-[0.5rem]" />

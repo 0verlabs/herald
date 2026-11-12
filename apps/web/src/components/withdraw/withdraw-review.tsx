@@ -1,4 +1,4 @@
-import type { SweepDestinationKind } from "@herald/core";
+import { unhandledKind, type SweepDestinationKind } from "@herald/core";
 import type { SweepChainOption, SweepQuote } from "@herald/core/server";
 import { TimerIcon } from "lucide-react";
 import type { ReactNode } from "react";
@@ -90,19 +90,47 @@ export function WithdrawSummary(props: {
       term: "Fees",
       value: viaBridge
         ? `The bridge's fee, shown in the quote. Herald pays the network fee on ${chain.label}.`
-        : chain.kind === "evm"
-          ? `None. Herald pays the network fee on ${chain.label}.`
-          : `None. Herald pays the network fee on ${chain.label}, and opens a USDC account for the wallet if it needs one.`,
+        : sameChainFees(chain),
     },
-    {
-      term: "You approve",
-      value:
-        chain.kind === "evm"
-          ? approveOnce
-          : `${approveOnce} Approve it right away: on Solana it expires about a minute after you start.`,
-    },
+    { term: "You approve", value: approval(chain) },
   ];
   return <SummaryList title="Summary" rows={rows} />;
+}
+
+/** What a withdrawal on the chain itself costs you. */
+function sameChainFees(chain: SweepChainOption): string {
+  switch (chain.kind) {
+    case "evm":
+      return `None. Herald pays the network fee on ${chain.label}.`;
+    case "solana":
+      return `None. Herald pays the network fee on ${chain.label}, and opens a USDC account for the wallet if it needs one.`;
+    default:
+      return unhandledKind(chain.kind);
+  }
+}
+
+/** What you approve, and how soon on chains where it expires quickly. */
+function approval(chain: SweepChainOption): string {
+  switch (chain.kind) {
+    case "evm":
+      return approveOnce;
+    case "solana":
+      return `${approveOnce} Approve it right away: on Solana it expires about a minute after you start.`;
+    default:
+      return unhandledKind(chain.kind);
+  }
+}
+
+/** A warning under a live quote when the transfer expires sooner than the quote. */
+function quoteHeadsUp(chain: SweepChainOption): string | null {
+  switch (chain.kind) {
+    case "evm":
+      return null;
+    case "solana":
+      return "On Solana the transfer expires about a minute after the quote.";
+    default:
+      return unhandledKind(chain.kind);
+  }
 }
 
 /** A live bridge quote, to check before approving. */
@@ -115,6 +143,7 @@ export function QuoteReview(props: {
 }) {
   const { chain, quote } = props;
   const live = props.secondsLeft > 0;
+  const headsUp = quoteHeadsUp(chain);
   const rows: SummaryRow[] = [
     {
       term: "From",
@@ -161,17 +190,7 @@ export function QuoteReview(props: {
           {live ? `Approve within ${formatCountdown(props.secondsLeft)}` : "Expired"}
         </Badge>
       }
-      rows={
-        chain.kind === "solana" && live
-          ? [
-              ...rows,
-              {
-                term: "Heads up",
-                value: "On Solana the transfer expires about a minute after the quote.",
-              },
-            ]
-          : rows
-      }
+      rows={live && headsUp ? [...rows, { term: "Heads up", value: headsUp }] : rows}
     />
   );
 }
