@@ -11,6 +11,7 @@ import {
 import {
   FakeChainQueue,
   FakeNear,
+  FakeNearUsdc,
   FakeOneClick,
   FakeSolana,
   fakeReceipts,
@@ -20,6 +21,9 @@ import {
 } from "./support/sweeps.ts";
 
 const db = () => createDb(env.DB);
+
+// A NEAR these tests never Sweep from.
+const nearUsdc = new FakeNearUsdc();
 
 const BASE_SEPOLIA = "eip155:84532";
 const ARBITRUM_SEPOLIA = "eip155:421614";
@@ -58,6 +62,8 @@ async function testnetProvider(accountId: string, balances: Record<string, strin
     readUsdcBalance: balancesByNetwork(balances),
     readSolana: solana.reader,
     solanaQueue: solana.queue,
+    readNear: nearUsdc.reader,
+    nearQueue: nearUsdc.queue,
     oneClick: oneClick.client,
   };
   const receipts = fakeReceipts();
@@ -68,6 +74,8 @@ async function testnetProvider(accountId: string, balances: Record<string, strin
     readReceipt: receipts.read,
     readSolana: solana.reader,
     solanaQueue: solana.queue,
+    readNear: nearUsdc.reader,
+    nearQueue: nearUsdc.queue,
     oneClick: oneClick.client,
   };
   const base = { providerId: context.provider.id, env: "testnet" as const };
@@ -261,6 +269,8 @@ describe("planSweepAll", () => {
       }),
       readSolana: solana.reader,
       solanaQueue: solana.queue,
+      readNear: nearUsdc.reader,
+      nearQueue: nearUsdc.queue,
       oneClick: oneClick.client,
     };
 

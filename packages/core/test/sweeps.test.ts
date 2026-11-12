@@ -1,7 +1,6 @@
-import { createDb, sweeps } from "@herald/db";
+import { createDb } from "@herald/db";
 import { eip3009ABI } from "@x402/evm";
 import { env } from "cloudflare:workers";
-import { eq } from "drizzle-orm";
 import {
   decodeFunctionData,
   hashTypedData,
@@ -22,6 +21,7 @@ import {
 import {
   FakeChainQueue,
   FakeNear,
+  FakeNearUsdc,
   FakeOneClick,
   FakeSolana,
   fakeReceipts,
@@ -30,6 +30,9 @@ import {
 } from "./support/sweeps.ts";
 
 const db = () => createDb(env.DB);
+
+// A NEAR these tests never Sweep from.
+const nearUsdc = new FakeNearUsdc();
 
 const BASE_SEPOLIA = "eip155:84532";
 const BASE_SEPOLIA_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
@@ -218,21 +221,6 @@ describe("planSweep", () => {
 
     expect(plan).toMatchObject({ ok: false, reason: "unsupported_network" });
   });
-
-  test("refuses to plan a Sweep from NEAR Testnet, and records nothing", async () => {
-    const { provider } = await sweepingProvider("plan-near.testnet");
-
-    const plan = await planSweep(planDeps(usdcBalances({ [provider.nearAddress]: "5000000" })), {
-      providerId: provider.id,
-      env: "testnet",
-      network: "near:testnet",
-      amount: "150000",
-      destination: "someone.testnet",
-    });
-
-    expect(plan).toMatchObject({ ok: false, reason: "unsupported_network" });
-    expect(await db().select().from(sweeps).where(eq(sweeps.providerId, provider.id))).toEqual([]);
-  });
 });
 
 /** A testnet Provider with USDC on Base Sepolia, and a Sweep it planned. */
@@ -274,15 +262,14 @@ describe("getSweepOptions", () => {
 
     expect(options).toEqual({
       chains: [
-        // No minimum yet: Herald can't Sweep from NEAR until NEAR Sweeps
-        // come (#37).
+        // NEAR Testnet's seeded minimum is 0.001 USDC (#37).
         {
           network: "near:testnet",
           kind: "near",
           label: "NEAR Testnet",
           address: provider.nearAddress,
           balance: { ok: true, amount: "0" },
-          minimum: null,
+          minimum: "1000",
           oneClick: false,
           sweepAll: false,
         },
@@ -733,6 +720,8 @@ function planDeps(readUsdcBalance: UsdcBalanceReader) {
     readUsdcBalance,
     readSolana: solana.reader,
     solanaQueue: solana.queue,
+    readNear: nearUsdc.reader,
+    nearQueue: nearUsdc.queue,
     oneClick: new FakeOneClick().client,
   };
 }
@@ -746,6 +735,8 @@ function sweepDeps(near: FakeNear, queue: FakeChainQueue, receipts = fakeReceipt
     readReceipt: receipts.read,
     readSolana: solana.reader,
     solanaQueue: solana.queue,
+    readNear: nearUsdc.reader,
+    nearQueue: nearUsdc.queue,
     oneClick: new FakeOneClick().client,
   };
 }

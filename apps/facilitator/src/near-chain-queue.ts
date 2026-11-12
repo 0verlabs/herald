@@ -6,6 +6,8 @@ import {
   type NearSettlementResult,
   type NearSettlementSubmission,
   type NearSetupJob,
+  type NearSweepSubmission,
+  type NearSweepSubmissionResult,
 } from "@herald/core/server";
 import { createDb } from "@herald/db";
 import { base58, base64 } from "@scure/base";
@@ -33,6 +35,12 @@ const SettlementSubmissionSchema = z.object({
   network: Caip2Schema,
   signedDelegateAction: z.string().min(1).max(4096),
 });
+const SweepSubmissionSchema = SettlementSubmissionSchema;
+
+// A Sweep's delegate action this close to its `max_block_height` is refused
+// rather than sent: the final height lags the chain's head by a few blocks,
+// and the relayer would pay for a delegate action that fails as expired.
+const SWEEP_EXPIRY_MARGIN_BLOCKS = 10;
 
 // The stock mechanism's cap on the gas a Buyer's ft_transfer may use, which
 // the relayer pays for.
@@ -67,6 +75,14 @@ type SetupJobRow = {
   next_attempt_at: number;
 };
 
+/** A row of `sweeps`: one per signed Sweep the relayer sent, with the transaction carrying it. */
+type SweepRow = {
+  delegate_hash: string;
+  tx_hash: string;
+  tx_base64: string;
+  submitted_at: number;
+};
+
 /** A row of `settlements`: one per signed delegate action ever submitted. */
 type SettlementRow = {
   delegate_hash: string;
@@ -93,6 +109,12 @@ type Outcome = {
  * happens outside the nonce lock, so one slow transaction doesn't hold up
  * the others.
  *
+ * Sweeps (`submitSweep`) wrap a Provider's signed delegate action, from the
+ * NEAR Receiving Address, the same way. Each is sent once: presenting it
+ * again answers the transaction that carries it, sent again in case the
+ * first broadcast never reached the node. The web Worker follows it from
+ * there.
+ *
  * It sets up Providers' NEAR Receiving Addresses, which NEAR payments need
  * to verify: the web Worker queues one when a Provider signs in
  * (`queueSetup`), and an alarm creates the implicit account and registers
@@ -110,6 +132,12 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
       `CREATE TABLE IF NOT EXISTS settlements (
         delegate_hash TEXT PRIMARY KEY,
         tx_hash TEXT,
+        submitted_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS sweeps (
+        delegate_hash TEXT PRIMARY KEY,
+        tx_hash TEXT NOT NULL,
+        tx_base64 TEXT NOT NULL,
         submitted_at INTEGER NOT NULL
       );
       CREATE TABLE IF NOT EXISTS relayer_nonce (
@@ -242,10 +270,10 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
       this.#broadcast(network, sender, [delegateAction(base64.decode(signedDelegateAction))], {
         // Recorded before broadcasting, so a lost answer or an eviction
         // mid-broadcast can't lead to the delegate action being sent twice.
-        recordHash: (hash) =>
+        record: (transaction) =>
           this.ctx.storage.sql.exec(
             "UPDATE settlements SET tx_hash = ? WHERE delegate_hash = ?",
-            hash,
+            transaction?.hash ?? null,
             delegateHash,
           ),
       }),
@@ -276,6 +304,109 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
     };
   }
 
+  /**
+   * Relays a Provider's signed Sweep: wraps it in a relayer transaction and
+   * sends it, answering the transaction's hash without waiting for it to be
+   * final. A Sweep it already sent is answered with the same transaction,
+   * broadcast again. Refuses one that isn't a single USDC `ft_transfer`
+   * signed by its sender, one from the relayer itself, one for a network
+   * this Herald environment doesn't list, and one at or within a few
+   * blocks of its `max_block_height`.
+   */
+  async submitSweep(input: NearSweepSubmission): Promise<NearSweepSubmissionResult> {
+    const parsed = SweepSubmissionSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, message: "Not a NEAR Sweep submission" };
+    const { network, signedDelegateAction } = parsed.data;
+    const listed = this.#nearNetwork(network);
+    if (!listed) {
+      return {
+        ok: false,
+        message: `${network} is not a Herald NEAR network on ${this.env.HERALD_ENV}`,
+      };
+    }
+    const problem = delegateProblem(
+      signedDelegateAction,
+      listed.usdc.address,
+      nearRelayerKey(this.env).accountId,
+    );
+    if (problem) return { ok: false, message: problem };
+    const { senderId, maxBlockHeight } = decodeSignedDelegateB64(signedDelegateAction).delegate;
+    const delegateHash = settlementCacheKey(signedDelegateAction);
+    const sent = this.#sentSweep(delegateHash);
+    if (sent) return this.#answerSweep(network, sent);
+
+    let height: bigint;
+    try {
+      height = await this.#finalHeight(network);
+    } catch (error) {
+      // Unanswered rather than refused: core leaves the Sweep for a retry.
+      throw new Error(`Herald couldn't read the NEAR block height: ${String(error)}`);
+    }
+    if (height + BigInt(SWEEP_EXPIRY_MARGIN_BLOCKS) >= maxBlockHeight) {
+      return {
+        ok: false,
+        message: `The signed delegate action expired at block ${maxBlockHeight} (NEAR is at ${height})`,
+      };
+    }
+
+    return this.#enqueue(async () => {
+      // Another call may have sent it while this one waited its turn.
+      const already = this.#sentSweep(delegateHash);
+      if (already) return { ok: true, transaction: already.tx_hash };
+      const broadcast = await this.#broadcast(
+        network,
+        senderId,
+        [delegateAction(base64.decode(signedDelegateAction))],
+        {
+          // Recorded before broadcasting, so the Sweep is never sent in two
+          // relayer transactions.
+          record: (transaction) => {
+            if (!transaction) {
+              this.ctx.storage.sql.exec("DELETE FROM sweeps WHERE delegate_hash = ?", delegateHash);
+              return;
+            }
+            this.ctx.storage.sql.exec(
+              "INSERT OR REPLACE INTO sweeps (delegate_hash, tx_hash, tx_base64, submitted_at) VALUES (?, ?, ?, ?)",
+              delegateHash,
+              transaction.hash,
+              base64.encode(transaction.bytes),
+              Date.now(),
+            );
+          },
+        },
+      );
+      if (!broadcast.ok) return broadcast;
+      console.log(
+        JSON.stringify({
+          event: "near_sweep_sent",
+          network,
+          sender: senderId,
+          transaction: broadcast.transaction.hash,
+        }),
+      );
+      return { ok: true, transaction: broadcast.transaction.hash };
+    });
+  }
+
+  #sentSweep(delegateHash: string): SweepRow | undefined {
+    return this.ctx.storage.sql
+      .exec<SweepRow>("SELECT * FROM sweeps WHERE delegate_hash = ?", delegateHash)
+      .toArray()[0];
+  }
+
+  /**
+   * Answers a Sweep already sent with its relayer transaction, broadcast
+   * again in case the first broadcast never reached the node. A node that
+   * has it, or refuses it, changes nothing: it lands at most once.
+   */
+  async #answerSweep(network: Caip2, sent: SweepRow): Promise<NearSweepSubmissionResult> {
+    await this.#send(network, {
+      hash: sent.tx_hash,
+      bytes: base64.decode(sent.tx_base64),
+    }).catch(() => undefined);
+    return { ok: true, transaction: sent.tx_hash };
+  }
+
   #enqueue<T>(send: () => Promise<T>): Promise<T> {
     const run = this.#tail.then(send);
     this.#tail = run.catch(() => undefined);
@@ -289,9 +420,9 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
 
   /**
    * Signs a relayer transaction to `receiverId` holding `actions` with the
-   * next nonce and broadcasts it. Runs inside the send queue. `recordHash`
-   * gets the transaction's hash before it is broadcast, and null if the
-   * node refused it. The node refusing it (an `INVALID_TRANSACTION` answer)
+   * next nonce and broadcasts it. Runs inside the send queue. `record` gets
+   * the signed transaction before it is broadcast, and null if the node
+   * refused it. The node refusing it (an `INVALID_TRANSACTION` answer)
    * means it was never sent. A nonce the node finds stale (another sender
    * used the key) is re-read from the chain and tried once more. Without an
    * answer the transaction may have been sent, so it counts as sent and the
@@ -301,7 +432,7 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
     network: Caip2,
     receiverId: string,
     actions: NearAction[],
-    { recordHash }: { recordHash?: (hash: string | null) => void } = {},
+    { record }: { record?: (transaction: SignedNearTransaction | null) => void } = {},
   ): Promise<{ ok: true; transaction: SignedNearTransaction } | { ok: false; message: string }> {
     const relayer = nearRelayerKey(this.env);
     for (let attempt = 1; ; attempt++) {
@@ -312,7 +443,7 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
           this.#finalBlockHash(network),
         ]);
         transaction = signedRelayerTransaction({ relayer, receiverId, nonce, blockHash, actions });
-        recordHash?.(transaction.hash);
+        record?.(transaction);
         this.#useNonce(nonce);
       } catch (error) {
         return {
@@ -335,7 +466,7 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
           );
           return { ok: true, transaction };
         }
-        recordHash?.(null);
+        record?.(null);
         if (isInvalidNonce(error.info) && attempt === 1) {
           this.ctx.storage.sql.exec("DELETE FROM relayer_nonce");
           continue;
@@ -559,6 +690,20 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
       "INSERT INTO relayer_nonce (id, nonce) VALUES (1, ?) ON CONFLICT (id) DO UPDATE SET nonce = excluded.nonce",
       Number(nonce),
     );
+  }
+
+  async #finalHeight(network: Caip2): Promise<bigint> {
+    const block = (await nearRpc(
+      this.env,
+      network,
+      "block",
+      { finality: "final" },
+      RPC_TIMEOUT_MS,
+    )) as { header?: { height?: unknown } };
+    if (typeof block.header?.height !== "number") {
+      throw new Error("NEAR RPC block answered no height");
+    }
+    return BigInt(block.header.height);
   }
 
   async #finalBlockHash(network: Caip2): Promise<Uint8Array> {

@@ -8,6 +8,7 @@ import {
   planSweepAll,
   refreshSweeps,
   rpcEvmReceiptReader,
+  rpcNearSweepReader,
   rpcSolanaSweepReader,
   rpcUsdcBalanceReader,
   type SweepDeps,
@@ -21,6 +22,7 @@ import { z } from "zod";
 import { requireSession } from "./auth";
 import { evmSweepSubmitter } from "./evm-chain-queue";
 import { readHeraldEnv } from "./herald-env";
+import { nearSweepQueue } from "./near-chain-queue";
 import { oneClickClient } from "./one-click";
 import { solanaSweepQueue } from "./solana-chain-queue";
 
@@ -29,24 +31,34 @@ import { solanaSweepQueue } from "./solana-chain-queue";
 
 const readUsdcBalance = createServerOnlyFn(() => rpcUsdcBalanceReader(rpcUrlsFrom(env)));
 
+// NEAR reads go to `NEAR_RPC_URL`; a relayer transaction is read with the
+// relayer as its signer, which the NEAR chain queue names.
+const readNear = createServerOnlyFn(() =>
+  rpcNearSweepReader(env.NEAR_RPC_URL, (network) => nearSweepQueue().relayer(network)),
+);
+
 /**
- * What planning a Sweep reads: D1, balances, for Solana the chain
- * (`SOLANA_RPC_URL`) and the facilitator's Solana chain queue (its fee
- * payer), and 1Click's quotes for cross-chain and Intents Sweeps.
+ * What planning a Sweep reads: D1, balances, for Solana and NEAR the chain
+ * (`SOLANA_RPC_URL`, `NEAR_RPC_URL`) and the facilitator's chain queue
+ * (its fee payer or relayer), and 1Click's quotes for cross-chain and
+ * Intents Sweeps.
  */
 const planDeps = createServerOnlyFn((): SweepPlanDeps => ({
   db: createDb(env.DB),
   readUsdcBalance: readUsdcBalance(),
   readSolana: rpcSolanaSweepReader(rpcUrlsFrom(env)),
   solanaQueue: solanaSweepQueue(),
+  readNear: readNear(),
+  nearQueue: nearSweepQueue(),
   oneClick: oneClickClient(),
 }));
 
 /**
  * What completing and following Sweeps reads and writes: D1, the MPC
  * signature on NEAR (`NEAR_RPC_URL`), the facilitator's chain queues, each
- * chain's receipts or signature statuses (`<CHAIN>_RPC_URL`), and 1Click's
- * status for cross-chain and Intents Sweeps.
+ * chain's receipts, signature statuses or relayer transactions
+ * (`<CHAIN>_RPC_URL`), and 1Click's status for cross-chain and Intents
+ * Sweeps.
  */
 const sweepDeps = createServerOnlyFn((): SweepDeps => ({
   db: createDb(env.DB),
@@ -55,6 +67,8 @@ const sweepDeps = createServerOnlyFn((): SweepDeps => ({
   readReceipt: rpcEvmReceiptReader(rpcUrlsFrom(env)),
   readSolana: rpcSolanaSweepReader(rpcUrlsFrom(env)),
   solanaQueue: solanaSweepQueue(),
+  readNear: readNear(),
+  nearQueue: nearSweepQueue(),
   oneClick: oneClickClient(),
 }));
 
