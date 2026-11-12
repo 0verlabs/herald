@@ -10,8 +10,9 @@ import {
   type Network,
 } from "../networks.ts";
 import { decimalToBaseUnits } from "../price.ts";
+import { receivingAddressOn } from "../receiving-addresses.ts";
 import { callJsonRpc, rpcUrlSecret } from "../rpc.ts";
-import type { HeraldEnv, Provider } from "../schemas.ts";
+import type { HeraldEnv } from "../schemas.ts";
 import type { Db } from "./db.ts";
 import { callViewFunction, nearRpcAt, viewAccount } from "./near-protocol.ts";
 import { providerFromRow } from "./providers.ts";
@@ -80,19 +81,6 @@ export async function getProviderBalances(
       }
     }),
   );
-}
-
-function receivingAddressOn(provider: Provider, network: Network): string {
-  switch (network.kind) {
-    case "evm":
-      return provider.evmAddress;
-    case "solana":
-      return provider.solanaAddress;
-    case "near":
-      return provider.nearAddress;
-    default:
-      return unhandledKind(network);
-  }
 }
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {

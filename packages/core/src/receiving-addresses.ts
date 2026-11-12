@@ -3,11 +3,13 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { bytesToHex, bytesToNumberBE, bytesToNumberLE } from "@noble/curves/utils.js";
 import { keccak_256, sha3_256 } from "@noble/hashes/sha3.js";
 import { base58 } from "@scure/base";
+import { unhandledKind, type Network } from "./networks.ts";
 import type {
   EvmAddress,
   HeraldEnv,
   NearAccountId,
   NearImplicitAccount,
+  Provider,
   SolanaAddress,
 } from "./schemas.ts";
 
@@ -111,4 +113,39 @@ function decodeNearKey(key: string, curve: "secp256k1" | "ed25519"): Uint8Array 
   const prefix = `${curve}:`;
   if (!key.startsWith(prefix)) throw new Error(`Expected a ${curve} key, got ${key}`);
   return base58.decode(key.slice(prefix.length));
+}
+
+/** A Provider's Receiving Address on `network`. */
+export function receivingAddressOn(
+  provider: Pick<Provider, "evmAddress" | "solanaAddress" | "nearAddress">,
+  network: Network,
+): string {
+  switch (network.kind) {
+    case "evm":
+      return provider.evmAddress;
+    case "solana":
+      return provider.solanaAddress;
+    case "near":
+      return provider.nearAddress;
+    default:
+      return unhandledKind(network);
+  }
+}
+
+/**
+ * Whether two addresses on a network of this kind are the same. EVM
+ * addresses compare case-insensitively (checksum casing is optional);
+ * Solana's base58 addresses are case-sensitive, and NEAR account ids are
+ * lowercase, so both compare exactly.
+ */
+export function sameAddress(kind: Network["kind"], a: string, b: string): boolean {
+  switch (kind) {
+    case "evm":
+      return a.toLowerCase() === b.toLowerCase();
+    case "solana":
+    case "near":
+      return a === b;
+    default:
+      return unhandledKind(kind);
+  }
 }

@@ -15,7 +15,12 @@ import {
   type Network,
 } from "../networks.ts";
 import { USDC_DECIMALS } from "../price.ts";
-import { mpcSigners, receivingAddressPaths } from "../receiving-addresses.ts";
+import {
+  mpcSigners,
+  receivingAddressOn,
+  receivingAddressPaths,
+  sameAddress,
+} from "../receiving-addresses.ts";
 import { callJsonRpc, postRpc } from "../rpc.ts";
 import {
   EvmAddressSchema,
@@ -518,7 +523,7 @@ function resolveTarget(
   if (input.destinationKind === "same_chain") {
     const address = parseDestination(input.destination?.trim() ?? "", network);
     if (!address) return reject("invalid_request", enterAddress(network));
-    if (isReceivingAddress(address, provider, network)) {
+    if (sameAddress(network.kind, address, receivingAddressOn(provider, network))) {
       return reject(
         "invalid_destination",
         "That's your Receiving Address. Sweep to another address.",
@@ -649,7 +654,7 @@ async function requestQuote(
     quote.amountIn !== amount
       ? `it quoted ${formatUsdc(quote.amountIn)} USDC instead of ${formatUsdc(amount)}`
       : !depositAddress ||
-          isReceivingAddress(depositAddress, provider, network) ||
+          sameAddress(network.kind, depositAddress, receivingAddressOn(provider, network)) ||
           lostDestination(depositAddress, network)
         ? `its deposit address ${quote.depositAddress} isn't one Herald can send to on ${network.label}`
         : null;
@@ -948,20 +953,6 @@ function chainUnavailable(provider: Provider, network: Network, error: unknown):
     "chain_unavailable",
     `Herald couldn't reach ${network.label} to plan the Sweep. Try again later.`,
   );
-}
-
-/** A Provider's Receiving Address on `network`. */
-function receivingAddressOn(provider: Provider, network: Network): string {
-  switch (network.kind) {
-    case "evm":
-      return provider.evmAddress;
-    case "solana":
-      return provider.solanaAddress;
-    case "near":
-      return provider.nearAddress;
-    default:
-      return unhandledKind(network);
-  }
 }
 
 /**
@@ -1999,22 +1990,6 @@ export function rpcEvmReceiptReader(
 }
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-
-/** Whether `address` is the Provider's own Receiving Address on `network`. */
-function isReceivingAddress(address: string, provider: Provider, network: Network): boolean {
-  // EVM addresses are case-insensitive; Solana's base58 ones and NEAR
-  // account ids aren't.
-  switch (network.kind) {
-    case "evm":
-      return address.toLowerCase() === provider.evmAddress.toLowerCase();
-    case "solana":
-      return address === provider.solanaAddress;
-    case "near":
-      return address === provider.nearAddress;
-    default:
-      return unhandledKind(network);
-  }
-}
 
 /**
  * Why USDC sent to `address` on `network` is lost, or null if it isn't: on

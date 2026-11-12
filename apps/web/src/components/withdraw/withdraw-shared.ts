@@ -33,23 +33,6 @@ export function addressProblem(address: string, kind: SweepChainOption["kind"]):
   }
 }
 
-/**
- * Whether two addresses on a network of this kind are the same. EVM
- * addresses are case-insensitive; Solana's base58 ones and NEAR account ids
- * aren't.
- */
-export function sameAddress(a: string, b: string, kind: SweepChainOption["kind"]): boolean {
-  switch (kind) {
-    case "evm":
-      return a.toLowerCase() === b.toLowerCase();
-    case "solana":
-    case "near":
-      return a === b;
-    default:
-      return unhandledKind(kind);
-  }
-}
-
 /** The hint in an empty address field for a network of this kind. */
 export function addressPlaceholder(kind: SweepChainOption["kind"]): string {
   switch (kind) {
