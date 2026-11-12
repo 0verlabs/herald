@@ -1,5 +1,5 @@
 import { providers } from "@herald/db/schema";
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, asc, eq, isNull, ne, or } from "drizzle-orm";
 import { networkRegistry, type Caip2, type Network } from "../networks.ts";
 import { deriveReceivingAddresses } from "../receiving-addresses.ts";
 import {
@@ -157,6 +157,37 @@ export async function ensureNearSetupQueued(
   const [row] = await db.select().from(providers).where(eq(providers.id, provider.id));
   if (!row) throw new Error(`Provider ${provider.id} disappeared`);
   return providerFromRow(db, row, input.env);
+}
+
+/**
+ * Queues the NEAR Receiving Address setup of up to `limit` Providers that
+ * aren't on their way, oldest first, with `ensureNearSetupQueued`: those
+ * `not_queued` (registered before NEAR and never signed in since, or given
+ * up on by the chain queue) and any without a stored NEAR address, which is
+ * derived and stored on the way. Sign-in queues the setup too; this reaches
+ * Providers who don't sign in again. Does nothing in an environment that
+ * lists no NEAR network. Returns how many Providers it handed over and how
+ * many the chain queue couldn't take (they stay `not_queued`).
+ */
+export async function queuePendingNearSetups(
+  deps: { db: Db; queueNearSetup: NearSetupQueue },
+  input: { env: HeraldEnv; limit: number },
+): Promise<{ queued: number; failed: number }> {
+  const { db } = deps;
+  if (!networkRegistry[input.env].some((n) => n.kind === "near")) return { queued: 0, failed: 0 };
+  const rows = await db
+    .select()
+    .from(providers)
+    .where(or(eq(providers.nearSetupStatus, "not_queued"), isNull(providers.nearAddress)))
+    .orderBy(asc(providers.id))
+    .limit(input.limit);
+  let queued = 0;
+  for (const row of rows) {
+    const provider = await providerFromRow(db, row, input.env);
+    const after = await ensureNearSetupQueued(deps, { provider, env: input.env });
+    if (after.nearSetupStatus !== "not_queued") queued++;
+  }
+  return { queued, failed: rows.length - queued };
 }
 
 /**

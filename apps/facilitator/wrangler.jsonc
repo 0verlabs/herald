@@ -6,6 +6,12 @@
 // (`testnet` or `mainnet`). Bindings and vars are not inherited, so each
 // environment declares its own.
 //
+// The Cron Trigger (`triggers.crons`, every 10 minutes, src/scheduled.ts)
+// queues the NEAR Receiving Address setup of Providers that aren't on their
+// way: those registered before NEAR who don't sign in again, and those the
+// NEAR chain queue gave up on. It does nothing where Herald lists no NEAR
+// network (production, for now). `triggers` is declared in each environment.
+//
 // SETTLE_RECEIPT_TIMEOUT_MS bounds the receipt wait in /settle; past it the
 // answer is `settlement_pending` and the resource server retries once. On
 // NEAR, which has no pending answer, it bounds the wait for the relayer
@@ -61,6 +67,7 @@
     "HERALD_ENV": "testnet",
     "SETTLE_RECEIPT_TIMEOUT_MS": "30000",
   },
+  "triggers": { "crons": ["*/10 * * * *"] },
   "durable_objects": {
     "bindings": [
       { "name": "EVM_CHAIN_QUEUE", "class_name": "EvmChainQueue" },
@@ -108,6 +115,7 @@
         "HERALD_ENV": "testnet",
         "SETTLE_RECEIPT_TIMEOUT_MS": "30000",
       },
+      "triggers": { "crons": ["*/10 * * * *"] },
       "durable_objects": {
         "bindings": [
           { "name": "EVM_CHAIN_QUEUE", "class_name": "EvmChainQueue" },
@@ -158,6 +166,7 @@
         "HERALD_ENV": "mainnet",
         "SETTLE_RECEIPT_TIMEOUT_MS": "30000",
       },
+      "triggers": { "crons": ["*/10 * * * *"] },
       "durable_objects": {
         "bindings": [
           { "name": "EVM_CHAIN_QUEUE", "class_name": "EvmChainQueue" },

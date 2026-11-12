@@ -116,8 +116,9 @@ type Outcome = {
  * there.
  *
  * It sets up Providers' NEAR Receiving Addresses, which NEAR payments need
- * to verify: the web Worker queues one when a Provider signs in
- * (`queueSetup`), and an alarm creates the implicit account and registers
+ * to verify: the web Worker queues one when a Provider signs in, and the
+ * facilitator's Cron Trigger (`scheduled.ts`) queues those not on their way
+ * (`queueSetup`). An alarm creates the implicit account and registers
  * it on USDC, each at most once, recording the outcome on the Provider in
  * D1.
  */
@@ -497,7 +498,8 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
    * into this Durable Object's record first, then onto the Provider in D1;
    * a failed D1 write is logged and repaired the next time the setup is
    * queued. Once the queue gives up, the Provider goes back to
-   * `not_queued`, so its next sign-in queues the setup again.
+   * `not_queued`, so the facilitator's next scheduled run (or its next
+   * sign-in) queues the setup again.
    */
   async #attemptSetup(job: SetupJobRow): Promise<void> {
     const attempt = job.attempts + 1;
