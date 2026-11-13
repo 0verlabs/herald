@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -45,10 +46,13 @@ export function NetworkAvatar({
   label,
   size = "sm",
   className,
+  logo,
 }: {
   label: string;
   size?: Size;
   className?: string;
+  /** What to show instead of the network's logo, such as NEAR Intents' own. `size` doesn't apply to it. */
+  logo?: ReactNode;
 }) {
   return (
     <Tooltip>
@@ -60,7 +64,7 @@ export function NetworkAvatar({
           className,
         )}
       >
-        <NetworkLogo label={label} size={size} />
+        {logo ?? <NetworkLogo label={label} size={size} />}
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>

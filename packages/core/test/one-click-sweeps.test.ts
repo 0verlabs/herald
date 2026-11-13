@@ -12,7 +12,7 @@ import {
   getTransactionDecoder,
 } from "@solana/kit";
 import { eip3009ABI } from "@x402/evm";
-import { base64 } from "@scure/base";
+import { base58, base64 } from "@scure/base";
 import { env } from "cloudflare:workers";
 import { decodeFunctionData, hashTypedData, type Address, type Hex } from "viem";
 import { describe, expect, test } from "vite-plus/test";
@@ -1068,5 +1068,213 @@ describe("Sweeping from NEAR through 1Click", () => {
       { ok: false, reason: "unsupported_destination" },
     ]);
     expect(context.oneClick.quotes).toEqual([]);
+  });
+});
+
+/** A NEAR transaction hash, as 1Click reports a delivery on NEAR. */
+const nearDeliveryTxHash = () => base58.encode(crypto.getRandomValues(new Uint8Array(32)));
+
+/**
+ * Plans a 1.5 USDC Sweep from Base or Solana through 1Click, signs and
+ * completes it, and lands its transfer: it ends `confirmed`.
+ */
+async function confirmedSweepFrom(
+  context: Context,
+  network: typeof BASE | typeof SOLANA,
+  target: SweepTarget,
+) {
+  const plan = await planSweep(context.planDeps, {
+    ...context.base,
+    network,
+    amount: "1500000",
+    ...target,
+  });
+  if (!plan.ok) throw new Error(plan.message);
+  if (!plan.quote) throw new Error("Expected a quoted Sweep");
+  const signed = await context.near.sign({
+    signerId: context.provider.accountId,
+    request: plan.signRequest,
+    key: plan.sweep.sourceKind === "solana" ? context.solanaKey : context.receivingKey,
+  });
+  const completed = await completeSweep(context.deps, {
+    ...context.base,
+    sweepId: plan.sweep.id,
+    nearTxHash: signed,
+  });
+  if (!completed.ok) throw new Error(completed.message);
+  expect(completed.sweep.status).toBe("submitted");
+  const sourceTxHash = completed.sweep.sourceTxHash!;
+  if (completed.sweep.sourceKind === "solana") context.solana.statuses.set(sourceTxHash, "success");
+  else context.receipts.receipts[sourceTxHash] = "success";
+  expect(await context.refresh()).toMatchObject({ status: "confirmed" });
+  return { sweep: completed.sweep, depositAddress: plan.quote.depositAddress };
+}
+
+const toNear = (destination: string) =>
+  ({
+    destinationKind: "cross_chain",
+    destinationNetwork: NEAR_MAINNET,
+    destination,
+  }) as const satisfies SweepTarget;
+
+describe("Sweeping to NEAR through 1Click", () => {
+  test.each([
+    { case: "Base", network: BASE, originAsset: BASE_USDC_1CS, refundTo: "evmAddress" },
+    { case: "Solana", network: SOLANA, originAsset: SOLANA_USDC_1CS, refundTo: "solanaAddress" },
+  ] as const)(
+    "from $case, 1Click quotes USDC on NEAR to the NEAR account, and the Sweep reaches delivered",
+    async ({ network, originAsset, refundTo }) => {
+      const context = await mainnetProvider(`oc-to-near-${crypto.randomUUID().slice(0, 8)}.near`);
+
+      const { sweep, depositAddress } = await confirmedSweepFrom(
+        context,
+        network,
+        toNear("alice.near"),
+      );
+      context.oneClick.report(depositAddress, "PROCESSING");
+      const delivering = await context.refresh();
+      const deliveryTx = nearDeliveryTxHash();
+      context.oneClick.report(depositAddress, "SUCCESS", {
+        amountOut: "1499000",
+        destinationTxHashes: [deliveryTx],
+      });
+      const delivered = await context.refresh();
+
+      expect(context.oneClick.quotes).toMatchObject([
+        {
+          originAsset,
+          destinationAsset: NEAR_USDC_1CS,
+          amount: "1500000",
+          refundTo: context.provider[refundTo],
+          recipient: "alice.near",
+          recipientType: "DESTINATION_CHAIN",
+        },
+      ]);
+      expect(delivering).toMatchObject({ status: "delivering" });
+      expect(delivered).toMatchObject({
+        id: sweep.id,
+        status: "delivered",
+        sourceNetwork: network,
+        destinationKind: "cross_chain",
+        destinationNetwork: NEAR_MAINNET,
+        destinationAddress: "alice.near",
+        destinationAsset: NEAR_USDC_1CS,
+        destinationLabel: "NEAR",
+        deliveredAmount: "1499000",
+        deliveryTxUrl: `https://nearblocks.io/txns/${deliveryTx}`,
+        oneClickUrl: `https://explorer.near-intents.org/transactions/${depositAddress}`,
+        error: null,
+      });
+    },
+  );
+
+  test("accepts a 64-character implicit account as the NEAR destination", async () => {
+    const context = await mainnetProvider("oc-to-near-implicit.near");
+    const implicit = "ab".repeat(32);
+
+    const plan = await planSweep(context.planDeps, {
+      ...context.base,
+      network: BASE,
+      amount: "1500000",
+      ...toNear(implicit),
+    });
+
+    expect(plan).toMatchObject({ ok: true, sweep: { destinationAddress: implicit } });
+    expect(context.oneClick.quotes).toMatchObject([{ recipient: implicit }]);
+  });
+
+  test.each([
+    { case: "an account id with capitals", destination: "Alice.near", reason: "invalid_request" },
+    { case: "a one-character account id", destination: "a", reason: "invalid_request" },
+    // A lowercase 0x address is a valid NEAR account id (an ETH-implicit
+    // account), but a checksummed one pasted from an EVM wallet isn't.
+    { case: "a checksummed EVM address", destination: BASE_USDC, reason: "invalid_request" },
+    { case: "a 1Click asset id", destination: NEAR_USDC_1CS, reason: "invalid_request" },
+    { case: "the USDC contract", destination: NEAR_USDC, reason: "invalid_destination" },
+  ])("refuses $case as the NEAR destination, without asking 1Click", async (row) => {
+    const context = await mainnetProvider(`oc-to-near-bad-${crypto.randomUUID().slice(0, 8)}.near`);
+
+    const plan = await planSweep(context.planDeps, {
+      ...context.base,
+      network: BASE,
+      amount: "1500000",
+      ...toNear(row.destination),
+    });
+
+    expect(plan).toMatchObject({ ok: false, reason: row.reason });
+    expect(context.oneClick.quotes).toEqual([]);
+  });
+
+  test("says what a NEAR account id looks like when the destination isn't one", async () => {
+    const context = await mainnetProvider("oc-to-near-message.near");
+
+    const plan = await planSweep(context.planDeps, {
+      ...context.base,
+      network: SOLANA,
+      amount: "1500000",
+      ...toNear("not an account"),
+    });
+
+    expect(plan).toMatchObject({
+      ok: false,
+      message: "Enter a NEAR account id, such as alice.near, or a 64-character implicit account.",
+    });
+  });
+
+  test("accepts the Provider's own NEAR Receiving Address: that's consolidating", async () => {
+    const context = await mainnetProvider("oc-to-near-consolidate.near");
+
+    const plan = await planSweep(context.planDeps, {
+      ...context.base,
+      network: BASE,
+      amount: "1500000",
+      ...toNear(context.provider.nearAddress),
+    });
+
+    expect(plan).toMatchObject({
+      ok: true,
+      sweep: { destinationNetwork: NEAR_MAINNET, destinationAddress: context.provider.nearAddress },
+    });
+    expect(context.oneClick.quotes).toMatchObject([
+      { recipient: context.provider.nearAddress, recipientType: "DESTINATION_CHAIN" },
+    ]);
+  });
+
+  test("the Sweep list tells a Sweep to NEAR from one into NEAR Intents, though both go to near:mainnet", async () => {
+    const context = await mainnetProvider("oc-to-near-list.near");
+    const intents = await confirmedSweepFrom(context, BASE, { destinationKind: "intents" });
+    const intentsTx = nearDeliveryTxHash();
+    context.oneClick.report(intents.depositAddress, "SUCCESS", {
+      amountOut: "1499000",
+      destinationTxHashes: [intentsTx],
+    });
+    const toAccount = await confirmedSweepFrom(context, SOLANA, toNear("alice.near"));
+    const accountTx = nearDeliveryTxHash();
+    context.oneClick.report(toAccount.depositAddress, "SUCCESS", {
+      amountOut: "1499000",
+      destinationTxHashes: [accountTx],
+    });
+
+    const listed = await refreshSweeps(context.deps, context.base);
+
+    const byId = new Map(listed.map((entry) => [entry.id, entry]));
+    expect(byId.get(toAccount.sweep.id)).toMatchObject({
+      status: "delivered",
+      destinationKind: "cross_chain",
+      destinationNetwork: NEAR_MAINNET,
+      destinationLabel: "NEAR",
+      deliveryTxUrl: `https://nearblocks.io/txns/${accountTx}`,
+      oneClickUrl: `https://explorer.near-intents.org/transactions/${toAccount.depositAddress}`,
+    });
+    // An Intents credit has no transaction on NEAR to link to: the 1Click
+    // explorer shows it.
+    expect(byId.get(intents.sweep.id)).toMatchObject({
+      status: "delivered",
+      destinationKind: "intents",
+      destinationNetwork: NEAR_MAINNET,
+      destinationLabel: "NEAR Intents",
+      deliveryTxUrl: null,
+      oneClickUrl: `https://explorer.near-intents.org/transactions/${intents.depositAddress}`,
+    });
   });
 });

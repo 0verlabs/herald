@@ -33,6 +33,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { formatUsdc, formatUtc } from "@/lib/format";
 import { walletFor } from "@/lib/near-wallet";
 import { inPlainWords } from "@/lib/plain-words";
+import { cn } from "@/lib/utils";
 import { discardPlannedSweep, finishSweep, startSweep } from "@/server/sweeps";
 import { OptionSelect, type Option } from "./option-select";
 import { QuoteReview, WithdrawSummary } from "./withdraw-review";
@@ -68,11 +69,21 @@ function baseUnitsToInput(baseUnits: string): string {
     .replace(/\.?0+$/, "");
 }
 
-/** The round logo for NEAR Intents in a destination list. */
-export function IntentsLogo() {
+const intentsLogoSizes = {
+  sm: { logo: "size-6", icon: "size-3.5" },
+  md: { logo: "size-8", icon: "size-4" },
+} as const;
+
+/** The round logo for NEAR Intents, in a destination list (`md`) or a table (`sm`). */
+export function IntentsLogo({ size = "md" }: { size?: keyof typeof intentsLogoSizes }) {
   return (
-    <span className="grid size-8 shrink-0 place-items-center rounded-full bg-secondary text-secondary-foreground">
-      <InfinityIcon aria-hidden className="size-4" />
+    <span
+      className={cn(
+        "grid shrink-0 place-items-center rounded-full bg-secondary text-secondary-foreground",
+        intentsLogoSizes[size].logo,
+      )}
+    >
+      <InfinityIcon aria-hidden className={intentsLogoSizes[size].icon} />
     </span>
   );
 }
