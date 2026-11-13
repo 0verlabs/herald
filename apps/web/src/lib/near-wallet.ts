@@ -132,6 +132,34 @@ export async function signSponsoredSign(
   return signed;
 }
 
+/**
+ * Has the wallet sign the MPC `sign` calls of a "Sweep all" as NEP-366
+ * delegate actions from `signerId`, all in one request, without sending
+ * any, and answers the signed delegate actions (base64 Borsh) for Herald's
+ * relayer to send, each in its own transaction (ADR 0008, ADR 0010).
+ * Solana's are asked for first (`approvalOrder`): a wallet such as Meteor
+ * numbers nonces in request order, and Herald relays in nonce order, so
+ * Solana's, which expires soonest, is relayed first. A wallet may answer
+ * fewer than asked for; Herald matches each to its Sweep by payload.
+ */
+export async function signSponsoredSigns(
+  wallet: Wallet,
+  input: { heraldEnv: HeraldEnv; signerId: string; requests: MpcSignRequest[] },
+): Promise<string[]> {
+  const answered = await wallet.signDelegateActions({
+    network: input.heraldEnv,
+    signerId: input.signerId,
+    delegateActions: approvalOrder(input.requests).flatMap((index) => {
+      const request = input.requests[index];
+      return request ? [signTransaction(request)] : [];
+    }),
+  });
+  const signed: unknown[] = Array.isArray(answered?.signedDelegateActions)
+    ? answered.signedDelegateActions
+    : [];
+  return signed.filter((s): s is string => typeof s === "string" && s !== "");
+}
+
 /** The NEAR transaction hash in a wallet's outcome, or null if it gave none. */
 function txHashOf(outcome: unknown): string | null {
   const reported = outcome as {
@@ -190,7 +218,8 @@ export type SignedCalls = {
 };
 
 /**
- * The order to ask for approvals one at a time: Solana's first, since its
+ * The order to ask for approvals one at a time, or for delegate actions in
+ * one request (`signSponsoredSigns`): Solana's first, since its
  * transaction expires within about a minute of planning, then the rest as
  * planned. A NEAR Sweep's delegate action, like an EVM authorization, stays
  * valid for about 10 minutes (less if its 1Click quote expires sooner), so

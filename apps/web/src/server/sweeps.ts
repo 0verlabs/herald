@@ -8,10 +8,12 @@ import {
   planSweepAll,
   refreshSweeps,
   relaySponsoredSweep,
+  relaySponsoredSweepAll,
   rpcEvmReceiptReader,
   rpcNearSweepReader,
   rpcSolanaSweepReader,
   rpcUsdcBalanceReader,
+  SWEEP_DAILY_CAP,
   type SweepDeps,
   type SweepPlanDeps,
 } from "@herald/core/server";
@@ -297,6 +299,58 @@ export const sponsorSweep = createServerFn({ method: "POST" })
       error: result.sweep.error,
       destinationKind: result.sweep.destinationKind,
     };
+  });
+
+/**
+ * Takes the signed delegate actions in which the Provider's wallet signed a
+ * "Sweep all"'s MPC `sign` calls in one request, for the planned Sweeps
+ * `sweepIds`. Herald matches each to its Sweep by payload, relays each in
+ * its own relayer transaction in nonce order and pays the gas (ADR 0010),
+ * and discards the Sweeps the wallet signed nothing for. Answers each
+ * Sweep's outcome in `sweepIds` order. `retry` says presenting the same
+ * batch again is safe and may get it through: the relayer didn't answer.
+ */
+export const sponsorSweepAll = createServerFn({ method: "POST" })
+  .middleware([requireSession])
+  .validator(
+    z.object({
+      sweepIds: z.array(z.number().int().positive()).min(1).max(SWEEP_DAILY_CAP),
+      signedDelegateActions: z.array(z.string().min(1).max(4096)).max(SWEEP_DAILY_CAP),
+    }),
+  )
+  .handler(async ({ context, data }) => {
+    const providerId = context.session.providerId;
+    const outcomes = await relaySponsoredSweepAll(sweepDeps(), {
+      providerId,
+      env: readHeraldEnv(),
+      ...data,
+    });
+    const rejected = outcomes.filter((o) => !o.ok);
+    if (rejected.length > 0) {
+      console.warn(
+        JSON.stringify({
+          event: "sweep_all_sponsored_rejected",
+          providerId,
+          rejected: rejected.map((o) => ({ sweepId: o.sweepId, reason: !o.ok && o.reason })),
+        }),
+      );
+    }
+    return outcomes.map((outcome) =>
+      outcome.ok
+        ? {
+            sweepId: outcome.sweepId,
+            ok: true as const,
+            status: outcome.sweep.status,
+            error: outcome.sweep.error,
+          }
+        : {
+            sweepId: outcome.sweepId,
+            ok: false as const,
+            reason: outcome.reason,
+            message: outcome.message,
+            retry: outcome.reason === "relay_unanswered" || outcome.reason === "held_back",
+          },
+    );
   });
 
 /**

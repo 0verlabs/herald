@@ -176,6 +176,13 @@ export class FakeNear {
   failRelayedDelegateWith: unknown = null;
   /** Leave the MPC network's answer to relayed signs out, as while it is still signing. */
   pendingRelayedSigns = false;
+  /**
+   * Check relayed delegate actions' nonces as NEAR does: each must be above
+   * its sender's key nonce, which landing one raises to it, or it fails with
+   * `DelegateActionInvalidNonce`. Off by default, so tests can reuse nonces.
+   */
+  checkNonces = false;
+  readonly #keyNonces = new Map<string, bigint>();
   readonly #derivedKeys = new Map<string, MpcKey>();
   readonly #relayed = new Map<string, string>();
   readonly #relayerKey = ed25519.utils.randomSecretKey();
@@ -228,9 +235,19 @@ export class FakeNear {
     const receipt = (executor: string, status: unknown) => ({
       outcome: { executor_id: executor, status },
     });
-    const failure = this.failRelayedDelegateWith
-      ? { ActionError: { index: 0, kind: this.failRelayedDelegateWith } }
-      : null;
+    const keyNonce = this.#keyNonces.get(delegate.senderId) ?? 0n;
+    const usedNonce = this.checkNonces && BigInt(delegate.nonce) <= keyNonce;
+    if (this.checkNonces && !usedNonce)
+      this.#keyNonces.set(delegate.senderId, BigInt(delegate.nonce));
+    const failureKind = usedNonce
+      ? {
+          DelegateActionInvalidNonce: {
+            delegate_nonce: Number(delegate.nonce),
+            ak_nonce: Number(keyNonce),
+          },
+        }
+      : this.failRelayedDelegateWith;
+    const failure = failureKind ? { ActionError: { index: 0, kind: failureKind } } : null;
     const receipts = failure
       ? [
           receipt(delegate.senderId, { Failure: failure }),
