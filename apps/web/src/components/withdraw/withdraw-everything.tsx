@@ -32,7 +32,13 @@ import {
 import { inPlainWords } from "@/lib/plain-words";
 import { USDC } from "@/lib/stablecoins";
 import { cn } from "@/lib/utils";
-import { discardPlannedSweep, finishSweep, sponsorSweepAll, startSweepAll } from "@/server/sweeps";
+import {
+  discardPlannedSweep,
+  finishSweep,
+  prepareSponsoredAccount,
+  sponsorSweepAll,
+  startSweepAll,
+} from "@/server/sweeps";
 import { OptionSelect, type Option } from "./option-select";
 import { IntentsLogo } from "./withdraw-form";
 import { WithdrawLayout } from "./withdraw-layout";
@@ -41,12 +47,17 @@ import {
   addressProblem,
   formatCountdown,
   nearGasLine,
+  PREPARING_ACCOUNT_LABEL,
+  prepareProviderAccount,
   type Step,
 } from "./withdraw-shared";
 
-const stepLabels: Record<Exclude<Step, "idle">, string> = {
+type AllStep = Step | "preparing";
+
+const stepLabels: Record<Exclude<AllStep, "idle">, string> = {
   planning: "Preparing your withdrawals…",
   quoting: "Getting quotes…",
+  preparing: PREPARING_ACCOUNT_LABEL,
   signing: "Approve them in your wallet…",
   submitting: "Sending…",
 };
@@ -84,11 +95,12 @@ export function WithdrawEverything(props: {
   const plan = useServerFn(startSweepAll);
   const finish = useServerFn(finishSweep);
   const sponsor = useServerFn(sponsorSweepAll);
+  const prepareAccount = useServerFn(prepareSponsoredAccount);
   const discard = useServerFn(discardPlannedSweep);
   const [target, setTarget] = useState<string | null>(null);
   const [destination, setDestination] = useState("");
   const [quoted, setQuoted] = useState<Planned | null>(null);
-  const [step, setStep] = useState<Step>("idle");
+  const [step, setStep] = useState<AllStep>("idle");
   const [error, setError] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<Outcome[] | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -209,15 +221,26 @@ export function WithdrawEverything(props: {
 
   /**
    * Your wallet signs every `sign` call as a delegate action in one
-   * request, and Herald relays each in its own NEAR transaction. Signing
-   * sends nothing, so the withdrawals it didn't sign are discarded. The
+   * request, and Herald relays each in its own NEAR transaction. An
+   * implicit Provider Account that isn't on NEAR yet is created first, once
+   * for the whole batch, since no delegate action can land without it
+   * (#50). Signing sends nothing, so when preparing or signing fails, or the
+   * wallet leaves some unsigned, those withdrawals are discarded. The
    * batch is presented again a few times while the relayer doesn't answer:
    * each approval is relayed at most once.
    */
   async function sponsorAll(planned: Planned, wallet: Wallet): Promise<Outcome[]> {
     const sweepIds = planned.planned.map(({ sweepId }) => sweepId);
+    const [anySweepId] = sweepIds;
+    if (anySweepId === undefined) return [];
     let signedDelegateActions: string[];
     try {
+      await prepareProviderAccount(prepareAccount, {
+        accountId: props.accountId,
+        sweepId: anySweepId,
+        onPreparing: () => setStep("preparing"),
+      });
+      setStep("signing");
       signedDelegateActions = await signSponsoredSigns(wallet, {
         heraldEnv: props.heraldEnv,
         signerId: props.accountId,

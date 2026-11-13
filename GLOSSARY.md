@@ -29,7 +29,7 @@ Moving funds out of the Receiving Addresses into one chain and asset the Provide
 _Avoid_: Withdrawal, payout, cash out
 
 **Sponsored Sweep**:
-A Sweep whose NEAR approval Herald pays for: the Provider's wallet signs it as a delegate action from the Provider Account, and Herald's NEAR relayer sends it (ADR 0010). With a wallet that can't sign delegate actions, the Provider's wallet sends it and pays.
+A Sweep whose NEAR approval Herald pays for: the Provider's wallet signs it as a delegate action from the Provider Account, and Herald's NEAR relayer sends it (ADR 0010). With a wallet that can't sign delegate actions, the Provider's wallet sends it and pays. If the Provider Account is an implicit account nobody funded yet, Herald creates it before the first one by sending it a little NEAR.
 _Avoid_: Gasless Sweep, meta-transaction
 
 ### Pricing

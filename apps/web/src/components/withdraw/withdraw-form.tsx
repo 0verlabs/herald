@@ -41,15 +41,34 @@ import {
 } from "@/lib/near-wallet";
 import { inPlainWords } from "@/lib/plain-words";
 import { cn } from "@/lib/utils";
-import { discardPlannedSweep, finishSweep, sponsorSweep, startSweep } from "@/server/sweeps";
+import {
+  discardPlannedSweep,
+  finishSweep,
+  prepareSponsoredAccount,
+  sponsorSweep,
+  startSweep,
+} from "@/server/sweeps";
 import { OptionSelect, type Option } from "./option-select";
 import { QuoteReview, WithdrawSummary } from "./withdraw-review";
 import { WithdrawLayout } from "./withdraw-layout";
-import { addressPlaceholder, addressProblem, type Step } from "./withdraw-shared";
+import {
+  addressPlaceholder,
+  addressProblem,
+  PREPARING_ACCOUNT_LABEL,
+  prepareProviderAccount,
+  type Step,
+} from "./withdraw-shared";
 
-const stepLabels: Record<Exclude<Step, "idle">, string> = {
+/**
+ * The steps of this form: the shared ones, and creating an implicit
+ * Provider Account that isn't on NEAR before a sponsored approval (#50).
+ */
+type FormStep = Step | "preparing";
+
+const stepLabels: Record<Exclude<FormStep, "idle">, string> = {
   planning: "Preparing your withdrawal…",
   quoting: "Getting a quote…",
+  preparing: PREPARING_ACCOUNT_LABEL,
   signing: "Approve it in your wallet…",
   submitting: "Sending…",
 };
@@ -120,12 +139,13 @@ export function WithdrawFromNetwork(props: {
   const plan = useServerFn(startSweep);
   const finish = useServerFn(finishSweep);
   const sponsor = useServerFn(sponsorSweep);
+  const prepareAccount = useServerFn(prepareSponsoredAccount);
   const discard = useServerFn(discardPlannedSweep);
   const [target, setTarget] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
   const [destination, setDestination] = useState("");
   const [quoted, setQuoted] = useState<QuotedSweep | null>(null);
-  const [step, setStep] = useState<Step>("idle");
+  const [step, setStep] = useState<FormStep>("idle");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -301,11 +321,19 @@ export function WithdrawFromNetwork(props: {
 
   /**
    * Your wallet signs the `sign` call as a delegate action, and Herald's
-   * relayer sends it, paying the NEAR gas. The same signed delegate action
-   * is presented again a few times if the relayer didn't answer: it is
-   * relayed at most once.
+   * relayer sends it, paying the NEAR gas. An implicit Provider Account
+   * that isn't on NEAR yet is created first, Herald showing it prepares
+   * the account, since the delegate action can't land without it (#50). The
+   * same signed delegate action is presented again a few times if the
+   * relayer didn't answer: it is relayed at most once.
    */
   async function sponsorAndFinish(sweepId: number, wallet: Wallet, signRequest: MpcSignRequest) {
+    await prepareProviderAccount(prepareAccount, {
+      accountId,
+      sweepId,
+      onPreparing: () => setStep("preparing"),
+    });
+    setStep("signing");
     const signedDelegateAction = await signSponsoredSign(wallet, {
       heraldEnv,
       signerId: accountId,

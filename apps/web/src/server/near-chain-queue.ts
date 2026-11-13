@@ -10,6 +10,10 @@ const QUEUE_TIMEOUT_MS = 5_000;
 // Submitting a Sweep waits for one broadcast in the relayer's nonce queue,
 // not for the transaction to be final.
 const SUBMIT_TIMEOUT_MS = 30_000;
+// Creating a Provider Account waits for its transfer to be final: the
+// queue gives up after SETTLE_RECEIPT_TIMEOUT_MS (30 s), after its turn in
+// the nonce queue. Asking again after a timeout follows the same transfer.
+const CREATE_ACCOUNT_TIMEOUT_MS = 45_000;
 
 /**
  * The NEAR chain queue for a network, over the `NEAR_CHAIN_QUEUE`
@@ -60,8 +64,10 @@ export const nearSetupQueue = createServerOnlyFn((): NearSetupQueue => {
 
 /**
  * NEAR Sweeps through the facilitator's NEAR chain queue: its relayer,
- * submitting signed Sweeps for the relayer to send, and relaying sponsored
- * Sweeps' MPC `sign` calls (ADR 0010). Server only.
+ * submitting signed Sweeps for the relayer to send, relaying sponsored
+ * Sweeps' MPC `sign` calls (ADR 0010), and creating an implicit Provider
+ * Account that isn't on NEAR before its first sponsored Sweep (#50).
+ * Server only.
  */
 export const nearSweepQueue = createServerOnlyFn((): NearSweepQueue => ({
   relayer: (network) => withTimeout(queueFor(network).relayer(), QUEUE_TIMEOUT_MS),
@@ -69,4 +75,6 @@ export const nearSweepQueue = createServerOnlyFn((): NearSweepQueue => ({
     withTimeout(queueFor(submission.network).submitSweep(submission), SUBMIT_TIMEOUT_MS),
   submitSponsoredSign: (submission) =>
     withTimeout(queueFor(submission.network).submitSponsoredSign(submission), SUBMIT_TIMEOUT_MS),
+  createProviderAccount: (job) =>
+    withTimeout(queueFor(job.network).createProviderAccount(job), CREATE_ACCOUNT_TIMEOUT_MS),
 }));

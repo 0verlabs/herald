@@ -1,12 +1,17 @@
 import { signInNonces } from "@herald/db/schema";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { concatBytes } from "@noble/hashes/utils.js";
+import { bytesToHex, concatBytes } from "@noble/hashes/utils.js";
 import { base58, base64 } from "@scure/base";
 import { and, eq, gt, lte } from "drizzle-orm";
 import { z } from "zod";
 import { postRpc } from "../rpc.ts";
-import { NearAccountIdSchema, type HeraldEnv, type Provider } from "../schemas.ts";
+import {
+  NearAccountIdSchema,
+  NearImplicitAccountSchema,
+  type HeraldEnv,
+  type Provider,
+} from "../schemas.ts";
 import type { Db } from "./db.ts";
 import {
   ensureNearSetupQueued,
@@ -49,13 +54,13 @@ export type SignInSignature = z.infer<typeof SignInSignatureSchema>;
 
 /**
  * Reads a public key's permission on a NEAR account: `full_access`,
- * `limited` (a function-call key, or any other kind), or null if the
- * account has no such key.
+ * `limited` (a function-call key, or any other kind), null if the account
+ * has no such key, or `no_account` if the account isn't on NEAR at all.
  */
 export type NearAccessKeyReader = (request: {
   accountId: string;
   publicKey: string;
-}) => Promise<"full_access" | "limited" | null>;
+}) => Promise<"full_access" | "limited" | "no_account" | null>;
 
 export type SignInRejection =
   | "invalid_request"
@@ -103,8 +108,12 @@ export async function createSignInChallenge(
  * cover Herald's message for `env`, `recipient` and a nonce Herald issued
  * and nobody has used yet. The key must be a full-access key of the account,
  * which `readAccessKey` checks over NEAR RPC; if that check fails, the
- * result is a `near_rpc_failed` rejection. The nonce is used up whatever the
- * outcome, so a rejected attempt needs a new challenge.
+ * result is a `near_rpc_failed` rejection. An implicit account that isn't
+ * on NEAR yet signs in with the key its id encodes, which becomes its
+ * full-access key once someone funds it: signing in never creates it
+ * (Herald does at its first sponsored Sweep, `prepareSponsoredSweepAccount`).
+ * The nonce is used up whatever the outcome, so a rejected attempt needs a
+ * new challenge.
  */
 export async function signIn(
   deps: {
@@ -147,7 +156,13 @@ export async function signIn(
     );
     return reject("near_rpc_failed", "Herald couldn't check your key with NEAR. Try again.");
   }
-  if (permission === null) {
+  if (permission === "no_account" && implicitAccountKeyMatches(accountId, publicKey)) {
+    // An implicit account nobody funded yet: its id is the key, which
+    // becomes its full-access key when it is created, so this signature
+    // proves control. Signing in creates nothing.
+    permission = "full_access";
+  }
+  if (permission === null || permission === "no_account") {
     return reject("unknown_key", `${publicKey} is not an access key of ${accountId}.`);
   }
   if (permission !== "full_access") {
@@ -211,6 +226,19 @@ function decodeSignature(signature: string): Uint8Array | null {
 
 const ED25519_PREFIX = "ed25519:";
 
+/**
+ * Whether `accountId` is the implicit account of `publicKey`: the key's 32
+ * bytes in lowercase hex.
+ */
+function implicitAccountKeyMatches(accountId: string, publicKey: string): boolean {
+  if (!NearImplicitAccountSchema.safeParse(accountId).success) return false;
+  try {
+    return bytesToHex(decodeNearEd25519(publicKey)) === accountId;
+  } catch {
+    return false;
+  }
+}
+
 /** Decodes NEAR's `ed25519:<base58>` form of a key or signature. */
 function decodeNearEd25519(value: string): Uint8Array {
   return base58.decode(value.slice(ED25519_PREFIX.length));
@@ -229,38 +257,52 @@ function borshString(value: string): Uint8Array {
 
 /**
  * A `NearAccessKeyReader` that calls `view_access_key` over NEAR JSON-RPC, at
- * final finality. Its errors never name `rpcUrl`, which may carry an API key.
+ * final finality, and `view_account` when the key is missing, to tell an
+ * account without it from one that isn't on NEAR. Its errors never name
+ * `rpcUrl`, which may carry an API key.
  */
 export function nearRpcAccessKeyReader(
   rpcUrl: string,
   fetchFn: typeof fetch = fetch,
 ): NearAccessKeyReader {
   return async ({ accountId, publicKey }) => {
-    const response = await postRpc(
-      fetchFn,
-      rpcUrl,
-      {
-        jsonrpc: "2.0",
-        id: "herald",
-        method: "query",
-        params: {
-          request_type: "view_access_key",
-          finality: "final",
-          account_id: accountId,
-          public_key: publicKey,
+    const query = async (params: Record<string, string>, what: string) => {
+      const response = await postRpc(
+        fetchFn,
+        rpcUrl,
+        {
+          jsonrpc: "2.0",
+          id: "herald",
+          method: "query",
+          params: { ...params, finality: "final", account_id: accountId },
         },
-      },
+        what,
+      );
+      return (await response.json()) as {
+        result?: { permission?: unknown; error?: string };
+        error?: { cause?: { name?: string } };
+      };
+    };
+    const body = await query(
+      { request_type: "view_access_key", public_key: publicKey },
       "NEAR RPC view_access_key",
     );
-    const body = (await response.json()) as {
-      result?: { permission?: unknown; error?: string };
-      error?: { cause?: { name?: string } };
-    };
-    // Nodes report a missing key or account either as `result.error` ("…
-    // does not exist while viewing") or as a top-level error with a cause.
+    // Nodes report a missing key either as `result.error` ("… does not
+    // exist while viewing") or as a top-level error with a cause, and a
+    // missing account as a missing key too, so `view_account` tells them
+    // apart.
     const cause = body.error?.cause?.name;
-    if (cause === "UNKNOWN_ACCESS_KEY" || cause === "UNKNOWN_ACCOUNT") return null;
-    if (body.result?.error?.includes("does not exist")) return null;
+    if (cause === "UNKNOWN_ACCOUNT") return "no_account";
+    if (cause === "UNKNOWN_ACCESS_KEY" || body.result?.error?.includes("does not exist")) {
+      const account = await query({ request_type: "view_account" }, "NEAR RPC view_account");
+      if (account.error?.cause?.name === "UNKNOWN_ACCOUNT") return "no_account";
+      if (account.error || account.result?.error !== undefined) {
+        throw new Error(
+          `view_account(${accountId}) failed: ${JSON.stringify(account.error ?? account.result)}`,
+        );
+      }
+      return null;
+    }
     if (body.error || body.result?.error || body.result?.permission === undefined) {
       throw new Error(
         `view_access_key(${accountId}, ${publicKey}) failed: ${JSON.stringify(body.error ?? body.result)}`,

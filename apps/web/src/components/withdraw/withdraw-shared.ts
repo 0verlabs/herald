@@ -1,6 +1,7 @@
 import {
   EvmAddressSchema,
   NearAccountIdSchema,
+  NearImplicitAccountSchema,
   SolanaAddressSchema,
   unhandledKind,
   type SweepStatus,
@@ -13,6 +14,48 @@ import type { NearGasPayer } from "@/lib/near-wallet";
 
 /** The steps of starting a withdrawal, as the button names them while it waits. */
 export type Step = "idle" | "planning" | "quoting" | "signing" | "submitting";
+
+/**
+ * What the button says while Herald creates an implicit Provider Account
+ * that isn't on NEAR yet, before the wallet's first sponsored approval
+ * (`prepareProviderAccount`).
+ */
+export const PREPARING_ACCOUNT_LABEL = "Herald is preparing your NEAR account…";
+
+// How often preparing the Provider Account is asked again when Herald's
+// relayer didn't answer, and how long apart. It creates the account at most
+// once.
+const PREPARE_ATTEMPTS = 3;
+const PREPARE_RETRY_MS = 2_000;
+
+/** The `prepareSponsoredAccount` server function, as `useServerFn` hands it over. */
+export type PrepareSponsoredAccount = (input: {
+  data: { sweepId: number };
+}) => Promise<{ ok: true } | { ok: false; message: string; retry: boolean }>;
+
+/**
+ * Before the wallet signs a sponsored withdrawal (Herald paying the NEAR
+ * gas): has Herald create the Provider Account if it is an implicit account
+ * that isn't on NEAR yet (#50), since the signed approval can't land
+ * without it. Call it once before the wallet prompt, for one withdrawal or a
+ * whole "Sweep all" batch (with any one of its Sweeps). A named account
+ * needs nothing, so nothing is asked. Otherwise `onPreparing` runs (show
+ * `PREPARING_ACCOUNT_LABEL`) and this resolves once the account is on NEAR,
+ * or throws why it isn't, for the Provider to try again.
+ */
+export async function prepareProviderAccount(
+  prepare: PrepareSponsoredAccount,
+  input: { accountId: string; sweepId: number; onPreparing: () => void },
+): Promise<void> {
+  if (!NearImplicitAccountSchema.safeParse(input.accountId).success) return;
+  input.onPreparing();
+  for (let attempt = 1; ; attempt++) {
+    const prepared = await prepare({ data: { sweepId: input.sweepId } });
+    if (prepared.ok) return;
+    if (!prepared.retry || attempt >= PREPARE_ATTEMPTS) throw new Error(prepared.message);
+    await new Promise((resolve) => setTimeout(resolve, PREPARE_RETRY_MS));
+  }
+}
 
 /** Why `address` isn't one to withdraw to on a network of this kind, or null if it is. */
 export function addressProblem(address: string, kind: SweepChainOption["kind"]): string | null {

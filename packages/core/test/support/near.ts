@@ -3,6 +3,7 @@ import type {
   SignInChallenge,
   SignInSignature,
 } from "../../src/server/index.ts";
+import { bytesToHex } from "@noble/hashes/utils.js";
 import { base64 } from "@scure/base";
 import { KeyPairEd25519, KeyPairSigner } from "near-api-js";
 
@@ -41,15 +42,23 @@ export async function walletSignature(input: {
 
 type Permission = Awaited<ReturnType<NearAccessKeyReader>>;
 
+/** The implicit account a NEAR key names: its public key in lowercase hex. */
+export function implicitAccountOf(key: KeyPairEd25519): string {
+  return bytesToHex(key.getPublicKey().data);
+}
+
 /**
- * A fake NEAR RPC that knows the access keys of a few accounts, by account
- * id and public key. Any other key doesn't exist.
+ * A fake NEAR RPC that knows a few accounts and their access keys, by
+ * account id and public key. Any other key doesn't exist, and any other
+ * account isn't on NEAR.
  */
 export function fakeNearAccounts(
   accounts: Record<string, Array<[KeyPairEd25519, NonNullable<Permission>]>>,
 ): NearAccessKeyReader {
   return async ({ accountId, publicKey }) => {
-    const match = accounts[accountId]?.find(([key]) => key.getPublicKey().toString() === publicKey);
+    const keys = accounts[accountId];
+    if (!keys) return "no_account";
+    const match = keys.find(([key]) => key.getPublicKey().toString() === publicKey);
     return match ? match[1] : null;
   };
 }

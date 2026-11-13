@@ -66,6 +66,7 @@ describe("ProviderSchema", () => {
       nearAddress: "d49d0273509b7e40dae820590462736b7453aafbaf9ca1f133296667c1e933a1",
       solanaTokenAccountStatus: "queued",
       nearSetupStatus: "created",
+      providerAccountTxHash: null,
       createdAt: new Date("2026-11-10T00:00:00Z"),
     };
     expect(ProviderSchema.parse(provider)).toEqual(provider);

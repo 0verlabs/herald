@@ -13,7 +13,7 @@ import {
   type SolanaTokenAccountJob,
   type SolanaTokenAccountQueue,
 } from "../src/server/index.ts";
-import { fakeNearAccounts, nearKey, walletSignature } from "./support/near.ts";
+import { fakeNearAccounts, implicitAccountOf, nearKey, walletSignature } from "./support/near.ts";
 
 const recipient = "dashboard.herald.test";
 
@@ -150,6 +150,71 @@ describe("signIn", () => {
       challenge: await challenge(),
       key: nearKey(),
     });
+
+    expect(await signInWith(readAccessKey, signature)).toMatchObject({
+      ok: false,
+      reason: "unknown_key",
+    });
+  });
+
+  test("signs in an implicit account that isn't on NEAR yet with the key its id encodes, creating nothing", async () => {
+    const key = nearKey();
+    const accountId = implicitAccountOf(key);
+    // Nothing is on NEAR: every account reads as missing.
+    const readAccessKey = fakeNearAccounts({});
+    const solana = fakeSolanaChainQueue();
+    const near = fakeNearChainQueue();
+
+    const result = await signInWith(
+      readAccessKey,
+      await walletSignature({ accountId, challenge: await challenge(), key }),
+      {
+        queueSolanaTokenAccount: solana.queueSolanaTokenAccount,
+        queueNearSetup: near.queueNearSetup,
+      },
+    );
+
+    if (!result.ok) throw new Error(result.message);
+    expect(result.provider.accountId).toBe(accountId);
+    // The only NEAR account Herald sets up is the NEAR Receiving Address,
+    // derived from the Provider Account and never the Provider Account.
+    expect(near.jobs.map((job) => job.account)).toEqual([result.provider.nearAddress]);
+    expect(result.provider.nearAddress).not.toBe(accountId);
+  });
+
+  test("rejects an implicit account that isn't on NEAR yet signed with another key than its id encodes", async () => {
+    const accountId = implicitAccountOf(nearKey());
+    const signature = await walletSignature({
+      accountId,
+      challenge: await challenge(),
+      key: nearKey(),
+    });
+
+    expect(await signInWith(fakeNearAccounts({}), signature)).toMatchObject({
+      ok: false,
+      reason: "unknown_key",
+    });
+  });
+
+  test("rejects a named account that isn't on NEAR", async () => {
+    const signature = await walletSignature({
+      accountId: "nobody-here.testnet",
+      challenge: await challenge(),
+      key: nearKey(),
+    });
+
+    expect(await signInWith(fakeNearAccounts({}), signature)).toMatchObject({
+      ok: false,
+      reason: "unknown_key",
+    });
+  });
+
+  test("rejects an implicit account on NEAR that no longer has the key its id encodes", async () => {
+    const key = nearKey();
+    const accountId = implicitAccountOf(key);
+    // The account exists with another key only: its owner rotated keys.
+    const readAccessKey = fakeNearAccounts({ [accountId]: [[nearKey(), "full_access"]] });
+    const signature = await walletSignature({ accountId, challenge: await challenge(), key });
 
     expect(await signInWith(readAccessKey, signature)).toMatchObject({
       ok: false,
@@ -486,25 +551,68 @@ describe("nearRpcAccessKeyReader", () => {
     unknownAccount: {
       error: { name: "HANDLER_ERROR", cause: { name: "UNKNOWN_ACCOUNT", info: {} } },
     },
+    // `view_account` replies as rpc.testnet.fastnear.com sent them on
+    // 2026-11-14. For an account that isn't on NEAR, `view_access_key`
+    // answers `missing` above, as for a key the account doesn't have.
+    account: {
+      result: {
+        ...block,
+        amount: "1000000000000000000000000",
+        locked: "0",
+        code_hash: "11111111111111111111111111111111",
+        storage_usage: 182,
+        storage_paid_at: 0,
+      },
+    },
+    noAccount: {
+      error: {
+        name: "HANDLER_ERROR",
+        cause: {
+          info: { ...block, requested_account_id: "alice.testnet" },
+          name: "UNKNOWN_ACCOUNT",
+        },
+        code: -32000,
+        message: "Server error",
+        data: "account alice.testnet does not exist while viewing",
+      },
+    },
   };
   const request = {
     accountId: "alice.testnet",
     publicKey: "ed25519:AtH7GEjv2qmBVoT8qoRhWXizXM5CC12DC6tiqY9iNoRm",
   };
 
-  function rpcAnswering(reply: object, status = 200) {
-    const fetchFn: typeof fetch = async () =>
-      Response.json({ jsonrpc: "2.0", id: "herald", ...reply }, { status });
+  /** NEAR RPC answering `view_access_key` with `reply` and `view_account` with `account`. */
+  function rpcAnswering(reply: object, status = 200, account: object = replies.account) {
+    const fetchFn: typeof fetch = async (_url, init) => {
+      const { params } = JSON.parse(init?.body as string) as { params: { request_type: string } };
+      const answer = params.request_type === "view_account" ? account : reply;
+      return Response.json({ jsonrpc: "2.0", id: "herald", ...answer }, { status });
+    };
     return nearRpcAccessKeyReader("https://rpc.test", fetchFn);
   }
 
   test.each([
-    ["a full-access key", replies.fullAccess, "full_access"],
-    ["a function-call key", replies.functionCall, "limited"],
-    ["a key the account doesn't have", replies.missing, null],
-    ["an account that doesn't exist", replies.unknownAccount, null],
-  ])("reads %s", async (_case, reply, expected) => {
-    expect(await rpcAnswering(reply)(request)).toBe(expected);
+    ["a full-access key", replies.fullAccess, replies.account, "full_access"],
+    ["a function-call key", replies.functionCall, replies.account, "limited"],
+    ["a key the account doesn't have", replies.missing, replies.account, null],
+    ["an account that doesn't exist", replies.missing, replies.noAccount, "no_account"],
+    [
+      "an account a node says doesn't exist",
+      replies.unknownAccount,
+      replies.noAccount,
+      "no_account",
+    ],
+  ])("reads %s", async (_case, reply, account, expected) => {
+    expect(await rpcAnswering(reply, 200, account)(request)).toBe(expected);
+  });
+
+  test("throws when it can't tell whether the account of a missing key exists", async () => {
+    const failing = { error: { name: "INTERNAL_ERROR", cause: { name: "TIMEOUT_ERROR" } } };
+
+    await expect(rpcAnswering(replies.missing, 200, failing)(request)).rejects.toThrow(
+      "TIMEOUT_ERROR",
+    );
   });
 
   test.each([
