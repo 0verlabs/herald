@@ -24,6 +24,7 @@ import { formatUsdc, formatUtcDate, formatUtcTime, shortenMiddle } from "@/lib/f
 import { USDC } from "@/lib/stablecoins";
 import { inPlainWords } from "@/lib/plain-words";
 import { inFlight, statusBadges } from "./withdraw-shared";
+import { IntentsLogo } from "./withdraw-form";
 
 /** Your latest withdrawals, newest first, with where each one stands. */
 export function WithdrawalHistory({ sweeps }: { sweeps: SweepEntry[] }) {
@@ -88,7 +89,15 @@ export function WithdrawalHistory({ sweeps }: { sweeps: SweepEntry[] }) {
                   </TableCell>
                   <TableCell>
                     <span className="flex items-center gap-2">
-                      <NetworkAvatar label={sweep.destinationLabel} />
+                      <NetworkAvatar
+                        label={sweep.destinationLabel}
+                        // NEAR Intents is on NEAR too: its own logo tells it from a NEAR account.
+                        logo={
+                          sweep.destinationKind === "intents" ? (
+                            <IntentsLogo size="sm" />
+                          ) : undefined
+                        }
+                      />
                       <span
                         className="font-mono text-xs text-muted-foreground"
                         title={sweep.destinationAddress}
