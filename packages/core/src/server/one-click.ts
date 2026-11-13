@@ -152,16 +152,18 @@ const QuoteResponseSchema = z.object({
   }),
 });
 
+// 1Click sends null for a field it has no value for, such as `refundReason`
+// on a swap that wasn't refunded (seen live on a SUCCESS, 2026-11-13).
 const StatusResponseSchema = z.object({
   status: OneClickSwapStatusSchema,
   swapDetails: z
     .object({
-      amountOut: z.string().regex(/^\d+$/).optional(),
-      refundedAmount: z.string().regex(/^\d+$/).optional(),
-      refundReason: z.string().optional(),
-      destinationChainTxHashes: z.array(z.object({ hash: z.string().min(1) })).optional(),
+      amountOut: z.string().regex(/^\d+$/).nullish(),
+      refundedAmount: z.string().regex(/^\d+$/).nullish(),
+      refundReason: z.string().nullish(),
+      destinationChainTxHashes: z.array(z.object({ hash: z.string().min(1) })).nullish(),
     })
-    .optional(),
+    .nullish(),
 });
 
 /**
