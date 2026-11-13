@@ -235,6 +235,10 @@ const BaseUnitsSchema = z.string().regex(/^\d+$/);
  * `destinationAsset` (its asset id). `quoteAmountOut` is what the quote
  * expected to deliver, `deliveredAmount` and `refundedAmount` what 1Click
  * reported, and `deliveryTxHash` its delivery on the destination chain.
+ * `nearTxHash` is the NEAR transaction holding the Sweep's MPC `sign` call;
+ * `nearTxRelayer` is Herald's NEAR relayer when it sent that transaction
+ * and paid its gas (a sponsored Sweep, ADR 0010), null when the Provider's
+ * wallet did.
  */
 const sweepFields = {
   id: z.number().int().positive(),
@@ -259,6 +263,7 @@ const sweepFields = {
   deliveryTxHash: z.string().min(1).nullable(),
   validBefore: z.number().int().positive(),
   nearTxHash: z.string().nullable(),
+  nearTxRelayer: z.string().nullable(),
   sourceTxHash: z.string().nullable(),
   status: SweepStatusSchema,
   error: z.string().nullable(),

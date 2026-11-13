@@ -49,6 +49,89 @@ export async function walletFor(heraldEnv: HeraldEnv, accountId: string) {
 
 type Wallet = Awaited<ReturnType<typeof walletFor>>;
 
+/** A connected NEAR wallet holding the Provider Account (`walletFor`). */
+export type NearWallet = Wallet;
+
+/**
+ * Who pays a Sweep's NEAR gas with this wallet: `herald` when it declares
+ * `signDelegateActions` (ADR 0010: it signs the MPC `sign` call as a
+ * delegate action and Herald's relayer sends it), `provider` when it sends
+ * the call itself. Read off near-connect's wallet manifest.
+ */
+export type NearGasPayer = "herald" | "provider";
+
+export function nearGasPayer(wallet: Pick<Wallet, "manifest">): NearGasPayer {
+  return wallet.manifest.features.signDelegateActions ? "herald" : "provider";
+}
+
+/**
+ * Who pays the NEAR gas with the wallet connected now, or null if none is
+ * connected yet (it's known once the Provider connects one to approve).
+ * Connects nothing and asks nothing of the wallet.
+ */
+export async function connectedNearGasPayer(heraldEnv: HeraldEnv): Promise<NearGasPayer | null> {
+  const near = await nearConnector(heraldEnv);
+  try {
+    return nearGasPayer(await near.wallet());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Calls `onChange` with who pays the NEAR gas (`connectedNearGasPayer`) now
+ * and each time a wallet connects or disconnects. Answers a function that
+ * stops it.
+ */
+export function watchNearGasPayer(
+  heraldEnv: HeraldEnv,
+  onChange: (payer: NearGasPayer | null) => void,
+): () => void {
+  let stopped = false;
+  const update = () =>
+    void connectedNearGasPayer(heraldEnv).then((payer) => {
+      if (!stopped) onChange(payer);
+    });
+  update();
+  const near = nearConnector(heraldEnv);
+  void near.then((connector) => {
+    if (stopped) return;
+    connector.on("wallet:signIn", update);
+    connector.on("wallet:signOut", update);
+  });
+  return () => {
+    stopped = true;
+    void near.then((connector) => {
+      connector.off("wallet:signIn", update);
+      connector.off("wallet:signOut", update);
+    });
+  };
+}
+
+/**
+ * Has the wallet sign the MPC `sign` call as a NEP-366 delegate action from
+ * `signerId`, without sending it, and answers the signed delegate action
+ * (base64 Borsh) for Herald's relayer to send (ADR 0010). One delegate
+ * action holds the one `sign` call, as ADR 0008 asks of a transaction.
+ */
+export async function signSponsoredSign(
+  wallet: Wallet,
+  input: { heraldEnv: HeraldEnv; signerId: string; request: MpcSignRequest },
+): Promise<string> {
+  const answered = await wallet.signDelegateActions({
+    network: input.heraldEnv,
+    signerId: input.signerId,
+    delegateActions: [signTransaction(input.request)],
+  });
+  const [signed] = Array.isArray(answered?.signedDelegateActions)
+    ? answered.signedDelegateActions
+    : [];
+  if (typeof signed !== "string" || signed === "") {
+    throw new Error("Your wallet didn't return the signed approval.");
+  }
+  return signed;
+}
+
 /** The NEAR transaction hash in a wallet's outcome, or null if it gave none. */
 function txHashOf(outcome: unknown): string | null {
   const reported = outcome as {

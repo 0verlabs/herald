@@ -164,6 +164,145 @@ export function signedNearDelegate(delegateAction: Uint8Array, signature: Uint8A
   return base64.encode(concatBytes(delegateAction, ED25519, signature));
 }
 
+/** A function call inside a decoded delegate action. `args` are its raw bytes (JSON for Herald's). */
+export type NearFunctionCall = {
+  methodName: string;
+  args: Uint8Array;
+  gas: bigint;
+  deposit: bigint;
+};
+
+/**
+ * A `SignedDelegateAction` as `decodeSignedNearDelegate` reads it. `calls`
+ * are its actions, each a function call. `delegateAction` is the bytes the
+ * signature covers, with `nearDelegatePayloadHash`; `signedBytes` the whole
+ * signed delegate action, as relayed.
+ */
+export type DecodedNearDelegate = {
+  senderId: string;
+  receiverId: string;
+  calls: NearFunctionCall[];
+  nonce: bigint;
+  maxBlockHeight: bigint;
+  /** The sender's ed25519 key, 32 bytes. */
+  publicKey: Uint8Array;
+  signature: Uint8Array;
+  delegateAction: Uint8Array;
+  signedBytes: Uint8Array;
+};
+
+/** Reads Borsh fields off `bytes`, in order. Throws on running out. */
+class BorshReader {
+  #offset = 0;
+  readonly #bytes: Uint8Array;
+
+  constructor(bytes: Uint8Array) {
+    this.#bytes = bytes;
+  }
+
+  get offset(): number {
+    return this.#offset;
+  }
+
+  take(n: number): Uint8Array {
+    if (this.#offset + n > this.#bytes.length) throw new Error("it ends too early");
+    const out = this.#bytes.subarray(this.#offset, this.#offset + n);
+    this.#offset += n;
+    return out;
+  }
+
+  u8(): number {
+    return this.take(1)[0]!;
+  }
+
+  u32(): number {
+    return new DataView(this.take(4).slice().buffer).getUint32(0, true);
+  }
+
+  u64(): bigint {
+    return new DataView(this.take(8).slice().buffer).getBigUint64(0, true);
+  }
+
+  u128(): bigint {
+    const view = new DataView(this.take(16).slice().buffer);
+    return view.getBigUint64(0, true) | (view.getBigUint64(8, true) << 64n);
+  }
+
+  byteString(): Uint8Array {
+    return this.take(this.u32());
+  }
+
+  string(): string {
+    return textDecoder.decode(this.byteString());
+  }
+
+  get done(): boolean {
+    return this.#offset === this.#bytes.length;
+  }
+}
+
+// More actions than this in one delegate action is never something Herald
+// relays; the bound keeps a hostile length from looping long.
+const MAX_DECODED_ACTIONS = 16;
+
+/**
+ * Decodes a `SignedDelegateAction` (base64 Borsh, as wallets answer
+ * `signDelegateActions`) whose actions are all function calls and whose key
+ * and signature are ed25519, the only kind Herald relays. Throws, saying
+ * why, on anything else. It doesn't check the signature: see
+ * `nearDelegateSignatureValid`.
+ */
+export function decodeSignedNearDelegate(signedDelegateAction: string): DecodedNearDelegate {
+  const signedBytes = base64.decode(signedDelegateAction);
+  const r = new BorshReader(signedBytes);
+  const senderId = r.string();
+  const receiverId = r.string();
+  const count = r.u32();
+  if (count > MAX_DECODED_ACTIONS) throw new Error(`it holds ${count} actions`);
+  const calls: NearFunctionCall[] = [];
+  for (let i = 0; i < count; i++) {
+    const tag = r.u8();
+    if (tag !== FUNCTION_CALL_TAG[0]) throw new Error(`action ${i} isn't a function call`);
+    calls.push({ methodName: r.string(), args: r.byteString(), gas: r.u64(), deposit: r.u128() });
+  }
+  const nonce = r.u64();
+  const maxBlockHeight = r.u64();
+  if (r.u8() !== ED25519[0]) throw new Error("its key isn't ed25519");
+  const publicKey = r.take(32).slice();
+  const delegateAction = signedBytes.slice(0, r.offset);
+  if (r.u8() !== ED25519[0]) throw new Error("its signature isn't ed25519");
+  const signature = r.take(64).slice();
+  if (!r.done) throw new Error("it has bytes after the signature");
+  return {
+    senderId,
+    receiverId,
+    calls,
+    nonce,
+    maxBlockHeight,
+    publicKey,
+    signature,
+    delegateAction,
+    signedBytes,
+  };
+}
+
+/**
+ * Whether a decoded delegate action's signature is its key's over its
+ * NEP-461 hash, verified strictly (RFC 8032), as NEAR verifies it.
+ */
+export function nearDelegateSignatureValid(delegate: DecodedNearDelegate): boolean {
+  try {
+    return ed25519.verify(
+      delegate.signature,
+      nearDelegatePayloadHash(delegate.delegateAction),
+      delegate.publicKey,
+      { zip215: false },
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** An error a NEAR node answered. `rpcCause` is its `cause.name`, e.g. `INVALID_TRANSACTION`. */
 export class NearRpcError extends Error {
   readonly rpcCause: string | undefined;

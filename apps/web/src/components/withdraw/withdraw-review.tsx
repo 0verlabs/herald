@@ -4,8 +4,9 @@ import { TimerIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { formatUsdc, shortenMiddle } from "@/lib/format";
+import type { NearGasPayer } from "@/lib/near-wallet";
 import { cn } from "@/lib/utils";
-import { approveOnce, formatCountdown } from "./withdraw-shared";
+import { approveOnce, formatCountdown, nearGasLine } from "./withdraw-shared";
 
 type SummaryRow = {
   term: string;
@@ -62,6 +63,8 @@ export function WithdrawSummary(props: {
   destinationLabel: string;
   amount: string | null;
   recipient: string | null;
+  /** Who pays the approval's NEAR gas with the wallet connected now; null before one is. */
+  gasPayer: NearGasPayer | null;
 }) {
   const { chain, kind } = props;
   const amount = props.amount ? `${formatUsdc(props.amount)} USDC` : null;
@@ -92,7 +95,8 @@ export function WithdrawSummary(props: {
         ? `The bridge's fee, shown in the quote. Herald pays the network fee on ${chain.label}.`
         : sameChainFees(chain),
     },
-    { term: "You approve", value: approval(chain) },
+    { term: "NEAR gas", value: nearGasLine(props.gasPayer) },
+    { term: "You approve", value: approval(chain, props.gasPayer) },
   ];
   return <SummaryList title="Summary" rows={rows} />;
 }
@@ -111,13 +115,13 @@ function sameChainFees(chain: SweepChainOption): string {
 }
 
 /** What you approve, and how soon on chains where it expires quickly. */
-function approval(chain: SweepChainOption): string {
+function approval(chain: SweepChainOption, gasPayer: NearGasPayer | null): string {
   switch (chain.kind) {
     case "evm":
     case "near":
-      return approveOnce;
+      return approveOnce(gasPayer);
     case "solana":
-      return `${approveOnce} Approve it right away: on Solana it expires about a minute after you start.`;
+      return `${approveOnce(gasPayer)} Approve it right away: on Solana it expires about a minute after you start.`;
     default:
       return unhandledKind(chain.kind);
   }
@@ -143,6 +147,7 @@ export function QuoteReview(props: {
   recipient: string;
   quote: SweepQuote;
   secondsLeft: number;
+  gasPayer: NearGasPayer | null;
 }) {
   const { chain, quote } = props;
   const live = props.secondsLeft > 0;
@@ -183,6 +188,7 @@ export function QuoteReview(props: {
       value: shortenMiddle(quote.depositAddress, 6, 4),
       title: quote.depositAddress,
     },
+    { term: "NEAR gas", value: nearGasLine(props.gasPayer) },
   ];
   return (
     <SummaryList

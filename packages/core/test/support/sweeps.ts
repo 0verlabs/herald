@@ -6,6 +6,14 @@ import { address } from "@solana/kit";
 import { base58, base64 } from "@scure/base";
 import { env } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
+import {
+  actions,
+  buildDelegateAction,
+  decodeSignedTransaction,
+  encodeSignedDelegate,
+  KeyPairSigner,
+  type KeyPairEd25519,
+} from "near-api-js";
 import { generatePrivateKey, privateKeyToAccount, sign } from "viem/accounts";
 import type { Hex } from "viem";
 import {
@@ -14,11 +22,13 @@ import {
   type Provider,
   type SolanaAddress,
 } from "../../src/index.ts";
+import { delegateAction, signedRelayerTransaction } from "../../src/server/index.ts";
 import type {
   EvmReceiptReader,
   EvmSweepSubmission,
   EvmSweepSubmitter,
   MpcSignRequest,
+  NearSponsoredSignSubmission,
   NearSweepQueue,
   NearSweepReader,
   NearSweepStatus,
@@ -72,7 +82,11 @@ export function usdcBalances(balances: Record<string, string>): UsdcBalanceReade
 }
 
 /** Like NEAR RPC's `tx` result, the parts Herald reads. */
-type StoredTransaction = NearTransactionOutcome & { senderId: string };
+type StoredTransaction = NearTransactionOutcome & {
+  senderId: string;
+  /** For a relayed `sign`: the MPC signer, whose receipt holds the answer. */
+  mpcContract?: string;
+};
 
 /**
  * A key the fake MPC network signs with: a secp256k1 private key (hex) for
@@ -141,16 +155,166 @@ export class FakeNear {
   /** The MPC network finishes signing a transaction `sign` left pending. */
   async finish(txHash: string, payload: Hex, key: MpcKey): Promise<void> {
     const stored = this.#transactions.get(txHash);
-    if (stored) stored.status = { SuccessValue: await mpcAnswer(payload, key) };
+    if (!stored) return;
+    const answer = await mpcAnswer(payload, key);
+    const relayedSign = stored.receipts_outcome?.find(
+      (r) => r.outcome?.executor_id === stored.mpcContract && r.outcome?.status === "pending",
+    );
+    if (relayedSign?.outcome) relayedSign.outcome.status = { SuccessValue: answer };
+    else stored.status = { SuccessValue: answer };
   }
+
+  /** Herald's NEAR relayer, an implicit account, as the chain queue names it. */
+  readonly relayer = bytesToHex(crypto.getRandomValues(new Uint8Array(32)));
+  /** Every sponsored `sign` handed to the relayer, in order, duplicates included. */
+  readonly sponsoredSubmissions: NearSponsoredSignSubmission[] = [];
+  /** Refuse sponsored signs with this message, as the chain queue does. */
+  refuseSponsoredWith: string | null = null;
+  /** Throw instead of answering, as when the chain queue can't be reached. */
+  relayUnreachable = false;
+  /** Have each relayed delegate action fail on NEAR with this error, as a used nonce does. */
+  failRelayedDelegateWith: unknown = null;
+  /** Leave the MPC network's answer to relayed signs out, as while it is still signing. */
+  pendingRelayedSigns = false;
+  readonly #derivedKeys = new Map<string, MpcKey>();
+  readonly #relayed = new Map<string, string>();
+  readonly #relayerKey = ed25519.utils.randomSecretKey();
+
+  /** The key the MPC network derives for `accountId` on `path`, which relayed signs sign with. */
+  derive(accountId: string, path: string, key: MpcKey): void {
+    this.#derivedKeys.set(`${accountId}/${path}`, key);
+  }
+
+  /**
+   * The chain queue's `submitSponsoredSign`: the relayer wraps the signed
+   * delegate action in a transaction of its own, which lands at once. Its
+   * outcome is the way NEAR RPC's `tx` reports a relayed `sign` (#46): the
+   * top-level status is the delegate receipt's empty `SuccessValue`, and
+   * the MPC signer's second receipt holds the signature, by the key
+   * `derive` gave the delegate's sender for the path. The same signed
+   * delegate action always answers the same transaction.
+   */
+  readonly relaySign: NearSweepQueue["submitSponsoredSign"] = async (submission) => {
+    if (this.relayUnreachable) throw new Error("The NEAR chain queue didn't answer");
+    this.sponsoredSubmissions.push(submission);
+    if (this.refuseSponsoredWith) return { ok: false, message: this.refuseSponsoredWith };
+    const known = this.#relayed.get(submission.signedDelegateAction);
+    if (known) return { ok: true, transaction: known, relayer: this.relayer };
+
+    // Read the delegate action with near-api-js, not with Herald's decoder.
+    const wrapped = signedRelayerTransaction({
+      relayer: {
+        accountId: this.relayer,
+        publicKey: ed25519.getPublicKey(this.#relayerKey),
+        seed: this.#relayerKey,
+      },
+      receiverId: "unread.testnet",
+      nonce: 1n,
+      blockHash: new Uint8Array(32),
+      actions: [delegateAction(base64.decode(submission.signedDelegateAction))],
+    });
+    const decoded = decodeSignedTransaction(wrapped.bytes).transaction.actions[0]?.signedDelegate;
+    const delegate = decoded?.delegateAction;
+    const call = delegate?.actions[0]?.functionCall;
+    if (!delegate || !call) throw new Error("FakeNear: relay a delegate action holding a sign");
+    const { request } = JSON.parse(new TextDecoder().decode(new Uint8Array(call.args))) as {
+      request: MpcSignRequest["args"]["request"];
+    };
+    const key = this.#derivedKeys.get(`${delegate.senderId}/${request.path}`);
+    const payload =
+      `0x${"Ecdsa" in request.payload_v2 ? request.payload_v2.Ecdsa : request.payload_v2.Eddsa}` as Hex;
+
+    const txHash = base58.encode(crypto.getRandomValues(new Uint8Array(32)));
+    const receipt = (executor: string, status: unknown) => ({
+      outcome: { executor_id: executor, status },
+    });
+    const failure = this.failRelayedDelegateWith
+      ? { ActionError: { index: 0, kind: this.failRelayedDelegateWith } }
+      : null;
+    const receipts = failure
+      ? [
+          receipt(delegate.senderId, { Failure: failure }),
+          receipt(this.relayer, { SuccessValue: "" }),
+        ]
+      : [
+          receipt(delegate.senderId, { SuccessValue: "" }),
+          // The MPC signer yields, then answers in a second receipt.
+          receipt(delegate.receiverId, { SuccessReceiptId: "yield" }),
+          receipt(
+            delegate.receiverId,
+            this.pendingRelayedSigns || !key
+              ? "pending"
+              : { SuccessValue: await mpcAnswer(payload, key) },
+          ),
+          receipt(this.relayer, { SuccessValue: "" }),
+        ];
+    this.#transactions.set(txHash, {
+      senderId: this.relayer,
+      mpcContract: delegate.receiverId,
+      status: failure ? { Failure: failure } : { SuccessValue: "" },
+      transaction: {
+        hash: txHash,
+        signer_id: this.relayer,
+        receiver_id: delegate.senderId,
+        actions: [{ Delegate: {} }],
+      },
+      receipts_outcome: receipts,
+    });
+    this.#relayed.set(submission.signedDelegateAction, txHash);
+    return { ok: true, transaction: txHash, relayer: this.relayer };
+  };
 
   /** A `NearTransactionReader` over this network; unknown transactions are null. */
   readonly readTransaction: NearTransactionReader = async ({ txHash, senderId }) => {
     const stored = this.#transactions.get(txHash);
     if (!stored || stored.senderId !== senderId) return null;
-    const { senderId: _, ...outcome } = stored;
-    return structuredClone(outcome);
+    const { senderId: _, mpcContract: __, ...outcome } = stored;
+    // A receipt still running isn't reported yet.
+    const receipts = outcome.receipts_outcome?.filter((r) => r.outcome?.status !== "pending");
+    return structuredClone(receipts ? { ...outcome, receipts_outcome: receipts } : outcome);
   };
+}
+
+/**
+ * A NEP-366 signed delegate action (base64 Borsh) from `accountId` holding
+ * one MPC `sign` call for `request`, signed with `key`, the way a NEAR
+ * wallet answers `signDelegateActions` (near-api-js encodes it, not
+ * Herald). `change` alters what the wallet signs, as a tampering dashboard
+ * or wallet would.
+ */
+export async function walletSignedSign(input: {
+  accountId: string;
+  key: KeyPairEd25519;
+  request: MpcSignRequest;
+  nonce?: bigint;
+  maxBlockHeight?: bigint;
+  change?: {
+    receiverId?: string;
+    methodName?: string;
+    args?: object;
+    gas?: bigint;
+    deposit?: bigint;
+    /** Add a second action after the `sign` call. */
+    extraAction?: boolean;
+  };
+}): Promise<string> {
+  const { request, change = {} } = input;
+  const sign = actions.functionCall(
+    change.methodName ?? request.methodName,
+    change.args ?? request.args,
+    change.gas ?? BigInt(request.gas),
+    change.deposit ?? BigInt(request.deposit),
+  );
+  const delegate = buildDelegateAction({
+    senderId: input.accountId,
+    receiverId: change.receiverId ?? request.contractId,
+    actions: change.extraAction ? [sign, actions.functionCall("ft_transfer", {}, 1n, 1n)] : [sign],
+    nonce: input.nonce ?? 1_000_001n,
+    maxBlockHeight: input.maxBlockHeight ?? 200_000_200n,
+    publicKey: input.key.getPublicKey(),
+  });
+  const { signedDelegate } = await new KeyPairSigner(input.key).signDelegateAction(delegate);
+  return base64.encode(encodeSignedDelegate(signedDelegate));
 }
 
 /**
@@ -365,6 +529,9 @@ export class FakeNearUsdc {
         this.#transactions.set(submission.signedDelegateAction, transaction);
       }
       return { ok: true, transaction };
+    },
+    submitSponsoredSign: async () => {
+      throw new Error("This fake NEAR relays no sponsored sign: use FakeNear's relaySign");
     },
   };
 

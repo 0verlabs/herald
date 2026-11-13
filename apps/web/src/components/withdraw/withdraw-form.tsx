@@ -31,10 +31,17 @@ import {
 } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
 import { formatUsdc, formatUtc } from "@/lib/format";
-import { walletFor } from "@/lib/near-wallet";
+import {
+  nearGasPayer,
+  signSponsoredSign,
+  walletFor,
+  watchNearGasPayer,
+  type NearGasPayer,
+  type NearWallet as Wallet,
+} from "@/lib/near-wallet";
 import { inPlainWords } from "@/lib/plain-words";
 import { cn } from "@/lib/utils";
-import { discardPlannedSweep, finishSweep, startSweep } from "@/server/sweeps";
+import { discardPlannedSweep, finishSweep, sponsorSweep, startSweep } from "@/server/sweeps";
 import { OptionSelect, type Option } from "./option-select";
 import { QuoteReview, WithdrawSummary } from "./withdraw-review";
 import { WithdrawLayout } from "./withdraw-layout";
@@ -49,6 +56,11 @@ const stepLabels: Record<Exclude<Step, "idle">, string> = {
 
 /** Where the money goes: a network's id, or NEAR Intents. */
 const INTENTS = "intents";
+
+// How often a sponsored approval is presented again when Herald's relayer
+// didn't answer, and how long apart. It is relayed at most once.
+const SPONSOR_ATTEMPTS = 3;
+const SPONSOR_RETRY_MS = 2_000;
 
 /** A planned bridge withdrawal waiting for you to check its quote and approve it. */
 type QuotedSweep = { sweepId: number; signRequest: MpcSignRequest; quote: SweepQuote };
@@ -92,7 +104,8 @@ export function IntentsLogo({ size = "md" }: { size?: keyof typeof intentsLogoSi
  * Withdraw USDC from one network. Sending to the same network goes straight
  * to the wallet; another network or NEAR Intents goes through the 1Click
  * bridge, quoted first. Your NEAR wallet approves it once; Herald pays the
- * network fee.
+ * network fee, and the approval's NEAR gas too when the wallet signs
+ * delegate actions (ADR 0010).
  */
 export function WithdrawFromNetwork(props: {
   picker: ReactNode;
@@ -106,6 +119,7 @@ export function WithdrawFromNetwork(props: {
   const router = useRouter();
   const plan = useServerFn(startSweep);
   const finish = useServerFn(finishSweep);
+  const sponsor = useServerFn(sponsorSweep);
   const discard = useServerFn(discardPlannedSweep);
   const [target, setTarget] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
@@ -115,6 +129,10 @@ export function WithdrawFromNetwork(props: {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  // Who pays the NEAR gas with the wallet connected now: null until one is.
+  const [gasPayer, setGasPayer] = useState<NearGasPayer | null>(null);
+
+  useEffect(() => watchNearGasPayer(heraldEnv, setGasPayer), [heraldEnv]);
 
   // Count down the quote's approval window.
   useEffect(() => {
@@ -227,10 +245,36 @@ export function WithdrawFromNetwork(props: {
     return planned;
   }
 
-  /** Has your wallet ask the MPC signer to sign, then hands the NEAR transaction to Herald. */
+  /**
+   * Has your wallet approve the MPC signer's signature, then hands it to
+   * Herald. A wallet that signs delegate actions signs the `sign` call
+   * without sending it, and Herald's relayer sends it and pays the NEAR gas;
+   * any other wallet sends the call itself and pays. A sponsored approval
+   * that fails shows its error: it never falls back to the wallet paying.
+   */
   async function signAndFinish(sweepId: number, signRequest: MpcSignRequest) {
     setStep("signing");
     const wallet = await walletFor(heraldEnv, accountId);
+    const payer = nearGasPayer(wallet);
+    setGasPayer(payer);
+    const finished =
+      payer === "herald"
+        ? await sponsorAndFinish(sweepId, wallet, signRequest)
+        : await sendAndFinish(sweepId, wallet, signRequest);
+    if (!finished.ok) throw new Error(finished.message);
+    if (finished.status === "failed") throw new Error(finished.error ?? "The withdrawal failed.");
+    setAmount("");
+    setNotice(
+      finished.status === "awaiting_signature"
+        ? "Your approval is being confirmed. Herald sends the money as soon as it is."
+        : finished.destinationKind === "same_chain"
+          ? "Herald is sending your money. Follow it in the history below."
+          : "Herald handed your money to the bridge. Follow its delivery in the history below.",
+    );
+  }
+
+  /** Your wallet sends the `sign` call and pays its NEAR gas; Herald reads it from that transaction. */
+  async function sendAndFinish(sweepId: number, wallet: Wallet, signRequest: MpcSignRequest) {
     const outcome = await wallet.signAndSendTransaction({
       network: heraldEnv,
       signerId: accountId,
@@ -251,19 +295,28 @@ export function WithdrawFromNetwork(props: {
     if (typeof nearTxHash !== "string") {
       throw new Error("Your wallet didn't return the NEAR transaction.");
     }
-
     setStep("submitting");
-    const finished = await finish({ data: { sweepId, nearTxHash } });
-    if (!finished.ok) throw new Error(finished.message);
-    if (finished.status === "failed") throw new Error(finished.error ?? "The withdrawal failed.");
-    setAmount("");
-    setNotice(
-      finished.status === "awaiting_signature"
-        ? "Your approval is being confirmed. Herald sends the money as soon as it is."
-        : finished.destinationKind === "same_chain"
-          ? "Herald is sending your money. Follow it in the history below."
-          : "Herald handed your money to the bridge. Follow its delivery in the history below.",
-    );
+    return finish({ data: { sweepId, nearTxHash } });
+  }
+
+  /**
+   * Your wallet signs the `sign` call as a delegate action, and Herald's
+   * relayer sends it, paying the NEAR gas. The same signed delegate action
+   * is presented again a few times if the relayer didn't answer: it is
+   * relayed at most once.
+   */
+  async function sponsorAndFinish(sweepId: number, wallet: Wallet, signRequest: MpcSignRequest) {
+    const signedDelegateAction = await signSponsoredSign(wallet, {
+      heraldEnv,
+      signerId: accountId,
+      request: signRequest,
+    });
+    setStep("submitting");
+    for (let attempt = 1; ; attempt++) {
+      const relayed = await sponsor({ data: { sweepId, signedDelegateAction } });
+      if (relayed.ok || !relayed.retry || attempt >= SPONSOR_ATTEMPTS) return relayed;
+      await new Promise((resolve) => setTimeout(resolve, SPONSOR_RETRY_MS));
+    }
   }
 
   /** Runs one step, shows what went wrong, and refreshes the page after. */
@@ -446,12 +499,14 @@ export function WithdrawFromNetwork(props: {
       recipient={kind === "intents" ? accountId : trimmedDestination}
       quote={quoted.quote}
       secondsLeft={secondsLeft}
+      gasPayer={gasPayer}
     />
   ) : (
     <WithdrawSummary
       chain={chain}
       kind={kind}
       destinationLabel={destinationLabel}
+      gasPayer={gasPayer}
       amount={baseUnits !== null && amountProblem === null ? baseUnits : null}
       recipient={
         kind === "intents"

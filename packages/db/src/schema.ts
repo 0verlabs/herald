@@ -120,7 +120,9 @@ export const sweepMinimums = sqliteTable(
  *   holding one USDC `ft_transfer`; `payload_hash` is its NEP-461 hash.
  *
  * The Provider's NEAR wallet asks the MPC signer to sign the payload in the
- * NEAR transaction `near_tx_hash`.
+ * NEAR transaction `near_tx_hash`: sent by the wallet, or for a sponsored
+ * Sweep by Herald's relayer `near_tx_relayer`, holding the wallet's signed
+ * delegate action.
  *
  * A `cross_chain` or `intents` Sweep goes through 1Click: its transfer goes
  * to `one_click_deposit_address`, and the `quote_*` columns hold the quote.
@@ -189,6 +191,12 @@ export const sweeps = sqliteTable(
     /** NEAR: the last block height at which the delegate action can land. */
     nearMaxBlockHeight: integer("near_max_block_height"),
     nearTxHash: text("near_tx_hash").unique(),
+    /**
+     * A sponsored Sweep (ADR 0010): Herald's NEAR relayer, which sent
+     * `near_tx_hash` holding the Provider's signed delegate action and paid
+     * its gas. Null when the Provider's wallet sent it.
+     */
+    nearTxRelayer: text("near_tx_relayer"),
     sourceTxHash: text("source_tx_hash"),
     status: text({
       enum: [

@@ -6,6 +6,7 @@ import {
   type SweepStatus,
 } from "@herald/core";
 import type { SweepChainOption, SweepEntry } from "@herald/core/server";
+import type { NearGasPayer } from "@/lib/near-wallet";
 
 // A Sweep is a withdrawal on screen: the code keeps the domain's words,
 // the dashboard speaks the customer's.
@@ -72,6 +73,34 @@ export const statusBadges = {
   failed: { label: "Failed", variant: "destructive" },
 } as const satisfies Record<SweepStatus, { label: string; variant: string }>;
 
-/** What the wallet asks you to approve, once per withdrawal. */
-export const approveOnce =
-  "One NEAR transaction from your wallet, which pays a little NEAR in network fees.";
+/** What the wallet asks you to approve, once per withdrawal, and who pays its NEAR gas. */
+export function approveOnce(payer: NearGasPayer | null): string {
+  switch (payer) {
+    case "herald":
+      return "One approval in your NEAR wallet. Herald pays its NEAR gas.";
+    case "provider":
+      return "One NEAR transaction from your wallet, which pays a little NEAR in network fees.";
+    case null:
+      return "One approval in your NEAR wallet.";
+    default:
+      return unhandledKind(payer);
+  }
+}
+
+/**
+ * Who pays the NEAR gas of the approval (ADR 0010), in plain words: Herald
+ * with a wallet that signs delegate actions, your wallet otherwise, and
+ * both cases while no wallet is connected yet.
+ */
+export function nearGasLine(payer: NearGasPayer | null): string {
+  switch (payer) {
+    case "herald":
+      return "Herald pays the NEAR gas.";
+    case "provider":
+      return "Your wallet pays the NEAR gas, a little NEAR. Wallets that sign delegate actions, such as Meteor, let Herald pay it.";
+    case null:
+      return "Herald pays the NEAR gas if your wallet signs delegate actions, such as Meteor. Otherwise your wallet pays a little NEAR.";
+    default:
+      return unhandledKind(payer);
+  }
+}

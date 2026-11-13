@@ -14,5 +14,6 @@ export * from "./providers.ts";
 export * from "./sessions.ts";
 export * from "./sign-in.ts";
 export * from "./solana-sweeps.ts";
+export * from "./sponsored-signs.ts";
 export * from "./sweep-all.ts";
 export * from "./sweeps.ts";

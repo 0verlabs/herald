@@ -57,6 +57,18 @@ export type NearStorageDeposit = {
   deposit: bigint;
 };
 
+/** An MPC `sign` call that landed from a relayed delegate action (a sponsored Sweep). */
+export type NearSponsoredSign = {
+  txHash: string;
+  relayer: string;
+  /** The delegate's sender: the Provider Account, the `sign` caller. */
+  sender: string;
+  /** The `sign` call's `request` argument. */
+  request: unknown;
+  gas: bigint;
+  deposit: bigint;
+};
+
 /** Ways the fake NEAR RPC misbehaves, set by a test. */
 export type NearChainFaults = {
   /** A sent transaction is final only this many milliseconds after it lands. */
@@ -107,7 +119,9 @@ class RpcFailure extends Error {
  * nonce above that key's, and a `max_block_height` not passed. Its
  * `ft_transfer` then moves USDC, or fails (as the contract panics) when the
  * receiver isn't registered or the sender lacks the balance. Each block
- * query advances the height by one.
+ * query advances the height by one. A delegate action holding one `sign`
+ * call to the MPC signer (a sponsored Sweep) lands too, recorded in
+ * `sponsoredSigns`, with the MPC signer's answer in its receipts.
  *
  * A relayer transaction can instead hold one `Transfer` (creating an
  * implicit account that doesn't exist yet) or one `storage_deposit` call on
@@ -120,6 +134,7 @@ export class FakeNearChain {
   readonly transfers: NearTransfer[] = [];
   readonly nearTransfers: NearNativeTransfer[] = [];
   readonly storageDeposits: NearStorageDeposit[] = [];
+  readonly sponsoredSigns: NearSponsoredSign[] = [];
   readonly faults: NearChainFaults = {};
   readonly usdc: string;
   /** What `public_key({ domain_id })` answers on the MPC signer contract. */
@@ -151,6 +166,16 @@ export class FakeNearChain {
       nonce: this.#height * 1_000_000n,
       permission: "FullAccess",
     });
+  }
+
+  /** Gives `accountId` another access key, such as a function-call key. */
+  addAccessKey(accountId: string, publicKey: string, permission: AccessKey["permission"]): void {
+    this.#keys.set(keyId(accountId, publicKey), { nonce: this.#height * 1_000_000n, permission });
+  }
+
+  /** `accountId`'s NEAR balance in yoctoNEAR, 0 if it doesn't exist. */
+  nearBalanceOf(accountId: string): bigint {
+    return this.#accounts.get(accountId)?.amount ?? 0n;
   }
 
   /** Gives `accountId` a USDC balance, storage-registering it. */
@@ -440,8 +465,13 @@ export class FakeNearChain {
     const sender = delegate.senderId;
     const failure = (error: unknown) => outcomeOf(txHash, relayer, sender, this.usdc, { error });
     const senderKey = this.#keys.get(keyId(sender, publicKeyString(delegate.publicKey)));
-    if (!senderKey || senderKey.permission !== "FullAccess") {
+    if (!senderKey) {
       return failure({ DelegateActionAccessKeyError: { AccessKeyNotFound: {} } });
+    }
+    const [first] = delegate.actions;
+    const deposit = BigInt(first?.functionCall?.deposit ?? 0n);
+    if (senderKey.permission !== "FullAccess" && deposit > 0n) {
+      return failure({ DelegateActionAccessKeyError: "DepositWithFunctionCall" });
     }
     const signedHash = sha256(encodeDelegateAction(delegate));
     if (
@@ -459,6 +489,9 @@ export class FakeNearChain {
 
     const [inner] = delegate.actions;
     const call = inner?.functionCall;
+    if (delegate.receiverId === this.#mpcContract && call?.methodName === "sign") {
+      return this.#runSign(txHash, relayer, sender, call);
+    }
     if (delegate.receiverId !== this.usdc || call?.methodName !== "ft_transfer") {
       throw new Error("FakeNearChain: only USDC ft_transfer delegates are expected");
     }
@@ -490,6 +523,35 @@ export class FakeNearChain {
       amount,
     });
     return outcomeOf(txHash, relayer, sender, this.usdc, {});
+  }
+
+  // A relayed MPC `sign` call from `sender`: the MPC signer answers with a
+  // signature (any 64 bytes stand in for it), the relayer paying the
+  // 1 yoctoNEAR deposit and the gas, as on testnet (#46).
+  #runSign(
+    txHash: string,
+    relayer: string,
+    sender: string,
+    call: {
+      args: ArrayLike<number>;
+      gas: bigint | string | number;
+      deposit: bigint | string | number;
+    },
+  ) {
+    const args = JSON.parse(new TextDecoder().decode(new Uint8Array(Array.from(call.args)))) as {
+      request?: unknown;
+    };
+    this.#debit(relayer, BigInt(call.deposit));
+    this.sponsoredSigns.push({
+      txHash,
+      relayer,
+      sender,
+      request: args.request,
+      gas: BigInt(call.gas),
+      deposit: BigInt(call.deposit),
+    });
+    const answer = { scheme: "Ed25519", signature: Array.from(new Uint8Array(64), () => 7) };
+    return signOutcome(txHash, relayer, sender, this.#mpcContract, answer);
   }
 
   // `tx` as the RPC answers a final transaction; before it is final (or for
@@ -603,6 +665,57 @@ function outcomeOf(
       },
     },
     receipts_outcome: receipts,
+  };
+}
+
+/**
+ * A final relayer transaction holding a delegate action with one MPC `sign`
+ * call, as `tx` reported it on testnet (#46): the top-level status is the
+ * delegate receipt's empty `SuccessValue`, the MPC signer's first receipt
+ * yields, and its second answers the signature.
+ */
+function signOutcome(
+  txHash: string,
+  relayer: string,
+  sender: string,
+  mpcContract: string,
+  answer: unknown,
+) {
+  const id = (n: number) => base58.encode(sha256(new TextEncoder().encode(`${txHash}/${n}`)));
+  const receipt = (n: number, executor: string, status: unknown) => ({
+    id: id(n),
+    outcome: {
+      executor_id: executor,
+      status,
+      logs: [],
+      receipt_ids: [],
+      gas_burnt: 1,
+      tokens_burnt: "0",
+    },
+  });
+  return {
+    final_execution_status: "FINAL",
+    status: { SuccessValue: "" },
+    transaction: { hash: txHash, signer_id: relayer, receiver_id: sender, actions: [] },
+    transaction_outcome: {
+      id: txHash,
+      outcome: {
+        executor_id: relayer,
+        status: { SuccessReceiptId: id(1) },
+        logs: [],
+        receipt_ids: [id(1)],
+        gas_burnt: 1,
+        tokens_burnt: TOKENS_BURNT,
+      },
+    },
+    receipts_outcome: [
+      receipt(1, sender, { SuccessValue: "" }),
+      receipt(2, mpcContract, { SuccessReceiptId: id(3) }),
+      receipt(3, mpcContract, {
+        SuccessValue: base64.encode(new TextEncoder().encode(JSON.stringify(answer))),
+      }),
+      receipt(4, relayer, { SuccessValue: "" }),
+    ],
   };
 }
 
