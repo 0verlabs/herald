@@ -1,6 +1,6 @@
 {
   "name": "@hrld/x402",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Accept x402 payments on many chains into Receiving Addresses controlled by one NEAR account.",
   "license": "MIT",
   "repository": {

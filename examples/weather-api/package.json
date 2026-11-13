@@ -12,7 +12,7 @@
     "buy": "node scripts/buy.ts"
   },
   "dependencies": {
-    "@hrld/x402": "workspace:*",
+    "@hrld/x402": "^0.1.0",
     "@solana/kit": "catalog:",
     "@x402/core": "catalog:",
     "@x402/evm": "catalog:",
