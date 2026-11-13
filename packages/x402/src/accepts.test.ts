@@ -267,12 +267,12 @@ describe("accepts() input checks", () => {
 });
 
 describe("facilitatorUrls", () => {
-  // The workers.dev URLs of the facilitator Workers named in
+  // The custom domains of the facilitator Workers named in
   // apps/facilitator/wrangler.jsonc.
   test("points each network at its Herald facilitator", () => {
     expect(facilitatorUrls).toEqual({
-      mainnet: "https://herald-facilitator-mainnet.luckzivanius.workers.dev",
-      testnet: "https://herald-facilitator-testnet.luckzivanius.workers.dev",
+      mainnet: "https://facilitator.herald.0verlabs.com",
+      testnet: "https://facilitator.herald-testnet.0verlabs.com",
     });
   });
 });
