@@ -82,6 +82,19 @@ const USD_COIN_V2 = { name: "USD Coin", version: "2" };
 
 const mainnet: readonly Network[] = [
   {
+    kind: "near",
+    caip2: "near:mainnet",
+    label: "NEAR",
+    // Circle's USDC (NEP-141), not the bridged `a0b8…a48.factory.bridge.near`.
+    // Its `ft_metadata` is re-checked by the opt-in live test in live.test.ts.
+    usdc: {
+      address: "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+      decimals: USDC_DECIMALS,
+    },
+    native: NEAR,
+    txExplorer: "https://nearblocks.io/txns/{txHash}",
+  },
+  {
     kind: "evm",
     caip2: "eip155:8453",
     label: "Base",
@@ -139,8 +152,7 @@ const mainnet: readonly Network[] = [
   },
 ];
 
-// Polygon and Avalanche have no Herald testnet. NEAR is listed on testnet
-// only until its mainnet relayer is funded (spec #30).
+// Polygon and Avalanche have no Herald testnet.
 const testnet: readonly Network[] = [
   {
     kind: "near",
@@ -192,7 +204,7 @@ const testnet: readonly Network[] = [
 /**
  * The networks each Herald environment lists, in Payment Option order: on
  * testnet NEAR Testnet, Base Sepolia, Solana Devnet, Arbitrum Sepolia; on
- * mainnet Base, Solana, Arbitrum, Polygon, Avalanche.
+ * mainnet NEAR, Base, Solana, Arbitrum, Polygon, Avalanche.
  */
 export const networkRegistry: Readonly<Record<HeraldEnv, readonly Network[]>> = {
   mainnet,

@@ -9,8 +9,7 @@
 // The Cron Trigger (`triggers.crons`, every 10 minutes, src/scheduled.ts)
 // queues the NEAR Receiving Address setup of Providers that aren't on their
 // way: those registered before NEAR who don't sign in again, and those the
-// NEAR chain queue gave up on. It does nothing where Herald lists no NEAR
-// network (production, for now). `triggers` is declared in each environment.
+// NEAR chain queue gave up on. `triggers` is declared in each environment.
 //
 // SETTLE_RECEIPT_TIMEOUT_MS bounds the receipt wait in /settle; past it the
 // answer is `settlement_pending` and the resource server retries once. On
@@ -36,8 +35,8 @@
 //   key>`) of the NEAR relayer, an implicit account (its id is the hex of
 //   the public key). It pays the gas of NEAR settlements; only the
 //   NearChainQueue Durable Object uses it. scripts/near-relayer-wizard.sh
-//   creates it. Required only where Herald lists a NEAR network (local and
-//   testnet; production once NEAR mainnet is listed). Without a usable key,
+//   creates it. Required in every environment, since each lists a NEAR
+//   network. Without a usable key,
 //   NEAR payments are refused with `invalid_exact_near_no_relayer_configured`
 //   and the other chains keep working.
 {
@@ -158,6 +157,7 @@
           "SOLANA_RPC_URL",
           "ARBITRUM_RPC_URL",
           "NEAR_RPC_URL",
+          "NEAR_RELAYER_KEY",
           "POLYGON_RPC_URL",
           "AVALANCHE_RPC_URL",
         ],

@@ -500,7 +500,7 @@ describe("planning a cross-chain Sweep", () => {
 });
 
 describe("getSweepOptions", () => {
-  test("marks every mainnet chain as one 1Click can Sweep from and to", async () => {
+  test("marks every mainnet chain but NEAR as one 1Click can Sweep from and to", async () => {
     const context = await mainnetProvider("oc-options.near");
 
     const options = await getSweepOptions(
@@ -508,7 +508,9 @@ describe("getSweepOptions", () => {
       context.base,
     );
 
+    // NEAR joins 1Click's table with the NEAR 1Click Sweeps (#40, #41).
     expect(options?.chains.map((c) => [c.label, c.oneClick])).toEqual([
+      ["NEAR", false],
       ["Base", true],
       ["Solana", true],
       ["Arbitrum", true],

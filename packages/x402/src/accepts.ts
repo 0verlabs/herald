@@ -37,8 +37,8 @@ export type AcceptsOptions = {
   /**
    * Only offer these CAIP-2 networks, e.g. `["eip155:8453"]`. Each must be
    * one Herald lists in `env`. Order is always Herald's (on testnet NEAR,
-   * Base, Solana, Arbitrum; on mainnet Base, Solana, Arbitrum, Polygon,
-   * Avalanche).
+   * Base, Solana, Arbitrum; on mainnet NEAR, Base, Solana, Arbitrum,
+   * Polygon, Avalanche).
    */
   networks?: Caip2[];
 };

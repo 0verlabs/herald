@@ -117,6 +117,7 @@ describe("getGasWallets", () => {
     );
 
     expect(wallets.map((w) => [w.label, w.symbol])).toEqual([
+      ["NEAR", "NEAR"],
       ["Base", "ETH"],
       ["Solana", "SOL"],
       ["Arbitrum", "ETH"],
@@ -219,13 +220,18 @@ describe("getGasWallets with no NEAR relayer", () => {
 });
 
 describe("low-balance thresholds", () => {
-  test("accept NEAR mainnet before Herald lists it, and warn only once it does", async () => {
+  test("warn when the NEAR mainnet relayer is below its threshold", async () => {
     const wallets = await getGasWallets(
       { gasWalletAddress: gasWallets, readNativeBalance: fakeChains({}) },
       { env: "mainnet", lowBalanceThresholds: { "near:mainnet": "0.5", "eip155:8453": "0.002" } },
     );
 
-    expect(wallets.map((w) => w.label)).not.toContain("NEAR");
+    expect(wallets[0]).toMatchObject({
+      network: "near:mainnet",
+      label: "NEAR",
+      threshold: "500000000000000000000000",
+      low: true,
+    });
     expect(wallets.find((w) => w.label === "Base")).toMatchObject({ low: true });
   });
 });

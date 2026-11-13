@@ -75,7 +75,15 @@ describe("listSweepMinimums", () => {
     ]);
     expect(testnet[0]?.note).toContain("Herald floor");
     expect(testnet[1]?.note).toContain("mirrors Base mainnet");
-    expect((await listSweepMinimums(db(), { env: "mainnet" })).map((m) => m.label)).toEqual([
+    const mainnet = await listSweepMinimums(db(), { env: "mainnet" });
+    expect(mainnet[0]).toMatchObject({
+      network: "near:mainnet",
+      asset: "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+      label: "NEAR",
+      minimum: "1000",
+    });
+    expect(mainnet.map((m) => m.label)).toEqual([
+      "NEAR",
       "Base",
       "Solana",
       "Arbitrum",

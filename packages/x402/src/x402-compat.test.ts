@@ -96,6 +96,15 @@ describe("accepts() with the stock x402ResourceServer", () => {
     expect(paymentRequired.accepts).toMatchObject([
       {
         scheme: "exact",
+        network: "near:mainnet",
+        asset: "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        amount: "10000",
+        payTo: "d49d0273509b7e40dae820590462736b7453aafbaf9ca1f133296667c1e933a1",
+        maxTimeoutSeconds: 300,
+        extra: {},
+      },
+      {
+        scheme: "exact",
         network: "eip155:8453",
         asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
         amount: "10000",

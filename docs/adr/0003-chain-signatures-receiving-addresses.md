@@ -13,3 +13,4 @@ The bridge-deposit design (ADR-0001, ADR-0002) put Herald's proxy in the payment
 - Herald pins the MPC root public keys, so `accepts()` derives Receiving Addresses offline and makes no network calls (ADR-0005). The pinned keys are checked against the MPC contracts by the live test suite, and by the facilitator at startup, which refuses to settle on a mismatch. A root-key change would change every Receiving Address.
 - A leaked NEAR key exposes the Provider's Receiving Addresses on every chain.
 - Balances sit on several chains until a Sweep. Each Sweep costs one MPC signature (about $0.003) plus gas on the source chain.
+- NEAR is a Payment Option too, first in each environment (NEAR on mainnet, NEAR Testnet on testnet). Its Receiving Address is the implicit account of the ed25519 key derived on path `near-1`, which Herald creates and registers on USDC at its own cost (ADR-0009).

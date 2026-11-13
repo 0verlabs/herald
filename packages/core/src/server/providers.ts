@@ -166,7 +166,7 @@ export async function ensureNearSetupQueued(
  * up on by the chain queue) and any without a stored NEAR address, which is
  * derived and stored on the way. Sign-in queues the setup too; this reaches
  * Providers who don't sign in again. Does nothing in an environment that
- * lists no NEAR network. Returns how many Providers it handed over and how
+ * lists no NEAR network (none does today). Returns how many Providers it handed over and how
  * many the chain queue couldn't take (they stay `not_queued`).
  */
 export async function queuePendingNearSetups(

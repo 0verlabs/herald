@@ -426,7 +426,7 @@ describe("the Provider's NEAR Receiving Address setup", () => {
     expect(result.provider.nearSetupStatus).toBe("queued");
   });
 
-  test("Herald environments that list no NEAR network queue nothing", async () => {
+  test("queues the setup on NEAR mainnet for a mainnet sign-in", async () => {
     const db = createDb(env.DB);
     const key = nearKey();
     const queue = fakeNearChainQueue();
@@ -446,8 +446,15 @@ describe("the Provider's NEAR Receiving Address setup", () => {
       { env: "mainnet", recipient, signature },
     );
 
-    expect(result).toMatchObject({ ok: true, provider: { nearSetupStatus: "not_queued" } });
-    expect(queue.jobs).toEqual([]);
+    if (!result.ok) throw new Error("sign-in failed");
+    expect(queue.jobs).toEqual([
+      {
+        network: "near:mainnet",
+        providerId: result.provider.id,
+        account: result.provider.nearAddress,
+      },
+    ]);
+    expect(result.provider.nearSetupStatus).toBe("queued");
   });
 });
 

@@ -6,12 +6,16 @@ import { accepts, facilitatorUrls } from "./index.ts";
 // whose sample addresses don't match the live contract.
 const mainnetEvm = "0xf437261ba00ac4f34effb54d54df13a81b220e13";
 const mainnetSolana = "H396yYAeSpsgC6pQ7Qd681g9MSTT7oYZ4bCqGHGdbNiq";
+// The implicit account of the key derived on path `near-1`, domain 1. The
+// opt-in live suite checks that derivation against mainnet `v1.signer`.
+const mainnetNear = "d49d0273509b7e40dae820590462736b7453aafbaf9ca1f133296667c1e933a1";
 
 describe("accepts() on mainnet", () => {
   test("pays every chain into the Provider Account's Receiving Addresses", () => {
     const options = accepts({ providerAccount: "herald-test.near", price: "$0.01" });
 
     expect(options.map((o) => [o.network, o.payTo])).toEqual([
+      ["near:mainnet", mainnetNear],
       ["eip155:8453", mainnetEvm],
       ["solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", mainnetSolana],
       ["eip155:42161", mainnetEvm],
@@ -21,9 +25,20 @@ describe("accepts() on mainnet", () => {
   });
 
   test("prices every chain in USDC with an explicit asset, amount and EIP-712 domain", () => {
-    const [base, solana, arbitrum, polygon, avalanche] = accepts({
+    const [near, base, solana, arbitrum, polygon, avalanche] = accepts({
       providerAccount: "herald-test.near",
       price: "$0.01",
+    });
+
+    expect(near).toEqual({
+      scheme: "exact",
+      network: "near:mainnet",
+      payTo: mainnetNear,
+      price: {
+        asset: "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        amount: "10000",
+      },
+      maxTimeoutSeconds: 300,
     });
 
     expect(base).toEqual({

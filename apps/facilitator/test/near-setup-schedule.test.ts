@@ -149,13 +149,4 @@ describe("the scheduled NEAR setup run", () => {
       .where(like(providers.accountId, "near-cron-batch-%"));
     expect(batch.every((p) => p.status === "queued")).toBe(true);
   });
-
-  test("does nothing in an environment that lists no NEAR network", async () => {
-    installFakeNetwork();
-    const { provider } = await registeredProvider("near-cron-mainnet.testnet");
-
-    await scheduledRun({ HERALD_ENV: "mainnet" });
-
-    expect((await rowOf(provider.accountId)).nearSetupStatus).toBe("not_queued");
-  });
 });

@@ -44,8 +44,7 @@
 // balance over <CHAIN>_RPC_URL) and warns when a balance falls below
 // GAS_LOW_BALANCE_THRESHOLDS: whole native tokens (NEAR, ETH, SOL, POL, AVAX)
 // keyed by CAIP-2 network. A network left out never warns. NEAR's gas wallet
-// is the relayer, at 0.5 NEAR in both environments; `near:mainnet` is set
-// ahead of Herald listing NEAR on mainnet and takes effect once it does.
+// is the relayer, at 0.5 NEAR in both environments.
 // Admins also edit the Sweep minimums there, in D1, without a deploy.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
