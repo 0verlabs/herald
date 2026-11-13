@@ -1,11 +1,16 @@
-// Example Provider API. It runs against Herald's testnet only, so it has no
-// Wrangler environments.
+// Example Provider API. It runs against Herald's testnet by default and has
+// no Wrangler environments.
 //
-// PROVIDER_ACCOUNT is the NEAR testnet account whose Receiving Addresses get
-// paid; set it to an account you control. HERALD_FACILITATOR_URL is empty to
-// use Herald's testnet facilitator; set it (here or in .dev.vars) to run
-// against another one, such as a local facilitator on http://localhost:8787.
-// HERALD_API_KEY (an `hk_test_` key from the dashboard) is a secret:
+// HERALD_ENV is the Herald environment, `testnet` or `mainnet`: it picks the
+// Payment Options `accepts()` offers and the default facilitator.
+// scripts/mainnet-rollout-wizard.sh runs it locally with `mainnet`.
+// PROVIDER_ACCOUNT is the NEAR account of that environment whose Receiving
+// Addresses get paid; set it to an account you control.
+// HERALD_FACILITATOR_URL is empty to use Herald's facilitator for HERALD_ENV;
+// set it (here or in .dev.vars) to run against another one, such as a local
+// facilitator on http://localhost:8787.
+// HERALD_API_KEY (an `hk_test_` key from the dashboard, `hk_live_` on
+// mainnet) is a secret:
 // `npx wrangler secret put HERALD_API_KEY` when deployed, `.dev.vars` locally
 // (see `.dev.vars.example`).
 {
@@ -16,6 +21,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   "vars": {
+    "HERALD_ENV": "testnet",
     "PROVIDER_ACCOUNT": "herald-demo.testnet",
     "HERALD_FACILITATOR_URL": "",
   },
