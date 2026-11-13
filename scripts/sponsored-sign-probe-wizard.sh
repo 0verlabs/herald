@@ -229,6 +229,7 @@ PROBE_SERVER="apps/web/src/server/sponsored-sign-probe.ts"
 ROUTE_TREE="apps/web/src/routeTree.gen.ts"
 RELAYER_ENV=".env.near-relayer"
 DEV_VARS="apps/web/.dev.vars"
+WEB_WRANGLER="apps/web/wrangler.jsonc"
 PROBE_KEY_NAME="PROBE_NEAR_RELAYER_KEY"
 MARKER_START="<!-- meteor-run:start -->"
 MARKER_END="<!-- meteor-run:end -->"
@@ -312,7 +313,48 @@ remove_probe_key() {
   ' "$DEV_VARS" "$PROBE_KEY_NAME"
 }
 
+# near_chain_of FILE: the chain_id NEAR_RPC_URL in FILE serves (testnet,
+# mainnet), or nothing. node reads the URL, which may hold an API key, so
+# it's never printed or passed as an argument.
+near_chain_of() {
+  node -e '
+    const fs = require("node:fs");
+    const line = fs.readFileSync(process.argv[1], "utf8").split("\n").find((l) => l.startsWith("NEAR_RPC_URL="));
+    if (!line) process.exit(0);
+    const url = line.slice("NEAR_RPC_URL=".length).trim().replace(/^["\x27]|["\x27]$/g, "");
+    fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "status", params: [] }),
+      signal: AbortSignal.timeout(10000),
+    })
+      .then((r) => r.json())
+      .then((b) => process.stdout.write(String(b?.result?.chain_id ?? "")))
+      .catch(() => {});
+  ' "$1" 2>/dev/null || true
+}
+
 has_probe_key() { [[ -f "$DEV_VARS" ]] && grep -q "^${PROBE_KEY_NAME}=" "$DEV_VARS"; }
+
+# require_probe_key: lists PROBE_NEAR_RELAYER_KEY in the top-level
+# `secrets.required` of apps/web/wrangler.jsonc. With `secrets` declared,
+# local dev loads only the listed keys from .dev.vars, so without this the
+# dashboard never sees the key. Throwaway: clean-up restores the file from git.
+require_probe_key() {
+  node -e '
+    const fs = require("node:fs");
+    const [file, name] = process.argv.slice(1);
+    const text = fs.readFileSync(file, "utf8");
+    if (text.includes(JSON.stringify(name))) process.exit(0);
+    const marker = "\"required\": [";
+    const at = text.indexOf(marker);
+    if (at < 0) { console.error("No secrets.required in " + file); process.exit(1); }
+    const end = at + marker.length;
+    fs.writeFileSync(file, text.slice(0, end) + JSON.stringify(name) + ", " + text.slice(end));
+  ' "$WEB_WRANGLER" "$PROBE_KEY_NAME"
+}
+
+probe_key_required() { grep -q "\"$PROBE_KEY_NAME\"" "$WEB_WRANGLER"; }
 
 # nonces_distinct LINE N: the line lists N nonces and no two are equal.
 nonces_distinct() {
@@ -552,6 +594,17 @@ for f in apps/web/.dev.vars apps/facilitator/.dev.vars; do
     pause "Press Enter once it's in place"
   fi
 done
+for f in apps/web/.dev.vars apps/facilitator/.dev.vars; do
+  [[ -f "$f" ]] || continue
+  chain=$(near_chain_of "$f")
+  if [[ "$chain" == testnet ]]; then
+    note "✓ NEAR_RPC_URL in $f serves testnet"
+  else
+    warn "NEAR_RPC_URL in $f serves ${chain:-an unknown chain}, not testnet."
+    warn "Sign-in and the probe check keys there. Point it (and the other *_RPC_URL lines) at testnet."
+    pause "Press Enter once it's fixed"
+  fi
+done
 say "The local Worker serves Herald testnet (HERALD_ENV=testnet in apps/web/wrangler.jsonc)."
 if confirm "Apply the local D1 migrations now (vp run db:migrate:local)?"; then
   vp run db:migrate:local || warn "The migrations didn't apply. Fix that before signing in."
@@ -601,6 +654,12 @@ else
   warn "Without $PROBE_KEY_NAME the probe can't relay. Re-run the wizard when you want to."
   exit 1
 fi
+if probe_key_required || require_probe_key; then
+  note "✓ $WEB_WRANGLER lists $PROBE_KEY_NAME in secrets.required, so local dev loads it (clean-up restores the file)"
+else
+  warn "Couldn't add $PROBE_KEY_NAME to secrets.required in $WEB_WRANGLER. Local dev won't load it."
+  exit 1
+fi
 printf '\n'
 
 say "Start both apps, each in its own terminal, and leave them running:"
@@ -618,6 +677,7 @@ pause "Press Enter to continue"
 # ── 2. Meteor Wallet ──────────────────────────────────────────────────────
 stage "Meteor Wallet on testnet"
 say "You need a NEAR testnet account in Meteor Wallet with a full-access key."
+warn "Not the relayer ($(saved RELAYER_ACCOUNT)): it stands in for a Provider, and the probe refuses the relayer."
 say "The account must exist on chain: a delegate action is checked against its access key."
 say "The relayer pays the gas, so 1 testnet NEAR on the account is plenty."
 open_url "https://docs.near.org/getting-started/faucet"
@@ -743,15 +803,20 @@ if confirm "Delete it now ($PROBE_ROUTE, $PROBE_SERVER) and restore $ROUTE_TREE 
 else
   SKIPPED+=("delete $PROBE_ROUTE and $PROBE_SERVER, then: git checkout -- $ROUTE_TREE")
 fi
-if confirm "Remove $PROBE_KEY_NAME (the relayer's private key) from $DEV_VARS?"; then
+if confirm "Remove $PROBE_KEY_NAME (the relayer's private key) from $DEV_VARS, and restore $WEB_WRANGLER from git?"; then
   if remove_probe_key && ! has_probe_key; then
     note "✓ removed $PROBE_KEY_NAME from $DEV_VARS"
   else
     SKIPPED+=("remove the $PROBE_KEY_NAME line from $DEV_VARS")
     warn "Couldn't remove it. Delete the $PROBE_KEY_NAME line from $DEV_VARS by hand."
   fi
+  if git checkout -- "$WEB_WRANGLER"; then
+    note "✓ restored $WEB_WRANGLER"
+  else
+    SKIPPED+=("git checkout -- $WEB_WRANGLER")
+  fi
 else
-  SKIPPED+=("remove the $PROBE_KEY_NAME line from $DEV_VARS")
+  SKIPPED+=("remove the $PROBE_KEY_NAME line from $DEV_VARS, then: git checkout -- $WEB_WRANGLER")
 fi
 note "Restart the dashboard (vp -C apps/web dev) so it no longer holds the relayer key."
 if [[ "$verdict_kind" == both ]]; then

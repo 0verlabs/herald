@@ -1,12 +1,12 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Herald sponsors the Provider's MPC `sign` gas with NEP-366
 
 When the Provider's NEAR wallet declares `signDelegateActions`, the wallet doesn't send a Sweep's MPC `sign` call itself. It signs a NEP-366 delegate action from the Provider Account holding that one `sign` call, and Herald's NEAR relayer submits it, paying the gas and the 1 yoctoNEAR deposit. The Provider Account is still the `sign` caller, so the MPC signature is still its Receiving Address's, and no address changes. Herald charges no fee for this for now, and the daily Sweep cap bounds what it costs. This amends ADR 0009, which says the Provider "signs the same way as on every other chain", meaning the Provider's wallet sends and pays for its own `sign` call: with such a wallet, Herald pays for that call too. Wallets without `signDelegateActions` keep that path, and the Provider pays.
 
-The protocol half of the #46 probe ([sponsored-mpc-sign.md](../research/sponsored-mpc-sign.md)) showed that this works on testnet: MPC nodes answer a `sign` arriving in a relayed delegate action, the signature verifies against the Provider Account's derived key, and the Provider Account pays nothing. This ADR stays proposed until the Meteor Wallet run in the same note shows that a real wallet signs such delegate actions. If it doesn't, this ADR records that instead.
+The #46 probe ([sponsored-mpc-sign.md](../research/sponsored-mpc-sign.md)) showed that this works on testnet, with script-signed delegate actions and then with Meteor Wallet: MPC nodes answer a `sign` arriving in a relayed delegate action, the signature verifies against the Provider Account's derived key, and the Provider Account pays nothing. Meteor signed one such delegate action, and three in one request, each with one approval.
 
 ## Considered Options
 
