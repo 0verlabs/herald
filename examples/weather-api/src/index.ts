@@ -1,4 +1,4 @@
-import { accepts, facilitatorUrls } from "@hrld/x402";
+import { accepts, facilitatorUrls, type HeraldEnv } from "@hrld/x402";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import type { SupportedResponse } from "@x402/core/types";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
@@ -31,8 +31,10 @@ class CachedFacilitatorClient extends HTTPFacilitatorClient {
 // `routes` decides which requests need payment; every other route passes
 // straight through.
 app.use("*", (c, next) => {
+  // HERALD_ENV picks Herald's environment; anything but "mainnet" is testnet.
+  const heraldEnv: HeraldEnv = c.env.HERALD_ENV === "mainnet" ? "mainnet" : "testnet";
   const facilitator = new CachedFacilitatorClient({
-    url: c.env.HERALD_FACILITATOR_URL || facilitatorUrls.testnet,
+    url: c.env.HERALD_FACILITATOR_URL || facilitatorUrls[heraldEnv],
     // `/supported` is public; verify and settle need the Herald API key.
     createAuthHeaders: async () => {
       const auth = { Authorization: `Bearer ${c.env.HERALD_API_KEY}` };
@@ -52,7 +54,7 @@ app.use("*", (c, next) => {
       accepts: accepts({
         providerAccount: c.env.PROVIDER_ACCOUNT,
         price: "$0.001",
-        env: "testnet",
+        env: heraldEnv,
       }),
       description: "Current weather in Jakarta",
       mimeType: "application/json",

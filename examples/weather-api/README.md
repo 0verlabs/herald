@@ -16,6 +16,8 @@ A Buyer registers `near:*` only if it holds USDC on NEAR. A stock client pays wi
 
 The Buyer needs testnet USDC and no ETH, SOL or NEAR: Herald's facilitator pays the gas.
 
+The `HERALD_ENV` var (`testnet` by default) picks the Herald environment: the Payment Options `accepts()` offers and the facilitator used when `HERALD_FACILITATOR_URL` is empty. With `mainnet`, the API takes real USDC into a mainnet Provider's Receiving Addresses and needs an `hk_live_` key. `scripts/mainnet-rollout-wizard.sh` runs it that way, on localhost, for its one real payment.
+
 ## Run it
 
 The repo README's "Pay the example API" section has the local setup and the EVM and Solana commands. The API needs `HERALD_API_KEY` in `.dev.vars` (see `.dev.vars.example`) and a facilitator that supports `near:testnet`: the resource server refuses to start a route that lists a network its facilitator doesn't support.
