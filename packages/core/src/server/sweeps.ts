@@ -420,7 +420,15 @@ export async function planSweep(
   // Where the transfer goes: the destination itself, or 1Click's deposit address.
   const recipient = quote?.depositAddress ?? target.address;
 
-  const context = { provider, network, amount, destination: recipient, now, signBy };
+  const context = {
+    provider,
+    network,
+    amount,
+    destination: recipient,
+    oneClickDeposit: quote !== null,
+    now,
+    signBy,
+  };
   const plan = await planColumns(deps, { ...context, network });
   if (!plan.ok) return plan;
 
@@ -724,6 +732,8 @@ type PlanContext<N extends Network> = {
   amount: string;
   /** Who the transfer pays: the destination, or 1Click's deposit address. */
   destination: string;
+  /** Whether `destination` is 1Click's deposit address. */
+  oneClickDeposit: boolean;
   now: Date;
   /** Unix seconds: the transfer must expire by then (a 1Click quote's signing limit). */
   signBy?: number;
@@ -856,20 +866,36 @@ async function planSolanaColumns(
  * the final block height) and builds it. Its nonce is above the key's and
  * above any NEAR Sweep of the Provider's still on its way, so Sweeps
  * planned one after the other can all land in that order.
+ *
+ * 1Click's deposit address on NEAR is a fresh implicit account that isn't
+ * registered on USDC, so it isn't refused for that: Herald's relayer
+ * registers it when it submits the Sweep (see `NearChainQueueRpc.submitSweep`).
+ * For a 1Click Sweep, the delegate action's `nearMaxBlockHeight` follows
+ * from the quote's signing limit (`signBy`), as `validBefore` does.
  */
 async function planNearColumns(
   deps: Pick<SweepPlanDeps, "db" | "readNear" | "nearQueue">,
-  { provider, network, amount, destination, now, signBy = Infinity }: PlanContext<NearNetwork>,
+  {
+    provider,
+    network,
+    amount,
+    destination,
+    oneClickDeposit,
+    now,
+    signBy = Infinity,
+  }: PlanContext<NearNetwork>,
 ): Promise<PlannedRow> {
   const publicKey = hexToBytes(provider.nearAddress);
   let relayer: string;
   let keyNonce: bigint | null;
-  let registered: boolean;
+  let canReceive: boolean;
   try {
-    [relayer, keyNonce, registered] = await Promise.all([
+    [relayer, keyNonce, canReceive] = await Promise.all([
       deps.nearQueue.relayer(network.caip2),
       deps.readNear.accessKeyNonce({ network, accountId: provider.nearAddress, publicKey }),
-      deps.readNear.storageRegistered({ network, accountId: destination }),
+      // 1Click's deposit address isn't registered on USDC yet: the relayer
+      // registers it when it submits the Sweep.
+      oneClickDeposit ? true : deps.readNear.storageRegistered({ network, accountId: destination }),
     ]);
   } catch (error) {
     return chainUnavailable(provider, network, error);
@@ -881,7 +907,7 @@ async function planNearColumns(
     );
   }
   // An ft_transfer to an unregistered account fails, with Herald paying the gas.
-  if (!registered) {
+  if (!canReceive) {
     return reject(
       "invalid_destination",
       `${destination} isn't registered on USDC on ${network.label}, so it can't receive USDC. Its owner registers it first (USDC's storage_deposit), as NEAR wallets do.`,

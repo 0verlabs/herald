@@ -383,11 +383,25 @@ export async function tokenAccountOf(owner: string, mint: string): Promise<strin
   return tokenAccount;
 }
 
+/** 1Click's id of USDC on NEAR mainnet: Circle's NEP-141 contract. */
+const NEAR_USDC_1CS = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
+
+/** A fresh deposit address on the chain of 1Click's `originAsset`. */
+function depositAddressFor(originAsset: string): string {
+  // On NEAR, 1Click answers a fresh implicit account that doesn't exist yet
+  // and isn't registered on USDC (read from a live quote on 2026-11-13).
+  if (originAsset === NEAR_USDC_1CS) {
+    return bytesToHex(crypto.getRandomValues(new Uint8Array(32)));
+  }
+  if (originAsset.startsWith("nep141:sol-")) return solanaKeyPair().address;
+  return privateKeyToAccount(generatePrivateKey()).address;
+}
+
 /**
  * A fake 1Click. `client` quotes every request it records in `quotes`,
  * keeping `fee` base units and answering a fresh deposit address on the
- * origin chain (Solana for a `sol-` asset, EVM otherwise), with the
- * requested deadline. `swaps` holds each deposit address's status, set by
+ * origin chain (a NEAR implicit account, a Solana address or an EVM one),
+ * with the requested deadline. `swaps` holds each deposit address's status, set by
  * the test the way 1Click would move it on; addresses not listed are
  * unknown (404).
  */
@@ -413,9 +427,7 @@ export class FakeOneClick {
       const amountOut = BigInt(request.amount) - this.fee;
       const quote = {
         quoteId: crypto.randomUUID(),
-        depositAddress: request.originAsset.startsWith("nep141:sol-")
-          ? solanaKeyPair().address
-          : privateKeyToAccount(generatePrivateKey()).address,
+        depositAddress: depositAddressFor(request.originAsset),
         amountIn: request.amount,
         amountOut: String(amountOut),
         minAmountOut: String((amountOut * 995n) / 1000n),
