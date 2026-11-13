@@ -12,10 +12,11 @@ import {
   getTransactionDecoder,
 } from "@solana/kit";
 import { eip3009ABI } from "@x402/evm";
+import { base64 } from "@scure/base";
 import { env } from "cloudflare:workers";
 import { decodeFunctionData, hashTypedData, type Address, type Hex } from "viem";
 import { describe, expect, test } from "vite-plus/test";
-import type { SolanaSweep } from "../src/index.ts";
+import type { NearSweep, SolanaSweep } from "../src/index.ts";
 import {
   completeSweep,
   discardSweep,
@@ -26,6 +27,7 @@ import {
   planSweep,
   refreshSweeps,
   SWEEP_VALIDITY_SECONDS,
+  type SweepTarget,
 } from "../src/server/index.ts";
 import {
   FakeChainQueue,
@@ -500,7 +502,7 @@ describe("planning a cross-chain Sweep", () => {
 });
 
 describe("getSweepOptions", () => {
-  test("marks every mainnet chain but NEAR as one 1Click can Sweep from and to", async () => {
+  test("marks every mainnet chain as one 1Click can Sweep from and to", async () => {
     const context = await mainnetProvider("oc-options.near");
 
     const options = await getSweepOptions(
@@ -508,9 +510,8 @@ describe("getSweepOptions", () => {
       context.base,
     );
 
-    // NEAR joins 1Click's table with the NEAR 1Click Sweeps (#40, #41).
     expect(options?.chains.map((c) => [c.label, c.oneClick])).toEqual([
-      ["NEAR", false],
+      ["NEAR", true],
       ["Base", true],
       ["Solana", true],
       ["Arbitrum", true],
@@ -772,5 +773,300 @@ describe("following a cross-chain Sweep through 1Click", () => {
 
     expect(plan.quote).toBeNull();
     expect(confirmed).toMatchObject({ status: "confirmed", oneClickUrl: null });
+  });
+});
+
+const NEAR_MAINNET = "near:mainnet";
+const NEAR_USDC = "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
+const NEAR_USDC_1CS = `nep141:${NEAR_USDC}`;
+
+/**
+ * A mainnet Provider holding 5 USDC in its NEAR Receiving Address, set up on
+ * a fake NEAR, and the fakes it Sweeps through. 1Click's deposit addresses
+ * on NEAR aren't registered on USDC: Herald's relayer registers them when
+ * it submits the Sweep.
+ */
+async function nearMainnetProvider(accountId: string) {
+  const context = await mainnetProvider(accountId);
+  const chain = new FakeNearUsdc();
+  chain.addAccount(context.provider.nearAddress);
+  const readUsdcBalance = usdcBalances({ [context.provider.nearAddress]: "5000000" });
+  const planDeps = {
+    ...context.planDeps,
+    readUsdcBalance,
+    readNear: chain.reader,
+    nearQueue: chain.queue,
+  };
+  const deps = { ...context.deps, readNear: chain.reader, nearQueue: chain.queue };
+  const refresh = async (now?: Date) => (await refreshSweeps(deps, { ...context.base, now }))[0];
+  const plan = (target: SweepTarget, now?: Date) =>
+    planSweep(planDeps, {
+      ...context.base,
+      network: NEAR_MAINNET,
+      amount: "1500000",
+      now,
+      ...target,
+    });
+  return { ...context, chain, planDeps, deps, refresh, plan };
+}
+
+type NearContext = Awaited<ReturnType<typeof nearMainnetProvider>>;
+
+function quotedNearPlan(plan: Awaited<ReturnType<typeof planSweep>>) {
+  if (!plan.ok) throw new Error(plan.message);
+  if (plan.sweep.sourceKind !== "near" || !plan.quote) {
+    throw new Error("Expected a quoted NEAR Sweep");
+  }
+  return { sweep: plan.sweep, signRequest: plan.signRequest, quote: plan.quote };
+}
+
+/** The `ft_transfer` arguments in a planned NEAR Sweep's delegate action. */
+function ftTransferOf(sweep: NearSweep): { receiver_id: string; amount: string } {
+  const json = new TextDecoder().decode(base64.decode(sweep.nearDelegateAction));
+  const match = /\{"receiver_id":"[^"]*","amount":"\d+"\}/.exec(json);
+  if (!match) throw new Error("No ft_transfer in the delegate action");
+  return JSON.parse(match[0]);
+}
+
+/** Plans, signs and completes a 1Click Sweep from NEAR; it ends `submitted`, then `confirmed`. */
+async function confirmedNearSweep(context: NearContext, target: SweepTarget) {
+  const planned = quotedNearPlan(await context.plan(target));
+  const nearTxHash = await context.near.sign({
+    signerId: context.provider.accountId,
+    request: planned.signRequest,
+    key: context.nearKey,
+  });
+  const completed = await completeSweep(context.deps, {
+    ...context.base,
+    sweepId: planned.sweep.id,
+    nearTxHash,
+  });
+  if (!completed.ok) throw new Error(completed.message);
+  expect(completed.sweep.status).toBe("submitted");
+  context.chain.statuses.set(completed.sweep.sourceTxHash!, { kind: "success" });
+  expect(await context.refresh()).toMatchObject({ status: "confirmed" });
+  return {
+    planned: planned.sweep,
+    sweep: completed.sweep,
+    depositAddress: planned.quote.depositAddress,
+  };
+}
+
+const toBase = {
+  destinationKind: "cross_chain",
+  destinationNetwork: BASE,
+  destination: DESTINATION,
+} as const satisfies SweepTarget;
+
+describe("Sweeping from NEAR through 1Click", () => {
+  test("a cross-chain Sweep asks 1Click for a quote refunding to the NEAR Receiving Address, and the ft_transfer pays its deposit address", async () => {
+    const context = await nearMainnetProvider("oc-near-cross.near");
+    const now = new Date("2026-11-13T12:00:00Z");
+
+    const { sweep, signRequest, quote } = quotedNearPlan(await context.plan(toBase, now));
+
+    expect(context.oneClick.quotes).toEqual([
+      {
+        originAsset: NEAR_USDC_1CS,
+        destinationAsset: BASE_USDC_1CS,
+        amount: "1500000",
+        refundTo: context.provider.nearAddress,
+        recipient: DESTINATION,
+        recipientType: "DESTINATION_CHAIN",
+        slippageTolerance: expect.any(Number),
+        deadline: new Date(now.getTime() + ONE_CLICK_DEADLINE_SECONDS * 1000),
+      },
+    ]);
+    expect(quote.depositAddress).toMatch(/^[0-9a-f]{64}$/);
+    expect(sweep).toMatchObject({
+      sourceKind: "near",
+      sourceNetwork: NEAR_MAINNET,
+      asset: NEAR_USDC,
+      destinationKind: "cross_chain",
+      destinationNetwork: BASE,
+      destinationAddress: DESTINATION,
+      destinationAsset: BASE_USDC_1CS,
+      oneClickDepositAddress: quote.depositAddress,
+      status: "planned",
+    });
+    expect(ftTransferOf(sweep)).toEqual({ receiver_id: quote.depositAddress, amount: "1500000" });
+    expect(signRequest).toMatchObject({
+      contractId: "v1.signer",
+      args: { request: { payload_v2: { Eddsa: sweep.payloadHash.slice(2) }, path: "near-1" } },
+    });
+  });
+
+  test("a cross-chain Sweep goes submitted, confirmed, delivering and delivered, with links on both chains", async () => {
+    const context = await nearMainnetProvider("oc-near-cross-delivered.near");
+
+    const { sweep, depositAddress } = await confirmedNearSweep(context, toBase);
+    context.oneClick.report(depositAddress, "PROCESSING");
+    const delivering = await context.refresh();
+    const deliveryTx = `0x${"cd".repeat(32)}`;
+    context.oneClick.report(depositAddress, "SUCCESS", {
+      amountOut: "1499000",
+      destinationTxHashes: [deliveryTx],
+    });
+    const delivered = await context.refresh();
+
+    // The relayer was handed the delegate action paying the deposit address.
+    expect(context.chain.submissions).toHaveLength(1);
+    expect(delivering).toMatchObject({ status: "delivering" });
+    expect(delivered).toMatchObject({
+      id: sweep.id,
+      status: "delivered",
+      label: "NEAR",
+      destinationLabel: "Base",
+      deliveredAmount: "1499000",
+      sourceTxUrl: `https://nearblocks.io/txns/${sweep.sourceTxHash}`,
+      deliveryTxUrl: `https://basescan.org/tx/${deliveryTx}`,
+      oneClickUrl: `https://explorer.near-intents.org/transactions/${depositAddress}`,
+      error: null,
+    });
+  });
+
+  test("an Intents Sweep credits the Provider Account with NEAR USDC and reaches delivered", async () => {
+    const context = await nearMainnetProvider("oc-near-intents.near");
+
+    const { planned, sweep, depositAddress } = await confirmedNearSweep(context, {
+      destinationKind: "intents",
+    });
+    context.oneClick.report(depositAddress, "SUCCESS", { amountOut: "1499000" });
+    const delivered = await context.refresh();
+
+    expect(context.oneClick.quotes).toMatchObject([
+      {
+        originAsset: NEAR_USDC_1CS,
+        destinationAsset: NEAR_USDC_1CS,
+        refundTo: context.provider.nearAddress,
+        recipient: "oc-near-intents.near",
+        recipientType: "INTENTS",
+      },
+    ]);
+    expect(ftTransferOf(planned)).toEqual({ receiver_id: depositAddress, amount: "1500000" });
+    expect(delivered).toMatchObject({
+      id: sweep.id,
+      status: "delivered",
+      destinationKind: "intents",
+      destinationNetwork: NEAR_MAINNET,
+      destinationAddress: "oc-near-intents.near",
+      destinationLabel: "NEAR Intents",
+      deliveredAmount: "1499000",
+    });
+  });
+
+  test("records a refund to the NEAR Receiving Address", async () => {
+    const context = await nearMainnetProvider("oc-near-refunded.near");
+    const { depositAddress } = await confirmedNearSweep(context, toBase);
+    context.oneClick.report(depositAddress, "REFUNDED", {
+      refundedAmount: "1500000",
+      refundReason: "SLIPPAGE_EXCEEDED",
+    });
+
+    const refunded = await context.refresh();
+
+    expect(refunded).toMatchObject({ status: "refunded", refundedAmount: "1500000" });
+    expect(refunded?.error).toContain("1.5 USDC to your Receiving Address on NEAR");
+  });
+
+  test("a swap 1Click gave up on fails the Sweep", async () => {
+    const context = await nearMainnetProvider("oc-near-failed.near");
+    const { depositAddress } = await confirmedNearSweep(context, { destinationKind: "intents" });
+    context.oneClick.report(depositAddress, "FAILED");
+
+    const failed = await context.refresh();
+
+    expect(failed).toMatchObject({ status: "failed" });
+    expect(failed?.error).toContain("1Click");
+  });
+
+  test("the delegate action expires within the quote's signing window, not ten minutes out", async () => {
+    const context = await nearMainnetProvider("oc-near-short-deadline.near");
+    const now = new Date("2026-11-13T12:00:00Z");
+    // 1Click answers a deadline only 15 minutes away: 5 minutes to sign.
+    context.oneClick.tamper = (quote) => {
+      quote.deadline = new Date(now.getTime() + 15 * 60 * 1000);
+    };
+
+    const { sweep, quote } = quotedNearPlan(await context.plan(toBase, now));
+
+    const signingSeconds = 15 * 60 - ONE_CLICK_DEPOSIT_MARGIN_SECONDS;
+    expect(sweep.validBefore).toBe(now.getTime() / 1000 + signingSeconds);
+    expect(quote.signBy).toEqual(new Date(sweep.validBefore * 1000));
+    // Five minutes of 0.5 s blocks, not the ten of a same-chain NEAR Sweep.
+    expect(sweep.nearMaxBlockHeight).toBe(context.chain.height + signingSeconds * 2);
+  });
+
+  test.each([
+    {
+      case: "the quote takes another amount",
+      tamper: (quote: { amountIn: string }) => {
+        quote.amountIn = "1400000";
+      },
+    },
+    {
+      case: "the deposit address isn't a NEAR account id",
+      tamper: (quote: { depositAddress: string }) => {
+        quote.depositAddress = solanaKeyPair().address;
+      },
+    },
+    {
+      case: "the deposit address is the USDC contract",
+      tamper: (quote: { depositAddress: string }) => {
+        quote.depositAddress = NEAR_USDC;
+      },
+    },
+  ])("records nothing when $case", async ({ tamper }) => {
+    const context = await nearMainnetProvider(
+      `oc-near-unusable-${crypto.randomUUID().slice(0, 8)}.near`,
+    );
+    context.oneClick.tamper = tamper;
+
+    const plan = await context.plan({ destinationKind: "intents" });
+
+    expect(plan).toMatchObject({ ok: false, reason: "quote_refused" });
+    expect(await refreshSweeps(context.deps, context.base)).toEqual([]);
+  });
+
+  test.each([
+    {
+      case: "the NEAR Receiving Address itself",
+      depositAddress: (c: NearContext) => c.provider.nearAddress,
+    },
+    { case: "Herald's relayer", depositAddress: (c: NearContext) => c.chain.relayer },
+  ])("records nothing when the deposit address is $case", async ({ depositAddress }) => {
+    const context = await nearMainnetProvider(
+      `oc-near-own-${crypto.randomUUID().slice(0, 8)}.near`,
+    );
+    context.oneClick.tamper = (quote) => {
+      quote.depositAddress = depositAddress(context);
+    };
+
+    const plan = await context.plan({ destinationKind: "intents" });
+
+    expect(plan).toMatchObject({ ok: false });
+    expect(await refreshSweeps(context.deps, context.base)).toEqual([]);
+  });
+
+  test("on NEAR Testnet, refuses both 1Click kinds: 1Click runs on mainnet only", async () => {
+    const context = await nearMainnetProvider("oc-near-testnet.testnet");
+
+    const plans = await Promise.all(
+      [toBase, { destinationKind: "intents" } as const].map((target) =>
+        planSweep(context.planDeps, {
+          providerId: context.provider.id,
+          env: "testnet",
+          network: "near:testnet",
+          amount: "1500000",
+          ...target,
+        }),
+      ),
+    );
+
+    expect(plans).toMatchObject([
+      { ok: false, reason: "unsupported_destination" },
+      { ok: false, reason: "unsupported_destination" },
+    ]);
+    expect(context.oneClick.quotes).toEqual([]);
   });
 });

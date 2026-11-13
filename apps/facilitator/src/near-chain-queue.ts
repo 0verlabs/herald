@@ -113,6 +113,12 @@ type Relayable = {
   network: NearNetwork;
   signedDelegateAction: string;
   delegate: ReturnType<typeof decodeSignedDelegateB64>["delegate"];
+  /**
+   * Who its `ft_transfer` pays: for a settlement the Provider's NEAR
+   * Receiving Address, for a Sweep its destination or 1Click's deposit
+   * address.
+   */
+  receiver: string;
 };
 
 /** A relayer transaction that was sent: its hash, and its bytes when at hand for a rebroadcast. */
@@ -138,7 +144,11 @@ type SentTransaction = { hash: string; bytes?: Uint8Array };
  * NEAR Receiving Address, the same way. Each is sent once: presenting it
  * again answers the transaction that carries it, sent again in case the
  * first broadcast never reached the node. The web Worker follows it from
- * there.
+ * there. A Sweep's `ft_transfer` would fail on a receiver not registered on
+ * USDC, as 1Click's NEAR deposit addresses aren't, so the relayer first
+ * registers the receiver when it isn't, at Herald's cost (0.00125 NEAR), in
+ * a relayer transaction of its own: the delegate action holds the transfer
+ * alone.
  *
  * It sets up Providers' NEAR Receiving Addresses, which NEAR payments need
  * to verify: the web Worker queues one when a Provider signs in, and the
@@ -365,6 +375,16 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
    * signed by its sender, one from the relayer itself, one for a network
    * this Herald environment doesn't list, and one at or within a few
    * blocks of its `max_block_height`.
+   *
+   * Before sending a new one, it registers the transfer's receiver on USDC
+   * when it isn't, at Herald's cost (0.00125 NEAR), and waits until that is
+   * final (`#registerReceiver`), so the Sweep's `ft_transfer` can't fail for
+   * that: 1Click's NEAR deposit addresses aren't registered. The wait takes
+   * blocks, so the delegate action's expiry is checked again after it. If
+   * it can't read whether the receiver is registered, or the registration
+   * doesn't land, it throws rather than refuses, having sent nothing of the
+   * Sweep: core leaves the Sweep awaiting its signature and submits it
+   * again on its next refresh, as when the block height can't be read.
    */
   async submitSweep(input: NearSweepSubmission): Promise<NearSweepSubmissionResult> {
     const relayable = this.#relayable(input, "Not a NEAR Sweep submission");
@@ -376,17 +396,23 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
     const sent = this.#sentSweep(delegateHash);
     if (sent) return this.#answerSweep(network, sent);
 
-    let height: bigint;
+    const expired = await this.#sweepExpiry(network, maxBlockHeight);
+    if (expired) return expired;
+
+    let registered: boolean;
     try {
-      height = BigInt((await finalBlock(this.#rpc(network))).height);
+      registered = await this.#registerReceiver(relayable.network, relayable.receiver);
     } catch (error) {
-      // Unanswered rather than refused: core leaves the Sweep for a retry.
-      throw new Error(`Herald couldn't read the NEAR block height: ${String(error)}`);
-    }
-    if (height + BigInt(SWEEP_EXPIRY_MARGIN_BLOCKS) >= maxBlockHeight) {
-      return refusal(
-        `The signed delegate action expired at block ${maxBlockHeight} (NEAR is at ${height})`,
+      // Unanswered rather than refused, as above: nothing of the Sweep was
+      // sent, and core submits it again on its next refresh.
+      throw new Error(
+        `Herald couldn't register the Sweep's receiver ${relayable.receiver} on USDC: ${String(error)}`,
       );
+    }
+    // Waiting for the registration to be final took blocks: check again.
+    if (registered) {
+      const expiredSince = await this.#sweepExpiry(network, maxBlockHeight);
+      if (expiredSince) return expiredSince;
     }
 
     return this.#enqueue(async () => {
@@ -426,6 +452,57 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
       );
       return { ok: true, transaction: broadcast.transaction.hash };
     });
+  }
+
+  /**
+   * Registers a Sweep's receiver on the network's USDC (`storage_deposit`)
+   * unless it is registered, at Herald's cost (USDC's minimum storage
+   * balance, 0.00125 NEAR), and waits until that is final. An `ft_transfer`
+   * to an account USDC doesn't know panics, the relayer having paid its gas,
+   * and 1Click's NEAR deposit addresses are fresh implicit accounts USDC
+   * doesn't know. The registration can't go in the Sweep's delegate action,
+   * which holds exactly one `ft_transfer` (`delegateProblem`), so it is a
+   * relayer transaction of its own. Its being final before the delegate
+   * action is sent matters: the receipts of two relayer transactions don't
+   * necessarily run in nonce order. Answers whether it registered the
+   * receiver. Throws if it can't read whether the receiver is registered,
+   * or the registration didn't land.
+   */
+  async #registerReceiver(network: NearNetwork, receiver: string): Promise<boolean> {
+    if (await isStorageRegistered(this.#rpc(network.caip2), network.usdc.address, receiver)) {
+      return false;
+    }
+    const transaction = await this.#sendAndAwait(network.caip2, network.usdc.address, [
+      usdcRegistration(receiver),
+    ]);
+    console.log(
+      JSON.stringify({
+        event: "near_sweep_receiver_registered",
+        network: network.caip2,
+        receiver,
+        transaction,
+      }),
+    );
+    return true;
+  }
+
+  /**
+   * Why a Sweep's delegate action is too close to expiring to send: NEAR's
+   * final height is within `SWEEP_EXPIRY_MARGIN_BLOCKS` of its
+   * `max_block_height`. Null if it has time left. Throws if the height can't
+   * be read: the submission goes unanswered, and core retries it.
+   */
+  async #sweepExpiry(network: Caip2, maxBlockHeight: bigint): Promise<Refusal | null> {
+    let height: bigint;
+    try {
+      height = BigInt((await finalBlock(this.#rpc(network))).height);
+    } catch (error) {
+      throw new Error(`Herald couldn't read the NEAR block height: ${String(error)}`);
+    }
+    if (height + BigInt(SWEEP_EXPIRY_MARGIN_BLOCKS) < maxBlockHeight) return null;
+    return refusal(
+      `The signed delegate action expired at block ${maxBlockHeight} (NEAR is at ${height})`,
+    );
   }
 
   #sentSweep(delegateHash: string): SweepRow | undefined {
@@ -481,7 +558,9 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
     );
     if (problem) return refusal(problem);
     const { delegate } = decodeSignedDelegateB64(signedDelegateAction);
-    return { ok: true, network, signedDelegateAction, delegate };
+    // `delegateProblem` found it holds an ft_transfer with readable arguments.
+    const { receiver_id: receiver } = parseFtTransferArgs(delegate.functionCall!.args);
+    return { ok: true, network, signedDelegateAction, delegate, receiver };
   }
 
   /**
@@ -635,12 +714,7 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
     }
     if (!(await isStorageRegistered(rpc, network.usdc.address, job.account))) {
       const transaction = await this.#sendAndAwait(job.network, network.usdc.address, [
-        functionCallAction({
-          methodName: "storage_deposit",
-          args: { account_id: job.account, registration_only: true },
-          gas: STORAGE_DEPOSIT_GAS,
-          deposit: STORAGE_DEPOSIT_YOCTO,
-        }),
+        usdcRegistration(job.account),
       ]);
       console.log(
         JSON.stringify({
@@ -782,6 +856,22 @@ function delegateProblem(
   if (delegate.senderId === relayer) return "The Buyer can't be Herald's relayer";
   if (!decoded.verifySignature()) return "The delegate action's signature doesn't verify";
   return null;
+}
+
+/**
+ * The `storage_deposit` call on USDC registering `account` (NEP-145), with
+ * USDC's minimum storage balance attached: what setting up a NEAR Receiving
+ * Address sends, and what a Sweep's receiver gets when it isn't registered.
+ * With `registration_only`, an account already registered gets the deposit
+ * back.
+ */
+function usdcRegistration(account: string): NearAction {
+  return functionCallAction({
+    methodName: "storage_deposit",
+    args: { account_id: account, registration_only: true },
+    gas: STORAGE_DEPOSIT_GAS,
+    deposit: STORAGE_DEPOSIT_YOCTO,
+  });
 }
 
 function refusal(message: string): Refusal {

@@ -12,10 +12,12 @@ export const ONE_CLICK_URL = "https://1click.chaindefuser.com";
 
 /**
  * The 1Click asset id of USDC on each mainnet network Herald lists, from
- * `GET /v0/tokens` on 2026-11-11. Sweeping into NEAR Intents credits the
- * same asset, so it is also the Intents token id.
+ * `GET /v0/tokens` on 2026-11-11 (NEAR's on 2026-11-13). Sweeping into NEAR
+ * Intents credits the same asset, so it is also the Intents token id. On
+ * NEAR it is Circle's NEP-141 contract itself.
  */
 export const oneClickUsdcAssets: Partial<Record<Caip2, string>> = {
+  "near:mainnet": "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
   "eip155:8453": "nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near",
   "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp":
     "nep141:sol-5ce3bf3a31af18be40ba30f721101b4341690186.omft.near",

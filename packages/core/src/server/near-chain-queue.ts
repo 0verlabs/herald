@@ -53,8 +53,11 @@ export type NearSweepSubmissionResult = { ok: true; transaction: string } | Near
  * Herald's NEAR chain queue for Sweeps: the relayer's account id, and
  * submitting a signed Sweep for the relayer to send. Submitting the same
  * signed delegate action again answers the same transaction without
- * sending anything new. Rejects if the queue can't be reached, in which
- * case submitting again is safe.
+ * sending anything new. The relayer registers the transfer's receiver on
+ * USDC first when it isn't (1Click's NEAR deposit addresses aren't), at
+ * Herald's cost (0.00125 NEAR), so the Sweep's transfer can't fail for
+ * that. Rejects if the queue can't be reached, or can't read or make that
+ * registration, in which case submitting again is safe.
  */
 export type NearSweepQueue = {
   relayer(network: Caip2): Promise<string>;
@@ -116,6 +119,13 @@ export interface NearChainQueueRpc {
    * again, in case the first broadcast was lost) instead of a new one.
    * Refuses a delegate action that isn't a single USDC `ft_transfer` signed
    * by its sender, or one that expired.
+   *
+   * Before sending a new one, the relayer registers the transfer's receiver
+   * on USDC when it isn't (1Click's NEAR deposit addresses aren't), at
+   * Herald's cost (0.00125 NEAR), and waits until that is final, so the
+   * Sweep's transfer can't fail for that. Rejects, having sent nothing of
+   * the Sweep, if it can't read the block height or whether the receiver is
+   * registered, or the registration doesn't land.
    */
   submitSweep(submission: NearSweepSubmission): Promise<NearSweepSubmissionResult>;
 }

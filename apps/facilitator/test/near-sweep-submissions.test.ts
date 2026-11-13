@@ -24,6 +24,15 @@ const usdc = networkRegistry.testnet.find((n) => n.caip2 === NEAR_TESTNET)!.usdc
 const queue = () => env.NEAR_CHAIN_QUEUE.getByName(NEAR_TESTNET);
 const DESTINATION = "alice.testnet";
 
+/**
+ * A Durable Object RPC call's answer as a plain Promise. The stub's own
+ * promise is a pipelining proxy, which `expect(...).rejects` doesn't see
+ * reject.
+ */
+async function plainPromise(call: PromiseLike<unknown>): Promise<unknown> {
+  return await call;
+}
+
 async function finalHeight(near: FakeNearChain): Promise<number> {
   const answer = (await near.handle({ id: 1, method: "block", params: { finality: "final" } })) as {
     result: { header: { height: number } };
@@ -32,13 +41,28 @@ async function finalHeight(near: FakeNearChain): Promise<number> {
 }
 
 /**
+ * A fresh implicit account that doesn't exist and isn't registered on USDC,
+ * as 1Click's NEAR deposit addresses are.
+ */
+function oneClickDepositAddress(): string {
+  return bytesToHex(ed25519.getPublicKey(ed25519.utils.randomSecretKey()));
+}
+
+/**
  * A NEAR Receiving Address holding 5 USDC, set up the way Herald's setup
- * leaves it, and a Sweep from it to a registered account, signed by its key
- * as the MPC network would: the delegate action as core plans it.
+ * leaves it, and a Sweep from it, signed by its key as the MPC network
+ * would: the delegate action as core plans it. It goes to `DESTINATION`, a
+ * registered account, unless `receiver` names another, left as it is.
  */
 async function signedSweep(
   near: FakeNearChain,
-  options: { amount?: bigint; blocksLeft?: number; usdc?: string; signer?: Uint8Array } = {},
+  options: {
+    amount?: bigint;
+    blocksLeft?: number;
+    usdc?: string;
+    signer?: Uint8Array;
+    receiver?: string;
+  } = {},
 ) {
   const secretKey = ed25519.utils.randomSecretKey();
   const publicKey = ed25519.getPublicKey(secretKey);
@@ -50,7 +74,7 @@ async function signedSweep(
   const delegate = nearSweepDelegateAction({
     senderId: sender,
     usdc: options.usdc ?? usdc,
-    receiverId: DESTINATION,
+    receiverId: options.receiver ?? DESTINATION,
     amount: String(options.amount ?? 1_500_000n),
     nonce: BigInt(height) * 1_000_000n + 1n,
     maxBlockHeight: BigInt(height + (options.blocksLeft ?? 1000)),
@@ -79,6 +103,80 @@ describe("submitting a NEAR Sweep", () => {
       },
     ]);
     expect(fake.near.usdcBalanceOf(DESTINATION)).toBe(1_500_000n);
+    // DESTINATION is registered on USDC already: nothing to register.
+    expect(fake.near.storageDeposits).toEqual([]);
+  });
+
+  test("a Sweep to an account not registered on USDC, as 1Click's deposit addresses are, is registered by the relayer first and the USDC lands there", async () => {
+    const fake = installFakeNetwork();
+    const depositAddress = oneClickDepositAddress();
+    const { sender, signedDelegateAction } = await signedSweep(fake.near, {
+      receiver: depositAddress,
+    });
+
+    const result = await queue().submitSweep({ network: NEAR_TESTNET, signedDelegateAction });
+
+    expect(result).toEqual({ ok: true, transaction: expect.any(String) });
+    expect(fake.near.storageDeposits).toEqual([
+      {
+        txHash: expect.any(String),
+        relayer: nearRelayer().accountId,
+        account: depositAddress,
+        deposit: 1_250_000_000_000_000_000_000n,
+      },
+    ]);
+    expect(fake.near.transfers).toEqual([
+      expect.objectContaining({ sender, receiver: depositAddress, amount: 1_500_000n }),
+    ]);
+    expect(fake.near.usdcBalanceOf(depositAddress)).toBe(1_500_000n);
+  });
+
+  test.each([
+    {
+      case: "reading whether it is registered fails",
+      fault: { failNextCalls: { storage_balance_of: 1 } },
+    },
+    {
+      case: "the registration isn't final in time",
+      fault: { finalityDelayMs: 60_000 },
+    },
+  ])(
+    "when $case, the submission rejects without moving USDC, and submitting again registers it once and lands once",
+    async ({ fault }) => {
+      const fake = installFakeNetwork();
+      const depositAddress = oneClickDepositAddress();
+      const { signedDelegateAction } = await signedSweep(fake.near, { receiver: depositAddress });
+      const submission = { network: NEAR_TESTNET as typeof NEAR_TESTNET, signedDelegateAction };
+      Object.assign(fake.near.faults, fault);
+
+      await expect(plainPromise(queue().submitSweep(submission))).rejects.toThrow();
+      expect(fake.near.transfers).toEqual([]);
+
+      Object.assign(fake.near.faults, { failNextCalls: {}, finalityDelayMs: 0 });
+      const again = await queue().submitSweep(submission);
+
+      expect(again).toEqual({ ok: true, transaction: expect.any(String) });
+      expect(fake.near.storageDeposits.map((d) => d.account)).toEqual([depositAddress]);
+      expect(fake.near.transfers).toHaveLength(1);
+      expect(fake.near.usdcBalanceOf(depositAddress)).toBe(1_500_000n);
+    },
+  );
+
+  test("refuses a Sweep that comes within a few blocks of expiring while its receiver is registered, and moves no USDC", async () => {
+    const fake = installFakeNetwork();
+    const depositAddress = oneClickDepositAddress();
+    // Past the expiry check at first; the registration's own block reads
+    // bring NEAR within the margin before the delegate action is sent.
+    const { signedDelegateAction } = await signedSweep(fake.near, {
+      receiver: depositAddress,
+      blocksLeft: 12,
+    });
+
+    const result = await queue().submitSweep({ network: NEAR_TESTNET, signedDelegateAction });
+
+    expect(result).toMatchObject({ ok: false, message: expect.stringContaining("expired") });
+    expect(fake.near.storageDeposits.map((d) => d.account)).toEqual([depositAddress]);
+    expect(fake.near.transfers).toEqual([]);
   });
 
   test("presenting the same Sweep again, one after the other or at once, answers the first transaction and sends nothing new", async () => {
