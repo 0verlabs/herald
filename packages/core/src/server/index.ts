@@ -6,6 +6,7 @@ export * from "./balances.ts";
 export type { Db } from "./db.ts";
 export * from "./near-chain-queue.ts";
 export * from "./near-protocol.ts";
+export * from "./near-relayer-balance.ts";
 export * from "./near-sweeps.ts";
 export * from "./one-click.ts";
 export * from "./payments.ts";
