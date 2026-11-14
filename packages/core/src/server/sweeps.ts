@@ -59,7 +59,7 @@ import {
   type NearSweepStatus,
 } from "./near-sweeps.ts";
 import { providerFromRow } from "./providers.ts";
-import { readSponsoredSign } from "./sponsored-signs.ts";
+import { mpcPayloadKey, readSponsoredSign } from "./sponsored-signs.ts";
 import {
   buildSolanaSweepTransaction,
   SYSTEM_PROGRAM_ADDRESS,
@@ -1152,13 +1152,7 @@ export async function completeSweep(
   }
   // Expired before this signing transaction came in: say why it failed.
   if (sweep.status === "failed" && sweep.nearTxHash === null) return { ok: true, sweep };
-  if (sweep.nearTxHash !== nearTxHash) {
-    return {
-      ok: false,
-      reason: "near_tx_mismatch",
-      message: `This Sweep belongs to NEAR transaction ${sweep.nearTxHash ?? "(none)"}.`,
-    };
-  }
+  if (sweep.nearTxHash !== nearTxHash) return nearTxMismatch(sweep);
   return {
     ok: true,
     sweep: await advance(deps, { provider, sweep, env: input.env, now: input.now }),
@@ -1195,11 +1189,19 @@ export type SponsoredSweepRelay =
  * 24 hours and those still awaiting their signature reach
  * `SWEEP_DAILY_CAP`, since Herald pays for each `sign` it relays.
  *
+ * Herald relays one delegate action per Sweep (ADR 0008), whoever presents
+ * another: the first one presented is taken for the Sweep before it is
+ * relayed (`takeSponsoredApproval`). Another one presented for it, at the
+ * same time (two tabs) or after the relayer went unanswered (a re-sign),
+ * sends that first one again, which the queue sends at most once, and
+ * answers the same as it does.
+ *
  * `relay_refused` is the NEAR chain queue's own refusal (it checks the
- * delegate action again, and whether it can land); `relay_unanswered`
- * means the queue couldn't be reached, and presenting the same signed
- * delegate action again is safe: the queue sends it at most once. Either
- * way the Sweep stays `planned`. `now` defaults to the current time.
+ * delegate action again, and whether it can land), after which a new
+ * delegate action for the Sweep can be relayed; `relay_unanswered` means
+ * the queue couldn't be reached, and presenting the same signed delegate
+ * action again is safe: the queue sends it at most once. Either way the
+ * Sweep stays `planned`. `now` defaults to the current time.
  */
 export async function relaySponsoredSweep(
   deps: SweepDeps,
@@ -1220,30 +1222,19 @@ export async function relaySponsoredSweep(
   const problem = sponsoredSignProblem(input.env, provider, sweep, input.signedDelegateAction);
   if (problem) return { ok: false, reason: "delegate_refused", message: problem };
 
-  if (sweep.status !== "planned") {
-    if (sweep.nearTxRelayer !== null) {
-      // Relayed before: answer where it stands, relaying nothing new.
-      return { ok: true, sweep: await advance(deps, { ...context, sweep }) };
-    }
-    // Expired before it was signed: say why it failed.
-    if (sweep.status === "failed" && sweep.nearTxHash === null) return { ok: true, sweep };
-    return {
-      ok: false,
-      reason: "near_tx_mismatch",
-      message: `This Sweep belongs to NEAR transaction ${sweep.nearTxHash ?? "(none)"}.`,
-    };
-  }
+  if (sweep.status !== "planned") return answerSignedSweep(deps, { ...context, sweep });
   const now = input.now ?? new Date();
   if (Math.floor(now.getTime() / 1000) >= sweep.validBefore) {
     // Too late to sign: fail it rather than pay for a signature of it.
     return { ok: true, sweep: await advance(deps, { ...context, sweep }) };
   }
-  if (
-    (await sweepsSubmittedInLastDay(deps.db, provider.id, now)) +
-      (await sweepsAwaitingSignature(deps.db, provider.id)) >=
-    SWEEP_DAILY_CAP
-  ) {
+  if (await sponsoredCapReached(deps.db, provider.id, now)) {
     return { ok: false, reason: "daily_cap_reached", message: dailyCapMessage };
+  }
+  const approval = await takeSponsoredApproval(deps.db, sweep.id, input.signedDelegateAction);
+  if (approval === null) {
+    // Another approval was recorded since the Sweep was read.
+    return answerSignedSweep(deps, { ...context, sweep: await readSweep(deps.db, sweep.id) });
   }
 
   const mpcNetwork = nearNetworkOf(input.env);
@@ -1251,7 +1242,7 @@ export async function relaySponsoredSweep(
   try {
     relayed = await deps.nearQueue.submitSponsoredSign({
       network: mpcNetwork.caip2,
-      signedDelegateAction: input.signedDelegateAction,
+      signedDelegateAction: approval,
     });
   } catch (error) {
     logSweep("sweep_sponsored_sign_unanswered", sweep, { error: String(error) }, "warn");
@@ -1263,6 +1254,17 @@ export async function relaySponsoredSweep(
   }
   if (!relayed.ok) {
     logSweep("sweep_sponsored_sign_refused", sweep, { message: relayed.message }, "warn");
+    // The relayer sent nothing: a new approval for the Sweep may go.
+    await deps.db
+      .update(sweeps)
+      .set({ sponsoredDelegateAction: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(sweeps.id, sweep.id),
+          eq(sweeps.status, "planned"),
+          eq(sweeps.sponsoredDelegateAction, approval),
+        ),
+      );
     return {
       ok: false,
       reason: "relay_refused",
@@ -1295,15 +1297,66 @@ export async function relaySponsoredSweep(
     };
   }
   sweep = await readSweep(deps.db, sweep.id);
-  if (sweep.nearTxHash !== relayed.transaction) {
-    // Another approval for this Sweep was recorded first.
-    return {
-      ok: false,
-      reason: "near_tx_mismatch",
-      message: `This Sweep belongs to NEAR transaction ${sweep.nearTxHash ?? "(none)"}.`,
-    };
-  }
+  // Another approval for this Sweep was recorded first.
+  if (sweep.nearTxHash !== relayed.transaction) return nearTxMismatch(sweep);
   return { ok: true, sweep: await advance(deps, { ...context, sweep }) };
+}
+
+/**
+ * Answers a sponsored approval presented for a Sweep that isn't `planned`
+ * any more, relaying nothing: where it stands if Herald's relayer sent its
+ * approval, why it failed if it expired unsigned, and `near_tx_mismatch`
+ * if the Provider's wallet sent it.
+ */
+async function answerSignedSweep(
+  deps: SweepDeps,
+  context: SweepContext,
+): Promise<SponsoredSweepRelay> {
+  const { sweep } = context;
+  if (sweep.nearTxRelayer !== null) return { ok: true, sweep: await advance(deps, context) };
+  if (sweep.status === "failed" && sweep.nearTxHash === null) return { ok: true, sweep };
+  return nearTxMismatch(sweep);
+}
+
+/**
+ * Takes `signedDelegateAction` as the one approval Herald's relayer sends
+ * for the planned Sweep `sweepId`, unless it already has one, and answers
+ * the Sweep's approval: this one, or the one presented first. Null if the
+ * Sweep isn't `planned` any more.
+ */
+async function takeSponsoredApproval(
+  db: Db,
+  sweepId: number,
+  signedDelegateAction: string,
+): Promise<string | null> {
+  await db
+    .update(sweeps)
+    .set({ sponsoredDelegateAction: signedDelegateAction, updatedAt: new Date() })
+    .where(
+      and(
+        eq(sweeps.id, sweepId),
+        eq(sweeps.status, "planned"),
+        isNull(sweeps.sponsoredDelegateAction),
+      ),
+    );
+  const [row] = await db
+    .select({ status: sweeps.status, approval: sweeps.sponsoredDelegateAction })
+    .from(sweeps)
+    .where(eq(sweeps.id, sweepId));
+  return row?.status === "planned" ? row.approval : null;
+}
+
+/** A Sweep whose NEAR signing transaction isn't the one presented for it. */
+function nearTxMismatch(sweep: Sweep): {
+  ok: false;
+  reason: "near_tx_mismatch";
+  message: string;
+} {
+  return {
+    ok: false,
+    reason: "near_tx_mismatch",
+    message: `This Sweep belongs to NEAR transaction ${sweep.nearTxHash ?? "(none)"}.`,
+  };
 }
 
 export type SponsoredAccountRejection =
@@ -1367,7 +1420,7 @@ export async function prepareSponsoredSweepAccount(
     return {
       ok: false,
       reason: "sweep_not_signable",
-      message: "This withdrawal can't be approved any more. Start a new one.",
+      message: "This Sweep can't be approved any more. Start a new one.",
     };
   }
   const account = NearImplicitAccountSchema.safeParse(provider.accountId);
@@ -1393,7 +1446,8 @@ export async function prepareSponsoredSweepAccount(
     return {
       ok: false,
       reason: "account_unanswered",
-      message: "Herald's NEAR relayer didn't answer while preparing your NEAR account. Try again.",
+      message:
+        "Herald's NEAR relayer didn't answer while preparing your Provider Account. Try again.",
     };
   }
   if (!created.ok) {
@@ -1401,7 +1455,7 @@ export async function prepareSponsoredSweepAccount(
     return {
       ok: false,
       reason: "account_refused",
-      message: `Herald couldn't prepare your NEAR account ${provider.accountId}: ${created.message}. Try again.`,
+      message: `Herald couldn't prepare your Provider Account ${provider.accountId}: ${created.message}. Try again.`,
     };
   }
   if (created.transaction !== null) {
@@ -1448,20 +1502,14 @@ function sponsoredSignProblem(
   }
   const planned = signRequestFor(env, sweep).args.request;
   const asked = sign.request;
-  const samePayload =
-    JSON.stringify(normalizedPayload(asked.payload_v2)) ===
-    JSON.stringify(normalizedPayload(planned.payload_v2));
-  if (!samePayload || asked.path !== planned.path || asked.domain_id !== planned.domain_id) {
+  if (
+    mpcPayloadKey(asked.payload_v2) !== mpcPayloadKey(planned.payload_v2) ||
+    asked.path !== planned.path ||
+    asked.domain_id !== planned.domain_id
+  ) {
     return "Herald won't relay it: it asks the MPC signer for another payload, path or domain than this Sweep's.";
   }
   return null;
-}
-
-/** An MPC `payload_v2` with its hex in lowercase, to compare two. */
-function normalizedPayload(payload: { Ecdsa: string } | { Eddsa: string }) {
-  return "Ecdsa" in payload
-    ? { Ecdsa: payload.Ecdsa.toLowerCase() }
-    : { Eddsa: payload.Eddsa.toLowerCase() };
 }
 
 /** How many of a Provider's Sweeps wait for their MPC signature right now. */
@@ -1996,12 +2044,9 @@ async function confirm(db: Db, sweep: Sweep): Promise<Sweep> {
  * NEAR doesn't have it yet (or can't be read), the `SuccessValue` once the
  * transaction succeeded, or why the Sweep fails.
  *
- * The Provider's wallet sends its own transaction, whose status is the
- * answer. A sponsored Sweep's transaction is the relayer's
- * (`nearTxRelayer`), read with the relayer as its sender: its status is the
- * delegate receipt's empty `SuccessValue`, and the answer is the
- * `SuccessValue` of the MPC signer's receipt. Any failed receipt fails it:
- * a delegate action that didn't land sent nothing to the MPC signer.
+ * The Provider's wallet sends its own transaction (`walletSentAnswer`). A
+ * sponsored Sweep's transaction is the relayer's (`nearTxRelayer`), read
+ * with the relayer as its sender (`relayedAnswer`).
  */
 async function readMpcSignature(
   deps: SweepDeps,
@@ -2020,26 +2065,43 @@ async function readMpcSignature(
   }
   if (!outcome) return "pending";
 
+  const answer =
+    sweep.nearTxRelayer === null
+      ? walletSentAnswer(outcome)
+      : relayedAnswer(outcome, mpcSigners[env].contractId);
+  if (answer === "pending" || !("failure" in answer)) return answer;
+  logSweep("sweep_near_tx_failed", sweep, { failure: answer.failure }, "warn");
+  return {
+    ok: false,
+    error: `NEAR transaction ${sweep.nearTxHash} failed, so the MPC signer didn't sign this Sweep.`,
+  };
+}
+
+type MpcAnswer = "pending" | { ok: true; successValue: string } | { failure: unknown };
+
+/** The MPC signer's answer in a transaction the Provider's wallet sent: its status. */
+function walletSentAnswer(outcome: NearTransactionOutcome): MpcAnswer {
   const status = outcome.status as { SuccessValue?: unknown; Failure?: unknown } | null;
+  if (status?.Failure !== undefined) return { failure: status.Failure };
+  if (typeof status?.SuccessValue !== "string") return "pending";
+  return { ok: true, successValue: status.SuccessValue };
+}
+
+/**
+ * The MPC signer's answer in Herald's relayer transaction of a sponsored
+ * Sweep: the `SuccessValue` of `mpc`'s receipt. The transaction's status is
+ * the delegate receipt's empty `SuccessValue`, and any failed receipt
+ * fails it: a delegate action that didn't land sent nothing to the MPC
+ * signer.
+ */
+function relayedAnswer(outcome: NearTransactionOutcome, mpc: string): MpcAnswer {
+  const status = outcome.status as { Failure?: unknown } | null;
   const failure =
     status?.Failure ??
-    (sweep.nearTxRelayer === null
-      ? undefined
-      : outcome.receipts_outcome
-          ?.map((r) => (r.outcome?.status as { Failure?: unknown } | undefined)?.Failure)
-          .find((f) => f !== undefined));
-  if (failure !== undefined) {
-    logSweep("sweep_near_tx_failed", sweep, { failure }, "warn");
-    return {
-      ok: false,
-      error: `NEAR transaction ${sweep.nearTxHash} failed, so the MPC signer didn't sign this Sweep.`,
-    };
-  }
-  if (sweep.nearTxRelayer === null) {
-    if (typeof status?.SuccessValue !== "string") return "pending";
-    return { ok: true, successValue: status.SuccessValue };
-  }
-  const mpc = mpcSigners[env].contractId;
+    outcome.receipts_outcome
+      ?.map((r) => (r.outcome?.status as { Failure?: unknown } | undefined)?.Failure)
+      .find((f) => f !== undefined);
+  if (failure !== undefined) return { failure };
   const answer = outcome.receipts_outcome
     ?.filter((r) => r.outcome?.executor_id === mpc)
     .map((r) => (r.outcome?.status as { SuccessValue?: unknown } | undefined)?.SuccessValue)

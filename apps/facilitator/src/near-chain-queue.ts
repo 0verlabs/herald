@@ -82,15 +82,17 @@ const STORAGE_DEPOSIT_GAS = 30_000_000_000_000n;
 const RETRY_DELAYS_MS = [30_000, 60_000, 120_000, 300_000, 600_000];
 const MAX_ATTEMPTS = RETRY_DELAYS_MS.length + 1;
 
-const SetupJobSchema = z.object({
+/**
+ * A job creating one of a Provider's implicit accounts on a NEAR network:
+ * a NEAR Receiving Address setup (`NearSetupJob`), or a Provider Account
+ * creation (`NearProviderAccountJob`, #50), the setup's first step for the
+ * Provider Account.
+ */
+const ImplicitAccountJobSchema = z.object({
   network: Caip2Schema,
   providerId: z.number().int().positive(),
   account: NearImplicitAccountSchema,
 });
-
-// A Provider Account creation (#50) is a NEAR Receiving Address setup's
-// first step: the same job, for the Provider Account.
-const ProviderAccountJobSchema = SetupJobSchema;
 
 /**
  * A row of `provider_accounts`: one per implicit Provider Account the
@@ -266,7 +268,7 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
    * network this Herald environment doesn't list.
    */
   async queueSetup(input: NearSetupJob): Promise<{ ok: true } | Refusal> {
-    const parsed = SetupJobSchema.safeParse(input);
+    const parsed = ImplicitAccountJobSchema.safeParse(input);
     if (!parsed.success) return refusal("Not a NEAR setup job");
     const job = parsed.data;
     if (!this.#nearNetwork(job.network)) return this.#unlisted(job.network);
@@ -615,7 +617,7 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
    * whether the account is on NEAR.
    */
   async createProviderAccount(input: NearProviderAccountJob): Promise<NearProviderAccountResult> {
-    const parsed = ProviderAccountJobSchema.safeParse(input);
+    const parsed = ImplicitAccountJobSchema.safeParse(input);
     if (!parsed.success) {
       return refusal("Not a NEAR Provider Account job: Herald only creates implicit accounts");
     }

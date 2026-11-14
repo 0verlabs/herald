@@ -33,7 +33,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { formatUsdc, formatUtc } from "@/lib/format";
 import {
   nearGasPayer,
-  signSponsoredSign,
+  signedDelegateActionFor,
   walletFor,
   watchNearGasPayer,
   type NearGasPayer,
@@ -54,18 +54,13 @@ import { WithdrawLayout } from "./withdraw-layout";
 import {
   addressPlaceholder,
   addressProblem,
+  askRelayer,
   PREPARING_ACCOUNT_LABEL,
   prepareProviderAccount,
   type Step,
 } from "./withdraw-shared";
 
-/**
- * The steps of this form: the shared ones, and creating an implicit
- * Provider Account that isn't on NEAR before a sponsored approval (#50).
- */
-type FormStep = Step | "preparing";
-
-const stepLabels: Record<Exclude<FormStep, "idle">, string> = {
+const stepLabels: Record<Exclude<Step, "idle">, string> = {
   planning: "Preparing your withdrawal…",
   quoting: "Getting a quote…",
   preparing: PREPARING_ACCOUNT_LABEL,
@@ -75,11 +70,6 @@ const stepLabels: Record<Exclude<FormStep, "idle">, string> = {
 
 /** Where the money goes: a network's id, or NEAR Intents. */
 const INTENTS = "intents";
-
-// How often a sponsored approval is presented again when Herald's relayer
-// didn't answer, and how long apart. It is relayed at most once.
-const SPONSOR_ATTEMPTS = 3;
-const SPONSOR_RETRY_MS = 2_000;
 
 /** A planned bridge withdrawal waiting for you to check its quote and approve it. */
 type QuotedSweep = { sweepId: number; signRequest: MpcSignRequest; quote: SweepQuote };
@@ -145,7 +135,7 @@ export function WithdrawFromNetwork(props: {
   const [amount, setAmount] = useState("");
   const [destination, setDestination] = useState("");
   const [quoted, setQuoted] = useState<QuotedSweep | null>(null);
-  const [step, setStep] = useState<FormStep>("idle");
+  const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -334,17 +324,16 @@ export function WithdrawFromNetwork(props: {
       onPreparing: () => setStep("preparing"),
     });
     setStep("signing");
-    const signedDelegateAction = await signSponsoredSign(wallet, {
+    const signedDelegateAction = await signedDelegateActionFor(wallet, {
       heraldEnv,
       signerId: accountId,
       request: signRequest,
     });
     setStep("submitting");
-    for (let attempt = 1; ; attempt++) {
-      const relayed = await sponsor({ data: { sweepId, signedDelegateAction } });
-      if (relayed.ok || !relayed.retry || attempt >= SPONSOR_ATTEMPTS) return relayed;
-      await new Promise((resolve) => setTimeout(resolve, SPONSOR_RETRY_MS));
-    }
+    return askRelayer(
+      () => sponsor({ data: { sweepId, signedDelegateAction } }),
+      (relayed) => !relayed.ok && relayed.retry,
+    );
   }
 
   /** Runs one step, shows what went wrong, and refreshes the page after. */

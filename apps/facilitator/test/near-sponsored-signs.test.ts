@@ -11,7 +11,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { base58, base64 } from "@scure/base";
 import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
-import type { FakeNearChain } from "./support/fake-near-chain.ts";
+import type { FakeNearChain, NearChainFaults } from "./support/fake-near-chain.ts";
 import { installFakeNetwork, NEAR_TESTNET, nearRelayer } from "./support/network.ts";
 
 // The NEAR chain queue's sponsored-sign RPC (ADR 0010), as the web Worker
@@ -52,7 +52,8 @@ type SignOptions = {
   gas?: bigint;
   extraAction?: boolean;
   blocksLeft?: number;
-  nonce?: bigint;
+  /** The delegate action's nonce, or the key's own nonce on chain, already used. */
+  nonce?: bigint | "key's";
   /** Sign with another key than the one the delegate action names. */
   signer?: Uint8Array;
   /** The sender doesn't have the key on chain at all, as an unfunded implicit account. */
@@ -88,11 +89,13 @@ async function signedSign(near: FakeNearChain, options: SignOptions = {}) {
     gas: options.gas ?? 50_000_000_000_000n,
     deposit: options.deposit ?? 1n,
   });
+  // A key added now starts at the height × 10^6, as on NEAR.
+  const keyNonce = BigInt(height) * 1_000_000n;
   const delegate = encodeDelegateAction({
     senderId: sender,
     receiverId: options.receiverId ?? MPC,
     actions: options.extraAction ? [sign, sign] : [sign],
-    nonce: options.nonce ?? BigInt(height) * 1_000_000n + 1n,
+    nonce: options.nonce === "key's" ? keyNonce : (options.nonce ?? keyNonce + 1n),
     maxBlockHeight: BigInt(height + (options.blocksLeft ?? 200)),
     publicKey,
   });
@@ -169,6 +172,11 @@ describe("relaying a sponsored sign", () => {
     },
     { case: "expired", options: { blocksLeft: 0 }, reason: "expired" },
     {
+      case: "is a few blocks from its max_block_height, too close to land",
+      options: { blocksLeft: 5 },
+      reason: "expired",
+    },
+    {
       case: "is from an account without that key on NEAR, as an unfunded implicit account",
       options: { keyOnChain: "none" },
       reason: "no access key",
@@ -179,6 +187,7 @@ describe("relaying a sponsored sign", () => {
       reason: "full-access",
     },
     { case: "has a nonce the key already used", options: { nonce: 1n }, reason: "nonce" },
+    { case: "has the key's own nonce", options: { nonce: "key's" }, reason: "is used" },
   ])("refuses a delegate action that $case, sending nothing", async ({ options, reason }) => {
     const fake = installFakeNetwork();
     const { signedDelegateAction } = await signedSign(fake.near, options);
@@ -252,18 +261,24 @@ describe("relaying a sponsored sign", () => {
     expect(fake.near.transfers).toEqual([]);
   });
 
-  test("when NEAR can't be read, the submission rejects having sent nothing, and submitting again sends it once", async () => {
-    const fake = installFakeNetwork();
-    const { signedDelegateAction } = await signedSign(fake.near);
-    const submission = { network: NEAR_TESTNET as typeof NEAR_TESTNET, signedDelegateAction };
-    fake.near.faults.failNextRequests = 1;
+  test.each<{ case: string; fault: NearChainFaults }>([
+    { case: "the block height", fault: { failNextRequests: 1 } },
+    { case: "the sender's access key", fault: { failNextKeyReads: 1 } },
+  ])(
+    "when $case can't be read, the submission rejects having sent nothing, and submitting again sends it once",
+    async ({ fault }) => {
+      const fake = installFakeNetwork();
+      const { signedDelegateAction } = await signedSign(fake.near);
+      const submission = { network: NEAR_TESTNET as typeof NEAR_TESTNET, signedDelegateAction };
+      Object.assign(fake.near.faults, fault);
 
-    await expect(plainPromise(queue().submitSponsoredSign(submission))).rejects.toThrow();
-    expect(fake.near.sponsoredSigns).toEqual([]);
+      await expect(plainPromise(queue().submitSponsoredSign(submission))).rejects.toThrow();
+      expect(fake.near.sponsoredSigns).toEqual([]);
 
-    const again = await queue().submitSponsoredSign(submission);
+      const again = await queue().submitSponsoredSign(submission);
 
-    expect(again).toMatchObject({ ok: true });
-    expect(fake.near.sponsoredSigns).toHaveLength(1);
-  });
+      expect(again).toMatchObject({ ok: true });
+      expect(fake.near.sponsoredSigns).toHaveLength(1);
+    },
+  );
 });

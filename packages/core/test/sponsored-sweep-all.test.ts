@@ -1,5 +1,6 @@
 import { createDb } from "@herald/db";
 import { sweeps } from "@herald/db/schema";
+import { base64 } from "@scure/base";
 import { env } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { describe, expect, test } from "vite-plus/test";
@@ -7,6 +8,7 @@ import { receivingAddressPaths } from "../src/index.ts";
 import {
   planSweepAll,
   relaySponsoredSweepAll,
+  SPONSORED_SIGN_MAX_GAS,
   type PlannedSweep,
   type SweepDeps,
   type UsdcBalanceReader,
@@ -259,6 +261,71 @@ describe("one Sweep failing", () => {
       sweep: { status: "submitted" },
     });
     expect(near.sponsoredSubmissions.map((s) => s.signedDelegateAction)).toEqual([nearSigned]);
+  });
+
+  test.each([
+    {
+      case: "attaches 2 yoctoNEAR",
+      id: "deposit",
+      change: { deposit: 2n },
+      reason: "not exactly 1",
+    },
+    {
+      case: "asks for more gas than the cap",
+      id: "gas",
+      change: { gas: SPONSORED_SIGN_MAX_GAS + 1n },
+      reason: "more than",
+    },
+    {
+      case: "calls another contract than the MPC signer",
+      id: "receiver",
+      change: { receiverId: "evil.testnet" },
+      reason: "evil.testnet",
+    },
+  ])(
+    "a delegate action that $case is refused with why for its Sweep, which stays planned, and the others go",
+    async ({ id, change, reason }) => {
+      const context = await sponsoredProvider(`sponsored-all-refused-${id}.testnet`);
+      const { near, planAll, from, signAll, relayAll, sweepRow } = context;
+      const planned = await planAll();
+      const evm = from(planned, BASE_SEPOLIA);
+      const others = planned.filter((p) => p !== evm);
+      const signed = await signAll(others);
+      const evmSigned = await walletSignedSign({
+        accountId: context.provider.accountId,
+        key: context.wallet,
+        request: evm.signRequest,
+        nonce: 1_000_009n,
+        change,
+      });
+
+      const outcomes = await relayAll(planned, [...signed, evmSigned]);
+
+      const evmOutcome = outcomes.find((o) => o.sweepId === evm.sweep.id);
+      expect(evmOutcome).toMatchObject({ ok: false, reason: "delegate_refused" });
+      expect(!evmOutcome?.ok && evmOutcome?.message).toContain(reason);
+      expect(await sweepRow(evm.sweep.id)).toMatchObject({ status: "planned" });
+      expect(outcomes.filter((o) => o.ok)).toHaveLength(2);
+      expect(near.sponsoredSubmissions.map((s) => s.signedDelegateAction)).toEqual(signed);
+    },
+  );
+
+  test("a delegate action Herald can't read at all says why for the Sweep it got nothing usable for", async () => {
+    const { near, planAll, signAll, relayAll } = await sponsoredProvider(
+      "sponsored-all-garbage.testnet",
+    );
+    const planned = await planAll();
+    const [unreadable, ...rest] = planned;
+    const signed = await signAll(rest);
+    const garbage = base64.encode(new TextEncoder().encode("not a delegate"));
+
+    const outcomes = await relayAll(planned, [garbage, ...signed]);
+
+    const outcome = outcomes.find((o) => o.sweepId === unreadable!.sweep.id);
+    expect(outcome).toMatchObject({ ok: false, reason: "delegate_refused" });
+    expect(!outcome?.ok && outcome?.message).toContain("isn't a signed delegate action");
+    expect(outcomes.filter((o) => o.ok)).toHaveLength(2);
+    expect(near.sponsoredSubmissions).toHaveLength(2);
   });
 
   test("an unanswered relay holds back the delegate actions after it, and presenting the batch again relays them all, still in nonce order", async () => {

@@ -106,12 +106,10 @@ export type NearSetupJob = { network: Caip2; providerId: number; account: NearIm
  * Creating a Provider's implicit Provider Account, `account`, on a NEAR
  * network for its first sponsored Sweep (#50): a delegate action needs the
  * sender's key on chain, and an implicit account nobody funded has none.
+ * The same job as `NearSetupJob`, for the Provider Account instead of the
+ * NEAR Receiving Address.
  */
-export type NearProviderAccountJob = {
-  network: Caip2;
-  providerId: number;
-  account: NearImplicitAccount;
-};
+export type NearProviderAccountJob = NearSetupJob;
 
 /**
  * A Provider Account on NEAR, final: `transaction` is the relayer

@@ -20,7 +20,12 @@
 // the NEAR relayer's available balance logs `near_relayer_low_balance`,
 // checked after each relayer transaction. Top it up when that shows in the
 // logs: an empty relayer fails every NEAR settlement, setup and Sweep. 0.5 NEAR
-// on testnet, 2 NEAR on mainnet. Change it here per environment and deploy.
+// on testnet, 2 NEAR on mainnet. Changing it needs no code change: edit it
+// here per environment and deploy, or override it for one deploy with
+// `CLOUDFLARE_ENV=<env> wrangler deploy --var NEAR_RELAYER_LOW_BALANCE_THRESHOLD:<amount>`.
+// It can also be edited in the Cloudflare dashboard (Worker > Settings >
+// Variables), which takes effect at once, but the next `wrangler deploy`
+// sets it back to this file's value (`keep_vars` isn't set).
 //
 // Secrets (declared in `secrets.required` at the top level and in each
 // environment, since `secrets` is not inherited), never their values in this
