@@ -7,6 +7,7 @@ import {
   planSweep,
   planSweepAll,
   refreshSweeps,
+  relaySponsoredSweep,
   rpcEvmReceiptReader,
   rpcNearSweepReader,
   rpcSolanaSweepReader,
@@ -55,7 +56,8 @@ const planDeps = createServerOnlyFn((): SweepPlanDeps => ({
 
 /**
  * What completing and following Sweeps reads and writes: D1, the MPC
- * signature on NEAR (`NEAR_RPC_URL`), the facilitator's chain queues, each
+ * signature on NEAR (`NEAR_RPC_URL`), the facilitator's chain queues (the
+ * NEAR one also relays sponsored `sign` calls), each
  * chain's receipts, signature statuses or relayer transactions
  * (`<CHAIN>_RPC_URL`), and 1Click's status for cross-chain and Intents
  * Sweeps.
@@ -243,6 +245,52 @@ export const finishSweep = createServerFn({ method: "POST" })
       ...data,
     });
     if (!result.ok) return { ok: false as const, message: result.message };
+    return {
+      ok: true as const,
+      status: result.sweep.status,
+      error: result.sweep.error,
+      destinationKind: result.sweep.destinationKind,
+    };
+  });
+
+/**
+ * Takes the signed delegate action (NEP-366, base64 Borsh) in which the
+ * Provider's wallet signed a planned Sweep's MPC `sign` call without
+ * sending it (a wallet declaring `signDelegateActions`). Herald checks it
+ * against the Sweep, its NEAR relayer sends it and pays the gas (ADR 0010),
+ * then Herald reads the signature from the relayer's transaction and
+ * submits the transfer. `retry` says presenting the same signed delegate
+ * action again is safe and may get through: the relayer didn't answer.
+ */
+export const sponsorSweep = createServerFn({ method: "POST" })
+  .middleware([requireSession])
+  .validator(
+    z.object({
+      sweepId: z.number().int().positive(),
+      signedDelegateAction: z.string().min(1).max(4096),
+    }),
+  )
+  .handler(async ({ context, data }) => {
+    const result = await relaySponsoredSweep(sweepDeps(), {
+      providerId: context.session.providerId,
+      env: readHeraldEnv(),
+      ...data,
+    });
+    if (!result.ok) {
+      console.warn(
+        JSON.stringify({
+          event: "sweep_sponsored_rejected",
+          providerId: context.session.providerId,
+          sweepId: data.sweepId,
+          reason: result.reason,
+        }),
+      );
+      return {
+        ok: false as const,
+        message: result.message,
+        retry: result.reason === "relay_unanswered",
+      };
+    }
     return {
       ok: true as const,
       status: result.sweep.status,

@@ -50,6 +50,26 @@ export type NearSweepSubmission = { network: Caip2; signedDelegateAction: string
 export type NearSweepSubmissionResult = { ok: true; transaction: string } | NearQueueRefusal;
 
 /**
+ * A sponsored Sweep's MPC `sign` call to relay (ADR 0010): a NEP-366
+ * signed delegate action (base64 Borsh) from the Provider Account, signed
+ * by its wallet, holding exactly one `sign` call to the Herald
+ * environment's MPC signer. `network` is that environment's NEAR network,
+ * where the MPC signer lives, whatever chain the Sweep is from.
+ */
+export type NearSponsoredSignSubmission = { network: Caip2; signedDelegateAction: string };
+
+/**
+ * A relayed sponsored `sign`: the relayer transaction's hash once it is
+ * sent (not yet final), and the relayer that sent it, which reading the
+ * transaction needs. `ok: false` when Herald didn't send it: a delegate
+ * action that isn't a single `sign` to the MPC signer with 1 yoctoNEAR and
+ * capped gas, one that expired or can't land, or a node that refused it.
+ */
+export type NearSponsoredSignResult =
+  | { ok: true; transaction: string; relayer: string }
+  | NearQueueRefusal;
+
+/**
  * Herald's NEAR chain queue for Sweeps: the relayer's account id, and
  * submitting a signed Sweep for the relayer to send. Submitting the same
  * signed delegate action again answers the same transaction without
@@ -58,10 +78,17 @@ export type NearSweepSubmissionResult = { ok: true; transaction: string } | Near
  * Herald's cost (0.00125 NEAR), so the Sweep's transfer can't fail for
  * that. Rejects if the queue can't be reached, or can't read or make that
  * registration, in which case submitting again is safe.
+ *
+ * `submitSponsoredSign` relays a sponsored Sweep's MPC `sign` call (see
+ * `NearChainQueueRpc.submitSponsoredSign`), at most once per signed
+ * delegate action: presenting it again answers the same transaction.
+ * Rejects if the queue can't be reached or can't read what it checks, in
+ * which case submitting the same signed delegate action again is safe.
  */
 export type NearSweepQueue = {
   relayer(network: Caip2): Promise<string>;
   submitSweep(submission: NearSweepSubmission): Promise<NearSweepSubmissionResult>;
+  submitSponsoredSign(submission: NearSponsoredSignSubmission): Promise<NearSponsoredSignResult>;
 };
 
 /**
@@ -128,4 +155,24 @@ export interface NearChainQueueRpc {
    * registered, or the registration doesn't land.
    */
   submitSweep(submission: NearSweepSubmission): Promise<NearSweepSubmissionResult>;
+
+  /**
+   * Relays a sponsored Sweep's MPC `sign` call (ADR 0010): wraps the
+   * Provider Account's signed delegate action in a relayer transaction of
+   * its own and sends it, paying the gas and the 1 yoctoNEAR deposit,
+   * answering the transaction's hash without waiting for it to be final.
+   * Presenting the same signed delegate action again answers the first
+   * transaction (sent again, in case the first broadcast was lost) instead
+   * of a new one.
+   *
+   * It checks the delegate action itself, whatever the caller checked: it
+   * refuses one that isn't exactly one `sign` call to the Herald
+   * environment's MPC signer with 1 yoctoNEAR and at most
+   * `SPONSORED_SIGN_MAX_GAS`, validly signed by its sender, one from the
+   * relayer itself, one at or near its `max_block_height`, and one the
+   * chain would refuse: its key isn't one of the sender's full-access keys,
+   * or its nonce is used. Rejects, having sent nothing, if it can't read
+   * the block height or the sender's key.
+   */
+  submitSponsoredSign(submission: NearSponsoredSignSubmission): Promise<NearSponsoredSignResult>;
 }

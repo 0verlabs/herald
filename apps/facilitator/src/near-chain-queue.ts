@@ -1,5 +1,6 @@
 import {
   Caip2Schema,
+  mpcSigners,
   NearImplicitAccountSchema,
   networkRegistry,
   type Caip2,
@@ -13,6 +14,7 @@ import {
   isStorageRegistered,
   NearRpcError,
   outcomeFailure,
+  readSponsoredSign,
   setNearSetupStatus,
   signedRelayerTransaction,
   transferAction,
@@ -27,9 +29,12 @@ import {
   type NearSettlementResult,
   type NearSettlementSubmission,
   type NearSetupJob,
+  type NearSponsoredSignResult,
+  type NearSponsoredSignSubmission,
   type NearSweepSubmission,
   type NearSweepSubmissionResult,
   type SignedNearTransaction,
+  type SponsoredSign,
 } from "@herald/core/server";
 import { createDb } from "@herald/db";
 import { base58, base64 } from "@scure/base";
@@ -90,7 +95,12 @@ type SetupJobRow = {
   next_attempt_at: number;
 };
 
-/** A row of `sweeps`: one per signed Sweep the relayer sent, with the transaction carrying it. */
+/**
+ * A row of `sweeps`: one per signed delegate action of a Sweep the relayer
+ * sent (its transfer from the NEAR Receiving Address, or a sponsored
+ * Sweep's MPC `sign` from the Provider Account), with the transaction
+ * carrying it.
+ */
 type SweepRow = {
   delegate_hash: string;
   tx_hash: string;
@@ -150,6 +160,12 @@ type SentTransaction = { hash: string; bytes?: Uint8Array };
  * registers the receiver when it isn't, at Herald's cost (0.00125 NEAR), in
  * a relayer transaction of its own: the delegate action holds the transfer
  * alone.
+ *
+ * Sponsored Sweeps (`submitSponsoredSign`, ADR 0010) wrap a Provider
+ * Account's signed delegate action holding the Sweep's one MPC `sign` call,
+ * the same way and at most once each, so Herald pays that call's gas
+ * instead of the Provider. The queue checks each one again itself before
+ * paying for it.
  *
  * It sets up Providers' NEAR Receiving Addresses, which NEAR payments need
  * to verify: the web Worker queues one when a Provider signs in, and the
@@ -427,19 +443,7 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
         {
           // Recorded before broadcasting, so the Sweep is never sent in two
           // relayer transactions.
-          record: (transaction) => {
-            if (!transaction) {
-              this.ctx.storage.sql.exec("DELETE FROM sweeps WHERE delegate_hash = ?", delegateHash);
-              return;
-            }
-            this.ctx.storage.sql.exec(
-              "INSERT OR REPLACE INTO sweeps (delegate_hash, tx_hash, tx_base64, submitted_at) VALUES (?, ?, ?, ?)",
-              delegateHash,
-              transaction.hash,
-              base64.encode(transaction.bytes),
-              Date.now(),
-            );
-          },
+          record: (transaction) => this.#recordSweep(delegateHash, transaction),
         },
       );
       if (!broadcast.ok) return broadcast;
@@ -453,6 +457,122 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
       );
       return { ok: true, transaction: broadcast.transaction.hash };
     });
+  }
+
+  /**
+   * Relays a sponsored Sweep's MPC `sign` call (ADR 0010): the Provider
+   * Account's signed delegate action holding exactly one `sign` call to
+   * this Herald environment's MPC signer, which the relayer wraps in a
+   * transaction of its own and sends, paying the gas and the 1 yoctoNEAR
+   * deposit. Answers the transaction's hash and the relayer without
+   * waiting for it to be final: core reads the signature from it, with the
+   * relayer as its sender. One it already sent is answered with the same
+   * transaction, broadcast again, from the same `sweeps` record as a
+   * Sweep's transfer: each signed delegate action is sent at most once.
+   *
+   * It checks the delegate action on its own, whatever the web Worker
+   * checked (`readSponsoredSign`): one `sign` call to the MPC signer, 1
+   * yoctoNEAR, at most `SPONSORED_SIGN_MAX_GAS`, signed by its key, and not
+   * from the relayer. Then that it can land, so the relayer doesn't pay for
+   * a transaction that fails: it isn't within a few blocks of its
+   * `max_block_height`, its key is one of its sender's full-access keys on
+   * chain (a function-call key can't attach the deposit, and an implicit
+   * account nobody funded has no key yet, #50), and its nonce is above that
+   * key's. Throws, having sent nothing, if it can't read the block height
+   * or the key.
+   */
+  async submitSponsoredSign(input: NearSponsoredSignSubmission): Promise<NearSponsoredSignResult> {
+    const parsed = SubmissionSchema.safeParse(input);
+    if (!parsed.success) return refusal("Not a NEAR sponsored sign submission");
+    const network = this.#nearNetwork(parsed.data.network);
+    if (!network) return this.#unlisted(parsed.data.network);
+    const read = readSponsoredSign(
+      parsed.data.signedDelegateAction,
+      mpcSigners[heraldEnvOf(this.env)].contractId,
+    );
+    if (!read.ok) return refusal(read.message);
+    const { sign } = read;
+    const relayer = nearRelayerKey(this.env).accountId;
+    if (sign.senderId === relayer) return refusal("The Provider Account can't be Herald's relayer");
+
+    const delegateHash = settlementCacheKey(sign.signedDelegateAction);
+    const sent = this.#sentSweep(delegateHash);
+    if (sent) {
+      await this.#answerSweep(network.caip2, sent);
+      return { ok: true, transaction: sent.tx_hash, relayer };
+    }
+
+    const expired = await this.#sweepExpiry(network.caip2, sign.maxBlockHeight);
+    if (expired) return expired;
+    const unlandable = await this.#signKeyProblem(network.caip2, sign);
+    if (unlandable) return refusal(unlandable);
+
+    return this.#enqueue(async () => {
+      // Another call may have sent it while this one waited its turn.
+      const already = this.#sentSweep(delegateHash);
+      if (already) return { ok: true, transaction: already.tx_hash, relayer };
+      const broadcast = await this.#broadcast(
+        network.caip2,
+        sign.senderId,
+        [delegateAction(base64.decode(sign.signedDelegateAction))],
+        { record: (transaction) => this.#recordSweep(delegateHash, transaction) },
+      );
+      if (!broadcast.ok) return broadcast;
+      console.log(
+        JSON.stringify({
+          event: "near_sponsored_sign_sent",
+          network: network.caip2,
+          sender: sign.senderId,
+          path: sign.request.path,
+          transaction: broadcast.transaction.hash,
+        }),
+      );
+      return { ok: true, transaction: broadcast.transaction.hash, relayer };
+    });
+  }
+
+  /**
+   * Why a sponsored sign's delegate action can't land as its key stands on
+   * chain, or null if it can: the key must be one of the sender's
+   * full-access keys, and the delegate's nonce above the key's. Throws if
+   * the key can't be read.
+   */
+  async #signKeyProblem(network: Caip2, sign: SponsoredSign): Promise<string | null> {
+    let key: Awaited<ReturnType<typeof viewAccessKey>>;
+    try {
+      key = await viewAccessKey(this.#rpc(network), sign.senderId, sign.publicKey);
+    } catch (error) {
+      throw new Error(`Herald couldn't read ${sign.senderId}'s access key: ${String(error)}`);
+    }
+    if (key === null) {
+      return `${sign.senderId} has no access key ${sign.publicKey} on NEAR, so the delegate action can't land`;
+    }
+    if (key.permission !== "FullAccess") {
+      return `${sign.publicKey} isn't a full-access key of ${sign.senderId}, so it can't attach the sign call's 1 yoctoNEAR`;
+    }
+    if (sign.nonce <= key.nonce) {
+      return `The delegate action's nonce ${sign.nonce} is used: the key is at ${key.nonce}`;
+    }
+    return null;
+  }
+
+  /**
+   * Records the relayer transaction carrying a signed delegate action in
+   * `sweeps` before it is broadcast, so it is never sent in two; null (the
+   * node refused it, so it was never sent) forgets it.
+   */
+  #recordSweep(delegateHash: string, transaction: SignedNearTransaction | null): void {
+    if (!transaction) {
+      this.ctx.storage.sql.exec("DELETE FROM sweeps WHERE delegate_hash = ?", delegateHash);
+      return;
+    }
+    this.ctx.storage.sql.exec(
+      "INSERT OR REPLACE INTO sweeps (delegate_hash, tx_hash, tx_base64, submitted_at) VALUES (?, ?, ?, ?)",
+      delegateHash,
+      transaction.hash,
+      base64.encode(transaction.bytes),
+      Date.now(),
+    );
   }
 
   /**

@@ -59,11 +59,14 @@ export const nearSetupQueue = createServerOnlyFn((): NearSetupQueue => {
 });
 
 /**
- * NEAR Sweeps through the facilitator's NEAR chain queue: its relayer, and
- * submitting signed Sweeps for the relayer to send. Server only.
+ * NEAR Sweeps through the facilitator's NEAR chain queue: its relayer,
+ * submitting signed Sweeps for the relayer to send, and relaying sponsored
+ * Sweeps' MPC `sign` calls (ADR 0010). Server only.
  */
 export const nearSweepQueue = createServerOnlyFn((): NearSweepQueue => ({
   relayer: (network) => withTimeout(queueFor(network).relayer(), QUEUE_TIMEOUT_MS),
   submitSweep: (submission) =>
     withTimeout(queueFor(submission.network).submitSweep(submission), SUBMIT_TIMEOUT_MS),
+  submitSponsoredSign: (submission) =>
+    withTimeout(queueFor(submission.network).submitSponsoredSign(submission), SUBMIT_TIMEOUT_MS),
 }));

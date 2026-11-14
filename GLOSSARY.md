@@ -28,6 +28,10 @@ _Avoid_: Derived address, deposit address, payTo, wallet
 Moving funds out of the Receiving Addresses into one chain and asset the Provider chooses.
 _Avoid_: Withdrawal, payout, cash out
 
+**Sponsored Sweep**:
+A Sweep whose NEAR approval Herald pays for: the Provider's wallet signs it as a delegate action from the Provider Account, and Herald's NEAR relayer sends it (ADR 0010). With a wallet that can't sign delegate actions, the Provider's wallet sends it and pays.
+_Avoid_: Gasless Sweep, meta-transaction
+
 ### Pricing
 
 **Payment Option**:
