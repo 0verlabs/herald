@@ -1,0 +1,5 @@
+# Admin
+
+`/admin` is for Herald admins: the NEAR account ids in the web Worker's `HERALD_ADMINS` var, comma-separated (`"ops.near, alice.near"`), set per environment in `apps/web/wrangler.jsonc` and locally in `.dev.vars`. It ships empty, so nobody is an admin until you set it. Everyone else, signed in or not, gets a 404, from the page and from its server functions. Admins see an **Admin** link in the sidebar.
+
+**Fee wallets** lists Herald's gas wallet on each chain of the environment: the address the facilitator's chain queue holds the key for, and its native balance (ETH, SOL, POL, AVAX) read from `<CHAIN>_RPC_URL`. A wallet below its threshold in `GAS_LOW_BALANCE_THRESHOLDS` (whole tokens per CAIP-2 network) is flagged **Low**; a network without a threshold never warns. **Smallest withdrawals** lists the `sweep_minimums` rows of the environment. **Edit** changes a row's minimum (in USDC) and note, checked with `SweepMinimumEditSchema` in the browser and on the server, and stamps it updated; the next Sweep planned uses it. The logic lives in `packages/core/src/server` (`admin.ts`, `balances.ts`); `apps/web/src/server/admin.ts` wires it.
