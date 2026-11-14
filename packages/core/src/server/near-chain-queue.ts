@@ -84,11 +84,16 @@ export type NearSponsoredSignResult =
  * delegate action: presenting it again answers the same transaction.
  * Rejects if the queue can't be reached or can't read what it checks, in
  * which case submitting the same signed delegate action again is safe.
+ *
+ * `createProviderAccount` creates an implicit Provider Account that isn't
+ * on NEAR yet, at most once (see `NearChainQueueRpc.createProviderAccount`).
+ * Rejects if the queue can't be reached, in which case asking again is safe.
  */
 export type NearSweepQueue = {
   relayer(network: Caip2): Promise<string>;
   submitSweep(submission: NearSweepSubmission): Promise<NearSweepSubmissionResult>;
   submitSponsoredSign(submission: NearSponsoredSignSubmission): Promise<NearSponsoredSignResult>;
+  createProviderAccount(job: NearProviderAccountJob): Promise<NearProviderAccountResult>;
 };
 
 /**
@@ -96,6 +101,25 @@ export type NearSweepQueue = {
  * creating `account`, the implicit account, and registering it on USDC.
  */
 export type NearSetupJob = { network: Caip2; providerId: number; account: NearImplicitAccount };
+
+/**
+ * Creating a Provider's implicit Provider Account, `account`, on a NEAR
+ * network for its first sponsored Sweep (#50): a delegate action needs the
+ * sender's key on chain, and an implicit account nobody funded has none.
+ */
+export type NearProviderAccountJob = {
+  network: Caip2;
+  providerId: number;
+  account: NearImplicitAccount;
+};
+
+/**
+ * A Provider Account on NEAR, final: `transaction` is the relayer
+ * transaction that created it, now or before, or null if it was on NEAR
+ * without Herald creating it. `ok: false` when Herald won't create it, or
+ * the creation failed or wasn't final in time; asking again is safe.
+ */
+export type NearProviderAccountResult = { ok: true; transaction: string | null } | NearQueueRefusal;
 
 /**
  * The RPC interface the `NearChainQueue` Durable Object (in
@@ -175,4 +199,24 @@ export interface NearChainQueueRpc {
    * the block height or the sender's key.
    */
   submitSponsoredSign(submission: NearSponsoredSignSubmission): Promise<NearSponsoredSignResult>;
+
+  /**
+   * Creates a Provider's implicit Provider Account for its first sponsored
+   * Sweep (#50) with a transfer of a little NEAR from the relayer, as for a
+   * NEAR Receiving Address, and waits until it is final. NEAR creates it
+   * with the full-access key its id encodes, the Provider's wallet key, so
+   * Herald gains no control over it.
+   *
+   * At most once per account, across concurrent calls, retries and
+   * isolates: the queue records the creating transaction before it is
+   * broadcast, and asking again follows that transaction (broadcast again
+   * in case the first broadcast was lost) instead of sending a new one. An
+   * account Herald created before is answered without sending anything,
+   * and so is one already on NEAR. Refuses a named account, the relayer,
+   * and a network this Herald environment doesn't list. Answers `ok: false`
+   * if the creation failed or wasn't final in time, and rejects, having
+   * sent nothing, if it can't read whether the account exists: asking again
+   * is safe either way.
+   */
+  createProviderAccount(job: NearProviderAccountJob): Promise<NearProviderAccountResult>;
 }

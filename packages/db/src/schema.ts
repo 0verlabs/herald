@@ -33,6 +33,9 @@ export const providers = sqliteTable("providers", {
   nearSetupStatus: text("near_setup_status", { enum: ["not_queued", "queued", "created"] })
     .notNull()
     .default("not_queued"),
+  // The relayer transaction in which Herald created an implicit Provider
+  // Account for its first sponsored Sweep (#50); null if Herald never did.
+  providerAccountTxHash: text("provider_account_tx_hash"),
   createdAt: createdAt(),
 });
 

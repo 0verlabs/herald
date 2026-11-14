@@ -4,7 +4,7 @@ import { base58, base64 } from "@scure/base";
 import { isAddress } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { hexToBytes } from "@noble/hashes/utils.js";
-import { and, count, desc, eq, gte, inArray, isNotNull, max, ne, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNotNull, isNull, max, ne, or } from "drizzle-orm";
 import { encodeFunctionData, hashTypedData, parseAbi, recoverAddress, type Hex } from "viem";
 import { z } from "zod";
 import {
@@ -26,6 +26,7 @@ import {
   EvmAddressSchema,
   NEAR_INTENTS_NETWORK,
   NearAccountIdSchema,
+  NearImplicitAccountSchema,
   SweepDestinationKindSchema,
   SweepMinimumSchema,
   SweepSchema,
@@ -46,6 +47,7 @@ import {
   type OneClickSwap,
 } from "./one-click.ts";
 import type {
+  NearProviderAccountResult,
   NearSponsoredSignResult,
   NearSweepQueue,
   NearSweepSubmissionResult,
@@ -1302,6 +1304,127 @@ export async function relaySponsoredSweep(
     };
   }
   return { ok: true, sweep: await advance(deps, { ...context, sweep }) };
+}
+
+export type SponsoredAccountRejection =
+  | "unknown_sweep"
+  | "sweep_not_signable"
+  | "daily_cap_reached"
+  | "account_refused"
+  | "account_unanswered";
+
+/**
+ * The Provider Account is on NEAR, ready for the wallet to sign a sponsored
+ * Sweep: `transaction` is the relayer transaction in which Herald created
+ * it, now or for an earlier Sweep, or null if Herald didn't (a named
+ * account, or an implicit one already on NEAR).
+ */
+export type SponsoredAccountPreparation =
+  | { ok: true; transaction: string | null }
+  | { ok: false; reason: SponsoredAccountRejection; message: string };
+
+/** What preparing a Provider Account reads and writes: D1, and Herald's NEAR chain queue. */
+export type SponsoredAccountDeps = {
+  db: Db;
+  nearQueue: Pick<NearSweepQueue, "createProviderAccount">;
+};
+
+/**
+ * Makes sure the Provider Account is on NEAR before its wallet signs a
+ * sponsored Sweep's delegate action (ADR 0010, #50), which can only land
+ * with the account's key on chain. An implicit Provider Account nobody
+ * funded has none: Herald's NEAR relayer creates it by sending it a little
+ * NEAR, as for a NEAR Receiving Address, and this answers once that is
+ * final. NEAR creates it with the full-access key its id encodes, the
+ * wallet's, so Herald gains no control over it. Call it once before the
+ * wallet prompt, for one Sweep or a "Sweep all" batch (any one of its
+ * planned Sweeps).
+ *
+ * Herald creates the account only if `sweepId` is the Provider's planned
+ * Sweep (so it passed the minimum) still inside its signing window, the
+ * daily cap leaves room for it as `relaySponsoredSweep` counts it, the
+ * Provider Account is implicit, Herald never created it before (the
+ * Provider's `providerAccountTxHash`, then the NEAR chain queue's own
+ * record), and it isn't on NEAR (the queue reads it). The queue creates
+ * each account at most once, whatever the concurrent Sweeps or retries.
+ * Signing in never calls this.
+ *
+ * `sweep_not_signable` is a Sweep already approved, failed or past its
+ * signing window. `account_refused` is the queue's answer when the
+ * creation failed or wasn't final in time, and `account_unanswered` means
+ * the queue couldn't be reached: either way the Sweep stays `planned`, and
+ * asking again is safe. `now` defaults to the current time.
+ */
+export async function prepareSponsoredSweepAccount(
+  deps: SponsoredAccountDeps,
+  input: { providerId: number; env: HeraldEnv; sweepId: number; now?: Date },
+): Promise<SponsoredAccountPreparation> {
+  const found = await ownSweep(deps.db, input);
+  if (!found) return { ok: false, reason: "unknown_sweep", message: "No such Sweep." };
+  const { provider, sweep } = found;
+  const now = input.now ?? new Date();
+  if (sweep.status !== "planned" || Math.floor(now.getTime() / 1000) >= sweep.validBefore) {
+    return {
+      ok: false,
+      reason: "sweep_not_signable",
+      message: "This withdrawal can't be approved any more. Start a new one.",
+    };
+  }
+  const account = NearImplicitAccountSchema.safeParse(provider.accountId);
+  // Named accounts are on NEAR before anyone signs in with them.
+  if (!account.success) return { ok: true, transaction: null };
+  if (provider.providerAccountTxHash !== null) {
+    return { ok: true, transaction: provider.providerAccountTxHash };
+  }
+  if (await sponsoredCapReached(deps.db, provider.id, now)) {
+    return { ok: false, reason: "daily_cap_reached", message: dailyCapMessage };
+  }
+
+  const network = nearNetworkOf(input.env);
+  let created: NearProviderAccountResult;
+  try {
+    created = await deps.nearQueue.createProviderAccount({
+      network: network.caip2,
+      providerId: provider.id,
+      account: account.data,
+    });
+  } catch (error) {
+    logSweep("sweep_provider_account_unanswered", sweep, { error: String(error) }, "warn");
+    return {
+      ok: false,
+      reason: "account_unanswered",
+      message: "Herald's NEAR relayer didn't answer while preparing your NEAR account. Try again.",
+    };
+  }
+  if (!created.ok) {
+    logSweep("sweep_provider_account_refused", sweep, { message: created.message }, "warn");
+    return {
+      ok: false,
+      reason: "account_refused",
+      message: `Herald couldn't prepare your NEAR account ${provider.accountId}: ${created.message}. Try again.`,
+    };
+  }
+  if (created.transaction !== null) {
+    await deps.db
+      .update(providers)
+      .set({ providerAccountTxHash: created.transaction })
+      .where(and(eq(providers.id, provider.id), isNull(providers.providerAccountTxHash)));
+    logSweep("sweep_provider_account_created", sweep, { transaction: created.transaction });
+  }
+  return { ok: true, transaction: created.transaction };
+}
+
+/**
+ * Whether the Provider's Sweeps submitted in the last 24 hours and those
+ * still awaiting their signature reach `SWEEP_DAILY_CAP`, as
+ * `relaySponsoredSweep` counts them before relaying a `sign`.
+ */
+async function sponsoredCapReached(db: Db, providerId: number, now: Date): Promise<boolean> {
+  return (
+    (await sweepsSubmittedInLastDay(db, providerId, now)) +
+      (await sweepsAwaitingSignature(db, providerId)) >=
+    SWEEP_DAILY_CAP
+  );
 }
 
 /**

@@ -24,6 +24,8 @@ import {
   type NearAction,
   type NearChainQueueRpc,
   type NearOutcome,
+  type NearProviderAccountJob,
+  type NearProviderAccountResult,
   type NearQueueRefusal,
   type NearRpc,
   type NearSettlementResult,
@@ -66,8 +68,9 @@ const SWEEP_EXPIRY_MARGIN_BLOCKS = 10;
 // the relayer pays for.
 const MAX_SPONSORED_GAS = 100_000_000_000_000n;
 
-// Setting up a Provider's NEAR Receiving Address. A transfer creates the
-// implicit account; 0.002 NEAR covers its own storage (182 bytes at
+// Setting up a Provider's NEAR Receiving Address, and creating an implicit
+// Provider Account for its first sponsored Sweep (#50). A transfer creates
+// the implicit account; 0.002 NEAR covers its own storage (182 bytes at
 // 10^19 yoctoNEAR each, 0.00182 NEAR). Registering it on USDC costs
 // USDC's `storage_balance_bounds`, 0.00125 NEAR on testnet and mainnet.
 const ACCOUNT_CREATION_YOCTO = 2_000_000_000_000_000_000_000n;
@@ -84,6 +87,26 @@ const SetupJobSchema = z.object({
   providerId: z.number().int().positive(),
   account: NearImplicitAccountSchema,
 });
+
+// A Provider Account creation (#50) is a NEAR Receiving Address setup's
+// first step: the same job, for the Provider Account.
+const ProviderAccountJobSchema = SetupJobSchema;
+
+/**
+ * A row of `provider_accounts`: one per implicit Provider Account the
+ * relayer sent a creating transfer to, with that transaction, recorded
+ * before it is broadcast. `sent` until it is final and succeeded, then
+ * `created`.
+ */
+type ProviderAccountRow = {
+  account: string;
+  network: Caip2;
+  provider_id: number;
+  status: "sent" | "created";
+  tx_hash: string;
+  tx_base64: string;
+  submitted_at: number;
+};
 
 /** A row of `setup_jobs`: one per Provider, keyed by its NEAR Receiving Address. */
 type SetupJobRow = {
@@ -167,6 +190,11 @@ type SentTransaction = { hash: string; bytes?: Uint8Array };
  * instead of the Provider. The queue checks each one again itself before
  * paying for it.
  *
+ * An implicit Provider Account nobody funded has no key on NEAR, so its
+ * sponsored `sign` couldn't land: the web Worker has the queue create it
+ * first (`createProviderAccount`, #50), with the same transfer that
+ * creates a NEAR Receiving Address, at most once per account.
+ *
  * It sets up Providers' NEAR Receiving Addresses, which NEAR payments need
  * to verify: the web Worker queues one when a Provider signs in, and the
  * facilitator's Cron Trigger (`scheduled.ts`) queues those not on their way
@@ -181,6 +209,9 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
   // Settlements sent but not final in time, by delegate hash, until the
   // Provider's resource server retries them (`awaitPendingSettlement`).
   readonly #pending: PendingSettlements;
+  // Provider Account creations under way, by account, so concurrent calls
+  // for one account share a single creation.
+  readonly #creating = new Map<string, Promise<NearProviderAccountResult>>();
 
   constructor(ctx: DurableObjectState, env: CloudflareBindings) {
     super(ctx, env);
@@ -208,6 +239,15 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
         status TEXT NOT NULL,
         attempts INTEGER NOT NULL,
         next_attempt_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS provider_accounts (
+        account TEXT PRIMARY KEY,
+        network TEXT NOT NULL,
+        provider_id INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        tx_hash TEXT NOT NULL,
+        tx_base64 TEXT NOT NULL,
+        submitted_at INTEGER NOT NULL
       )`,
     );
   }
@@ -554,6 +594,154 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
       return `The delegate action's nonce ${sign.nonce} is used: the key is at ${key.nonce}`;
     }
     return null;
+  }
+
+  /**
+   * Creates a Provider's implicit Provider Account for its first sponsored
+   * Sweep (#50), so the delegate action its wallet signs can land: a
+   * transfer from the relayer of `ACCOUNT_CREATION_YOCTO`, as for a NEAR
+   * Receiving Address, which NEAR answers by creating the account with the
+   * full-access key its id encodes. Answers once that is final.
+   *
+   * Each account is created at most once. Concurrent calls for one account
+   * share one creation (`#creating`). The creating transaction is recorded
+   * in `provider_accounts` before it is broadcast, so a call after a lost
+   * answer, a timeout or an eviction follows that transaction, broadcast
+   * again, rather than sending another. An account it created before is
+   * answered with that transaction, and one already on NEAR with none,
+   * sending nothing. Refuses a named account (named accounts exist before
+   * anyone signs in with them), the relayer, and a network this Herald
+   * environment doesn't list. Throws, having sent nothing, if it can't read
+   * whether the account is on NEAR.
+   */
+  async createProviderAccount(input: NearProviderAccountJob): Promise<NearProviderAccountResult> {
+    const parsed = ProviderAccountJobSchema.safeParse(input);
+    if (!parsed.success) {
+      return refusal("Not a NEAR Provider Account job: Herald only creates implicit accounts");
+    }
+    const job = parsed.data;
+    if (!this.#nearNetwork(job.network)) return this.#unlisted(job.network);
+    if (job.account === nearRelayerKey(this.env).accountId) {
+      return refusal("The Provider Account can't be Herald's relayer");
+    }
+    const underway = this.#creating.get(job.account);
+    if (underway) return underway;
+    const creating = this.#createProviderAccount(job).finally(() =>
+      this.#creating.delete(job.account),
+    );
+    this.#creating.set(job.account, creating);
+    return creating;
+  }
+
+  async #createProviderAccount(job: NearProviderAccountJob): Promise<NearProviderAccountResult> {
+    const [recorded] = this.ctx.storage.sql
+      .exec<ProviderAccountRow>("SELECT * FROM provider_accounts WHERE account = ?", job.account)
+      .toArray();
+    if (recorded?.status === "created") return { ok: true, transaction: recorded.tx_hash };
+    if (recorded) {
+      return this.#providerAccountOutcome(job, {
+        hash: recorded.tx_hash,
+        bytes: base64.decode(recorded.tx_base64),
+      });
+    }
+
+    let onChain: Awaited<ReturnType<typeof viewAccount>>;
+    try {
+      onChain = await viewAccount(this.#rpc(job.network), job.account);
+    } catch (error) {
+      throw new Error(`Herald couldn't read whether ${job.account} is on NEAR: ${String(error)}`);
+    }
+    if (onChain !== null) return { ok: true, transaction: null };
+
+    const sent = await this.#enqueue(() =>
+      this.#broadcast(job.network, job.account, [transferAction(ACCOUNT_CREATION_YOCTO)], {
+        // Recorded before broadcasting, so the account is never sent two
+        // creating transfers.
+        record: (transaction) => this.#recordProviderAccount(job, transaction),
+      }),
+    );
+    if (!sent.ok) return refusal(`Herald couldn't create ${job.account}: ${sent.message}`);
+    return this.#providerAccountOutcome(job, sent.transaction);
+  }
+
+  /**
+   * Waits until the transfer creating a Provider Account is final. One that
+   * succeeded is recorded as `created`. One that failed created nothing, so
+   * it is forgotten and the next call may send another; one not final in
+   * time stays recorded for the next call to follow.
+   */
+  async #providerAccountOutcome(
+    job: NearProviderAccountJob,
+    transaction: SentTransaction,
+  ): Promise<NearProviderAccountResult> {
+    const final = await this.#awaitFinal(job.network, transaction);
+    if (!final) {
+      console.warn(
+        JSON.stringify({
+          event: "near_provider_account_pending",
+          providerId: job.providerId,
+          account: job.account,
+          transaction: transaction.hash,
+        }),
+      );
+      return refusal(
+        `The transaction creating ${job.account}, ${transaction.hash}, wasn't final within ${this.env.SETTLE_RECEIPT_TIMEOUT_MS} ms`,
+      );
+    }
+    const failure = outcomeFailure(final);
+    if (failure) {
+      this.ctx.storage.sql.exec(
+        "DELETE FROM provider_accounts WHERE account = ? AND tx_hash = ?",
+        job.account,
+        transaction.hash,
+      );
+      console.warn(
+        JSON.stringify({
+          event: "near_provider_account_failed",
+          providerId: job.providerId,
+          account: job.account,
+          transaction: transaction.hash,
+          failure,
+        }),
+      );
+      return refusal(`The transaction creating ${job.account} failed: ${failure}`);
+    }
+    this.ctx.storage.sql.exec(
+      "UPDATE provider_accounts SET status = 'created' WHERE account = ?",
+      job.account,
+    );
+    console.log(
+      JSON.stringify({
+        event: "near_provider_account_created",
+        providerId: job.providerId,
+        account: job.account,
+        transaction: transaction.hash,
+      }),
+    );
+    return { ok: true, transaction: transaction.hash };
+  }
+
+  /**
+   * Records the relayer transaction creating a Provider Account in
+   * `provider_accounts` before it is broadcast; null (the node refused it,
+   * so it was never sent) forgets it.
+   */
+  #recordProviderAccount(job: NearProviderAccountJob, transaction: SignedNearTransaction | null) {
+    if (!transaction) {
+      this.ctx.storage.sql.exec("DELETE FROM provider_accounts WHERE account = ?", job.account);
+      return;
+    }
+    this.ctx.storage.sql.exec(
+      `INSERT OR REPLACE INTO provider_accounts
+         (account, network, provider_id, status, tx_hash, tx_base64, submitted_at)
+       VALUES (?, ?, ?, 'sent', ?, ?, ?)`,
+      job.account,
+      job.network,
+      job.providerId,
+      transaction.hash,
+      base64.encode(transaction.bytes),
+      Date.now(),
+    );
   }
 
   /**

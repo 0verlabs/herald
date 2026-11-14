@@ -8,6 +8,7 @@ import { receivingAddressPaths, type HeraldEnv } from "../src/index.ts";
 import {
   completeSweep,
   planSweep,
+  prepareSponsoredSweepAccount,
   refreshSweeps,
   relaySponsoredSweep,
   SPONSORED_SIGN_MAX_GAS,
@@ -16,7 +17,7 @@ import {
   type SweepDeps,
   type SweepTarget,
 } from "../src/server/index.ts";
-import { nearKey } from "./support/near.ts";
+import { implicitAccountOf, nearKey } from "./support/near.ts";
 import {
   FakeChainQueue,
   FakeNear,
@@ -54,10 +55,13 @@ const NEAR_DESTINATION = "alice.testnet";
  * Account with the Receiving Addresses' keys. Herald's relayer relays
  * sponsored signs into that NEAR.
  */
-async function sponsoredProvider(accountId: string, heraldEnv: HeraldEnv = "testnet") {
+async function sponsoredProvider(
+  accountId: string,
+  heraldEnv: HeraldEnv = "testnet",
+  wallet = nearKey(),
+) {
   const context = await sweepingProvider(accountId);
   const { provider } = context;
-  const wallet = nearKey();
   const near = new FakeNear();
   near.derive(accountId, receivingAddressPaths.evm.path, context.receivingKey);
   near.derive(accountId, receivingAddressPaths.solana.path, context.solanaKey);
@@ -97,9 +101,9 @@ async function sponsoredProvider(accountId: string, heraldEnv: HeraldEnv = "test
   };
   const base = { providerId: provider.id, env: heraldEnv };
 
-  /** Plans a 1.5 USDC Sweep, from Base Sepolia to `DESTINATION` unless told otherwise. */
+  /** Plans a Sweep, of 1.5 USDC from Base Sepolia to `DESTINATION` unless told otherwise. */
   const plan = async (
-    target: { network?: string; now?: Date } & Partial<SweepTarget> = {},
+    target: { network?: string; amount?: string; now?: Date } & Partial<SweepTarget> = {},
   ): Promise<{ sweepId: number; signRequest: MpcSignRequest }> => {
     const planned = await planSweep(planDeps, {
       ...base,
@@ -118,6 +122,12 @@ async function sponsoredProvider(accountId: string, heraldEnv: HeraldEnv = "test
   ) => walletSignedSign({ accountId, key: wallet, request, ...options });
   const relay = (sweepId: number, signedDelegateAction: string, now?: Date) =>
     relaySponsoredSweep(deps, { ...base, sweepId, signedDelegateAction, now });
+  /** Has Herald make sure the Provider Account is on NEAR before the wallet signs (#50). */
+  const prepare = (sweepId: number, now?: Date) =>
+    prepareSponsoredSweepAccount(
+      { db: db(), nearQueue: { createProviderAccount: near.createAccount } },
+      { ...base, sweepId, now },
+    );
   const sweepRow = async (sweepId: number) =>
     (await db().select().from(sweeps).where(eq(sweeps.id, sweepId)))[0];
   return {
@@ -133,6 +143,7 @@ async function sponsoredProvider(accountId: string, heraldEnv: HeraldEnv = "test
     plan,
     signDelegate,
     relay,
+    prepare,
     sweepRow,
   };
 }
@@ -465,5 +476,154 @@ describe("the daily cap", () => {
     expect(over).toMatchObject({ ok: false, reason: "daily_cap_reached" });
     expect(near.sponsoredSubmissions).toHaveLength(SWEEP_DAILY_CAP);
     expect(await sweepRow(last!.sweepId)).toMatchObject({ status: "planned" });
+  });
+});
+
+// An implicit Provider Account nobody funded has no key on NEAR, so its
+// wallet's delegate action can't land. Before the wallet signs a sponsored
+// Sweep, Herald creates it from the relayer (#50).
+describe("preparing the Provider Account for a sponsored Sweep", () => {
+  /** A Provider signed in with an implicit account, its wallet key's, that isn't on NEAR. */
+  async function implicitProvider() {
+    const wallet = nearKey();
+    return sponsoredProvider(implicitAccountOf(wallet), "testnet", wallet);
+  }
+
+  test("Herald creates an implicit Provider Account that isn't on NEAR, then the Sweep goes through", async () => {
+    const { provider, near, chain, plan, prepare, signDelegate, relay } = await implicitProvider();
+    const { sweepId, signRequest } = await plan();
+
+    const prepared = await prepare(sweepId);
+    const relayed = await relay(sweepId, await signDelegate(signRequest));
+
+    expect(prepared).toEqual({ ok: true, transaction: expect.any(String) });
+    expect(near.accountJobs).toEqual([
+      { network: NEAR_TESTNET, providerId: provider.id, account: provider.accountId },
+    ]);
+    expect(relayed).toMatchObject({ ok: true, sweep: { status: "submitted" } });
+    expect(chain.submissions).toHaveLength(1);
+  });
+
+  test("a named Provider Account is never created: named accounts exist before anyone signs in", async () => {
+    const { near, plan, prepare } = await sponsoredProvider("sponsored-named.testnet");
+    const { sweepId } = await plan();
+
+    expect(await prepare(sweepId)).toEqual({ ok: true, transaction: null });
+    expect(near.accountJobs).toEqual([]);
+  });
+
+  test("an implicit Provider Account already on NEAR isn't created", async () => {
+    const { provider, near, plan, prepare } = await implicitProvider();
+    near.existing.add(provider.accountId);
+    const { sweepId } = await plan();
+
+    expect(await prepare(sweepId)).toEqual({ ok: true, transaction: null });
+    expect(near.createdAccounts.size).toBe(0);
+  });
+
+  test("once Herald created it, later Sweeps don't ask for it again", async () => {
+    const { provider, near, plan, prepare, signDelegate, relay } = await implicitProvider();
+    const first = await plan();
+    await prepare(first.sweepId);
+    await relay(first.sweepId, await signDelegate(first.signRequest));
+    const second = await plan();
+
+    const again = await prepare(second.sweepId);
+
+    expect(again).toEqual({ ok: true, transaction: near.createdAccounts.get(provider.accountId) });
+    expect(near.accountJobs).toHaveLength(1);
+  });
+
+  test("preparing the same Sweep again, or two at once, never creates the account twice", async () => {
+    const { near, plan, prepare } = await implicitProvider();
+    const one = await plan();
+    const other = await plan();
+
+    const results = await Promise.all([prepare(one.sweepId), prepare(other.sweepId)]);
+    const retried = await prepare(one.sweepId);
+
+    expect(results.every((result) => result.ok)).toBe(true);
+    expect(retried).toMatchObject({ ok: true });
+    expect(near.createdAccounts.size).toBe(1);
+  });
+
+  test("nothing is created for a Sweep that isn't the Provider's, or doesn't exist", async () => {
+    const { near, prepare } = await implicitProvider();
+    const someoneElse = await sponsoredProvider("sponsored-other.testnet");
+    const { sweepId } = await someoneElse.plan();
+
+    expect(await prepare(sweepId)).toMatchObject({ ok: false, reason: "unknown_sweep" });
+    expect(await prepare(999_999)).toMatchObject({ ok: false, reason: "unknown_sweep" });
+    expect(near.accountJobs).toEqual([]);
+  });
+
+  test("nothing is created without a planned Sweep: a withdrawal below the minimum isn't planned", async () => {
+    const { near, plan } = await implicitProvider();
+
+    await expect(plan({ amount: "1" })).rejects.toThrow("minimum");
+    expect(near.accountJobs).toEqual([]);
+  });
+
+  test("nothing is created for a Sweep already relayed, or past its signing window", async () => {
+    const { near, plan, prepare, signDelegate, relay } = await implicitProvider();
+    const relayed = await plan();
+    await relay(relayed.sweepId, await signDelegate(relayed.signRequest));
+    const late = await plan();
+
+    const results = [
+      await prepare(relayed.sweepId),
+      await prepare(late.sweepId, new Date(Date.now() + 60 * 60 * 1000)),
+    ];
+
+    expect(results).toEqual([
+      expect.objectContaining({ ok: false, reason: "sweep_not_signable" }),
+      expect.objectContaining({ ok: false, reason: "sweep_not_signable" }),
+    ]);
+    expect(near.accountJobs).toEqual([]);
+  });
+
+  test("nothing is created when the daily cap leaves no room for the Sweep", async () => {
+    const { near, plan, prepare, signDelegate, relay } = await implicitProvider();
+    near.pendingRelayedSigns = true;
+    const planned = [];
+    for (let i = 0; i <= SWEEP_DAILY_CAP; i++) planned.push(await plan());
+    const [last, ...first] = planned.reverse();
+    for (const { sweepId, signRequest } of first)
+      await relay(sweepId, await signDelegate(signRequest));
+
+    expect(await prepare(last!.sweepId)).toMatchObject({ ok: false, reason: "daily_cap_reached" });
+    expect(near.accountJobs).toEqual([]);
+  });
+
+  test("a creation that failed or wasn't final in time says so, leaves the Sweep planned, and can be tried again", async () => {
+    const { near, plan, prepare, sweepRow } = await implicitProvider();
+    const { sweepId } = await plan();
+    near.refuseAccountWith = "The transaction creating it wasn't final within 30000 ms";
+
+    const refused = await prepare(sweepId);
+    near.refuseAccountWith = null;
+    const again = await prepare(sweepId);
+
+    expect(refused).toMatchObject({
+      ok: false,
+      reason: "account_refused",
+      message: expect.stringContaining("wasn't final"),
+    });
+    expect(again).toEqual({ ok: true, transaction: expect.any(String) });
+    expect((await sweepRow(sweepId))?.status).toBe("planned");
+  });
+
+  test("an unreachable chain queue says so, and asking again creates the account", async () => {
+    const { near, plan, prepare } = await implicitProvider();
+    const { sweepId } = await plan();
+    near.accountUnreachable = true;
+
+    const unanswered = await prepare(sweepId);
+    near.accountUnreachable = false;
+    const again = await prepare(sweepId);
+
+    expect(unanswered).toMatchObject({ ok: false, reason: "account_unanswered" });
+    expect(again).toEqual({ ok: true, transaction: expect.any(String) });
+    expect(near.createdAccounts.size).toBe(1);
   });
 });

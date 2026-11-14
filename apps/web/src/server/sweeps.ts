@@ -6,6 +6,7 @@ import {
   nearRpcTransactionReader,
   planSweep,
   planSweepAll,
+  prepareSponsoredSweepAccount,
   refreshSweeps,
   relaySponsoredSweep,
   relaySponsoredSweepAll,
@@ -351,6 +352,41 @@ export const sponsorSweepAll = createServerFn({ method: "POST" })
             retry: outcome.reason === "relay_unanswered" || outcome.reason === "held_back",
           },
     );
+  });
+
+/**
+ * Before the Provider's wallet signs a sponsored Sweep (`sponsorSweep`), or
+ * a "Sweep all" batch (pass any one of its planned Sweeps): has Herald's
+ * NEAR relayer create an implicit Provider Account that isn't on NEAR yet,
+ * at most once, and answers once that is final, so the wallet's delegate
+ * action can land (#50). Answers at once for a named account, or one on
+ * NEAR already. `retry` says asking again is safe and may get through: the
+ * relayer didn't answer.
+ */
+export const prepareSponsoredAccount = createServerFn({ method: "POST" })
+  .middleware([requireSession])
+  .validator(z.object({ sweepId: z.number().int().positive() }))
+  .handler(async ({ context, data }) => {
+    const result = await prepareSponsoredSweepAccount(
+      { db: createDb(env.DB), nearQueue: nearSweepQueue() },
+      { providerId: context.session.providerId, env: readHeraldEnv(), sweepId: data.sweepId },
+    );
+    if (!result.ok) {
+      console.warn(
+        JSON.stringify({
+          event: "sweep_provider_account_rejected",
+          providerId: context.session.providerId,
+          sweepId: data.sweepId,
+          reason: result.reason,
+        }),
+      );
+      return {
+        ok: false as const,
+        message: result.message,
+        retry: result.reason === "account_unanswered",
+      };
+    }
+    return { ok: true as const };
   });
 
 /**

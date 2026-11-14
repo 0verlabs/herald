@@ -28,6 +28,7 @@ import type {
   EvmSweepSubmission,
   EvmSweepSubmitter,
   MpcSignRequest,
+  NearProviderAccountJob,
   NearSponsoredSignSubmission,
   NearSweepQueue,
   NearSweepReader,
@@ -279,6 +280,36 @@ export class FakeNear {
     });
     this.#relayed.set(submission.signedDelegateAction, txHash);
     return { ok: true, transaction: txHash, relayer: this.relayer };
+  };
+
+  /** Accounts on NEAR, for `createAccount`: those it created and those `existing` names. */
+  readonly existing = new Set<string>();
+  /** Every Provider Account creation the chain queue was asked for, in order, repeats included. */
+  readonly accountJobs: NearProviderAccountJob[] = [];
+  /** The relayer transaction that created each account, by account. */
+  readonly createdAccounts = new Map<string, string>();
+  /** Refuse Provider Account creations with this message, as when the transfer isn't final in time. */
+  refuseAccountWith: string | null = null;
+  /** Throw instead of creating, as when the chain queue can't be reached. */
+  accountUnreachable = false;
+
+  /**
+   * The chain queue's `createProviderAccount`: answers the transaction that
+   * created the account, the same one each time, sending a new one only
+   * for an account that isn't on NEAR; null for one that was there
+   * already.
+   */
+  readonly createAccount: NearSweepQueue["createProviderAccount"] = async (job) => {
+    if (this.accountUnreachable) throw new Error("The NEAR chain queue didn't answer");
+    this.accountJobs.push(job);
+    if (this.refuseAccountWith) return { ok: false, message: this.refuseAccountWith };
+    const created = this.createdAccounts.get(job.account);
+    if (created) return { ok: true, transaction: created };
+    if (this.existing.has(job.account)) return { ok: true, transaction: null };
+    const transaction = base58.encode(crypto.getRandomValues(new Uint8Array(32)));
+    this.createdAccounts.set(job.account, transaction);
+    this.existing.add(job.account);
+    return { ok: true, transaction };
   };
 
   /** A `NearTransactionReader` over this network; unknown transactions are null. */
@@ -549,6 +580,9 @@ export class FakeNearUsdc {
     },
     submitSponsoredSign: async () => {
       throw new Error("This fake NEAR relays no sponsored sign: use FakeNear's relaySign");
+    },
+    createProviderAccount: async () => {
+      throw new Error("This fake NEAR creates no Provider Account: use FakeNear's createAccount");
     },
   };
 

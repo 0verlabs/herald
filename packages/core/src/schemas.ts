@@ -72,7 +72,10 @@ export type NearSetupStatus = z.infer<typeof NearSetupStatusSchema>;
 /**
  * A Provider, identified by its Provider Account, with the Receiving
  * Addresses derived from it, the state of its Solana USDC token account and
- * the setup of its NEAR Receiving Address.
+ * the setup of its NEAR Receiving Address. `providerAccountTxHash` is the
+ * relayer transaction in which Herald created an implicit Provider Account
+ * that wasn't on NEAR, for its first sponsored Sweep (#50); null if Herald
+ * never created it.
  * `packages/db` keeps the `providers` table in line with this schema, except
  * that `near_address` is null on rows from before NEAR until core fills it
  * in (`providerFromRow`).
@@ -85,6 +88,7 @@ export const ProviderSchema = z.object({
   nearAddress: NearImplicitAccountSchema,
   solanaTokenAccountStatus: SolanaTokenAccountStatusSchema,
   nearSetupStatus: NearSetupStatusSchema,
+  providerAccountTxHash: z.string().min(1).nullable(),
   createdAt: z.date(),
 });
 export type Provider = z.infer<typeof ProviderSchema>;
