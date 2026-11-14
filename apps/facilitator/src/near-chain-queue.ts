@@ -18,6 +18,7 @@ import {
   transferAction,
   viewAccessKey,
   viewAccount,
+  warnIfNearRelayerLow,
   type NearAction,
   type NearChainQueueRpc,
   type NearOutcome,
@@ -596,6 +597,7 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
       }
       try {
         await this.#send(network, transaction);
+        this.#checkRelayerBalance(network);
         return { ok: true, transaction };
       } catch (error) {
         if (!(error instanceof NearRpcError) || error.rpcCause !== "INVALID_TRANSACTION") {
@@ -607,6 +609,7 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
               error: String(error),
             }),
           );
+          this.#checkRelayerBalance(network);
           return { ok: true, transaction };
         }
         record?.(null);
@@ -619,6 +622,27 @@ export class NearChainQueue extends DurableObject<CloudflareBindings> implements
         );
       }
     }
+  }
+
+  /**
+   * Reads the relayer's balance after a send, logging
+   * `near_relayer_low_balance` below `NEAR_RELAYER_LOW_BALANCE_THRESHOLD`
+   * (`warnIfNearRelayerLow`). It runs on the side, outside the send queue,
+   * and nothing waits on it: `waitUntil` only keeps the Durable Object
+   * around until it is done. It never fails, so a failed read can't hold up
+   * or fail any relayer transaction.
+   */
+  #checkRelayerBalance(network: Caip2): void {
+    this.ctx.waitUntil(
+      warnIfNearRelayerLow(
+        { rpc: this.#rpc(network) },
+        {
+          network,
+          relayer: nearRelayerKey(this.env).accountId,
+          threshold: this.env.NEAR_RELAYER_LOW_BALANCE_THRESHOLD,
+        },
+      ),
+    );
   }
 
   #release(delegateHash: string): void {

@@ -16,6 +16,12 @@
 // NEAR, which has no pending answer, it bounds the wait for the relayer
 // transaction to be final.
 //
+// NEAR_RELAYER_LOW_BALANCE_THRESHOLD is the NEAR amount ("0.5") below which
+// the NEAR relayer's available balance logs `near_relayer_low_balance`,
+// checked after each relayer transaction. Top it up when that shows in the
+// logs: an empty relayer fails every NEAR settlement, setup and Sweep. 0.5 NEAR
+// on testnet, 2 NEAR on mainnet. Change it here per environment and deploy.
+//
 // Secrets (declared in `secrets.required` at the top level and in each
 // environment, since `secrets` is not inherited), never their values in this
 // file. Set them with `CLOUDFLARE_ENV=<env> wrangler secret put <NAME>`, and
@@ -65,6 +71,7 @@
   "vars": {
     "HERALD_ENV": "testnet",
     "SETTLE_RECEIPT_TIMEOUT_MS": "30000",
+    "NEAR_RELAYER_LOW_BALANCE_THRESHOLD": "0.5",
   },
   "triggers": { "crons": ["*/10 * * * *"] },
   "durable_objects": {
@@ -113,6 +120,7 @@
       "vars": {
         "HERALD_ENV": "testnet",
         "SETTLE_RECEIPT_TIMEOUT_MS": "30000",
+        "NEAR_RELAYER_LOW_BALANCE_THRESHOLD": "0.5",
       },
       "triggers": { "crons": ["*/10 * * * *"] },
       "durable_objects": {
@@ -165,6 +173,7 @@
       "vars": {
         "HERALD_ENV": "mainnet",
         "SETTLE_RECEIPT_TIMEOUT_MS": "30000",
+        "NEAR_RELAYER_LOW_BALANCE_THRESHOLD": "2",
       },
       "triggers": { "crons": ["*/10 * * * *"] },
       "durable_objects": {
