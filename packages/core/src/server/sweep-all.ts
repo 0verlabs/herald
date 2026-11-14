@@ -1,11 +1,20 @@
+import { sweeps } from "@herald/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
+import { mpcSigners } from "../receiving-addresses.ts";
 import { unhandledKind, type Caip2 } from "../networks.ts";
-import type { HeraldEnv, Sweep } from "../schemas.ts";
+import { SweepSchema, type HeraldEnv, type Sweep } from "../schemas.ts";
+import { readSponsoredSign, type SponsoredSign } from "./sponsored-signs.ts";
 import {
+  discardSweep,
   getSweepOptions,
   planSweep,
+  relaySponsoredSweep,
+  signRequestFor,
   SWEEP_DAILY_CAP,
   type MpcSignRequest,
+  type SponsoredSweepRelay,
   type SweepChainOption,
+  type SweepDeps,
   type SweepPlanDeps,
   type SweepPlanRejection,
   type SweepQuote,
@@ -176,4 +185,133 @@ function targetFor(chain: SweepChainOption, target: SweepAllTarget): SweepTarget
     case "intents":
       return { destinationKind: "intents" };
   }
+}
+
+/**
+ * How one Sweep of a sponsored "Sweep all" went (`relaySponsoredSweepAll`):
+ * as `relaySponsoredSweep` answers for a single one, `not_signed` when the
+ * wallet signed no delegate action Herald could read for it, so it was
+ * discarded, or `held_back` when a delegate action before it in nonce order
+ * went unanswered, so it wasn't relayed yet and is safe to present again.
+ */
+export type SponsoredSweepAllOutcome = { sweepId: number } & (
+  | SponsoredSweepRelay
+  | { ok: false; reason: "not_signed" | "held_back"; message: string }
+);
+
+/**
+ * Relays a sponsored "Sweep all" (ADR 0010): `signedDelegateActions` are
+ * what the Provider's wallet signed in one `signDelegateActions` request
+ * for the planned Sweeps `sweepIds`, one delegate action per Sweep holding
+ * its one MPC `sign` call. Each delegate action is matched to its Sweep by
+ * the payload it asks the MPC signer to sign, never by its position, and
+ * relayed as `relaySponsoredSweep` relays a single one, in its own relayer
+ * transaction (ADR 0008). Each Sweep completes or fails on its own.
+ *
+ * They are relayed one after the other in ascending nonce order, since a
+ * delegate action landing after a higher-nonce one fails on NEAR. Solana's
+ * goes first when the wallet numbered it first, as Meteor does for the
+ * delegate action asked for first. After a relay goes unanswered, the
+ * rest are held back (`held_back`) and stay `planned`: presenting the same
+ * batch again is safe and relays them in order. A Sweep the wallet signed
+ * no delegate action for is discarded (`not_signed`): signing sends
+ * nothing, so it was never sent. A delegate action that matches none of
+ * the Provider's Sweeps in `sweepIds` isn't relayed. Answers how each
+ * Sweep went, in `sweepIds` order.
+ */
+export async function relaySponsoredSweepAll(
+  deps: SweepDeps,
+  input: {
+    providerId: number;
+    env: HeraldEnv;
+    sweepIds: number[];
+    signedDelegateActions: string[];
+    now?: Date;
+  },
+): Promise<SponsoredSweepAllOutcome[]> {
+  const own = await ownSweeps(deps, input);
+  // Ascending nonce order: landing a delegate action raises the key's nonce
+  // to its own, so a lower one relayed after it fails on NEAR (#46).
+  const signs = input.signedDelegateActions
+    .flatMap((signed) => {
+      const read = readSponsoredSign(signed, mpcSigners[input.env].contractId);
+      return read.ok ? [read.sign] : [];
+    })
+    .sort((a, b) => (a.nonce < b.nonce ? -1 : a.nonce > b.nonce ? 1 : 0));
+
+  const outcomes = new Map<number, SponsoredSweepAllOutcome>();
+  let unanswered = false;
+  for (const sign of signs) {
+    const sweep = own.find((s) => samePayload(input.env, s, sign));
+    if (!sweep || outcomes.has(sweep.id)) continue;
+    if (unanswered) {
+      // Relayed now, it could land before the unanswered one and make it
+      // fail on its nonce: it waits for the batch to be presented again.
+      outcomes.set(sweep.id, {
+        sweepId: sweep.id,
+        ok: false,
+        reason: "held_back",
+        message: "Herald holds it back until the approval before it is relayed. Try again.",
+      });
+      continue;
+    }
+    const relayed = await relaySponsoredSweep(deps, {
+      providerId: input.providerId,
+      env: input.env,
+      sweepId: sweep.id,
+      signedDelegateAction: sign.signedDelegateAction,
+      now: input.now,
+    });
+    unanswered = !relayed.ok && relayed.reason === "relay_unanswered";
+    outcomes.set(sweep.id, { sweepId: sweep.id, ...relayed });
+  }
+  // Signing a delegate action sends nothing, so a Sweep the wallet signed
+  // none for was never sent: discard it, as when a wallet stops partway.
+  for (const sweep of own) {
+    if (outcomes.has(sweep.id)) continue;
+    await discardSweep(deps.db, { providerId: input.providerId, sweepId: sweep.id });
+    outcomes.set(sweep.id, {
+      sweepId: sweep.id,
+      ok: false,
+      reason: "not_signed",
+      message: "Your wallet didn't sign it, so Herald discarded it.",
+    });
+  }
+  return input.sweepIds.map(
+    (sweepId) =>
+      outcomes.get(sweepId) ?? {
+        sweepId,
+        ok: false,
+        reason: "unknown_sweep",
+        message: "No such Sweep.",
+      },
+  );
+}
+
+/** The Provider's own Sweeps among `sweepIds`. */
+async function ownSweeps(
+  deps: Pick<SweepDeps, "db">,
+  input: { providerId: number; sweepIds: number[] },
+): Promise<Sweep[]> {
+  if (input.sweepIds.length === 0) return [];
+  const rows = await deps.db
+    .select()
+    .from(sweeps)
+    .where(and(eq(sweeps.providerId, input.providerId), inArray(sweeps.id, input.sweepIds)));
+  return rows.map((row) => SweepSchema.parse(row));
+}
+
+/** Whether `sign` asks the MPC signer for `sweep`'s payload. */
+function samePayload(env: HeraldEnv, sweep: Sweep, sign: SponsoredSign): boolean {
+  return (
+    payloadKey(signRequestFor(env, sweep).args.request.payload_v2) ===
+    payloadKey(sign.request.payload_v2)
+  );
+}
+
+/** An MPC `payload_v2` as one string, its hex in lowercase, to compare two. */
+function payloadKey(payload: { Ecdsa: string } | { Eddsa: string }): string {
+  return "Ecdsa" in payload
+    ? `Ecdsa:${payload.Ecdsa.toLowerCase()}`
+    : `Eddsa:${payload.Eddsa.toLowerCase()}`;
 }

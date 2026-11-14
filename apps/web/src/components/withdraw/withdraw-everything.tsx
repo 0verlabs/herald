@@ -20,15 +20,29 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { formatUsdc, shortenMiddle } from "@/lib/format";
-import { signEachInOwnTransaction, walletFor } from "@/lib/near-wallet";
+import {
+  nearGasPayer,
+  signEachInOwnTransaction,
+  signSponsoredSigns,
+  walletFor,
+  watchNearGasPayer,
+  type NearGasPayer,
+  type NearWallet as Wallet,
+} from "@/lib/near-wallet";
 import { inPlainWords } from "@/lib/plain-words";
 import { USDC } from "@/lib/stablecoins";
 import { cn } from "@/lib/utils";
-import { discardPlannedSweep, finishSweep, startSweepAll } from "@/server/sweeps";
+import { discardPlannedSweep, finishSweep, sponsorSweepAll, startSweepAll } from "@/server/sweeps";
 import { OptionSelect, type Option } from "./option-select";
 import { IntentsLogo } from "./withdraw-form";
 import { WithdrawLayout } from "./withdraw-layout";
-import { addressPlaceholder, addressProblem, formatCountdown, type Step } from "./withdraw-shared";
+import {
+  addressPlaceholder,
+  addressProblem,
+  formatCountdown,
+  nearGasLine,
+  type Step,
+} from "./withdraw-shared";
 
 const stepLabels: Record<Exclude<Step, "idle">, string> = {
   planning: "Preparing your withdrawals…",
@@ -40,6 +54,11 @@ const stepLabels: Record<Exclude<Step, "idle">, string> = {
 /** The destination that isn't a network. */
 const INTENTS = "intents";
 
+// How often a sponsored batch is presented again when Herald's relayer
+// didn't answer, and how long apart. Each approval is relayed at most once.
+const SPONSOR_ATTEMPTS = 3;
+const SPONSOR_RETRY_MS = 2_000;
+
 type Planned = Extract<Awaited<ReturnType<typeof startSweepAll>>, { ok: true }>;
 
 /** How one network's withdrawal went, for the summary after approving. */
@@ -47,8 +66,10 @@ type Outcome = { label: string; ok: boolean; message: string };
 
 /**
  * Withdraw everything: the whole balance of every network holding at least
- * its minimum, one withdrawal per network. The wallet sends one NEAR
- * transaction per withdrawal, in one request where it can, and each is
+ * its minimum, one withdrawal per network. A wallet that signs delegate
+ * actions approves them all at once and Herald's relayer sends each one,
+ * paying the NEAR gas (ADR 0010); any other wallet sends one NEAR
+ * transaction per withdrawal, in one request where it can. Each is
  * followed on its own.
  */
 export function WithdrawEverything(props: {
@@ -62,6 +83,7 @@ export function WithdrawEverything(props: {
   const router = useRouter();
   const plan = useServerFn(startSweepAll);
   const finish = useServerFn(finishSweep);
+  const sponsor = useServerFn(sponsorSweepAll);
   const discard = useServerFn(discardPlannedSweep);
   const [target, setTarget] = useState<string | null>(null);
   const [destination, setDestination] = useState("");
@@ -70,6 +92,10 @@ export function WithdrawEverything(props: {
   const [error, setError] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<Outcome[] | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  // Who pays the NEAR gas with the wallet connected now: null until one is.
+  const [gasPayer, setGasPayer] = useState<NearGasPayer | null>(null);
+
+  useEffect(() => watchNearGasPayer(props.heraldEnv, setGasPayer), [props.heraldEnv]);
 
   useEffect(() => {
     if (!quoted) return;
@@ -159,10 +185,94 @@ export function WithdrawEverything(props: {
     return planned;
   }
 
-  /** Approves every planned withdrawal, then hands each NEAR transaction to Herald. */
+  /**
+   * Approves every planned withdrawal and hands them to Herald. A wallet
+   * that signs delegate actions signs every `sign` call in one request and
+   * Herald's relayer sends them, paying the NEAR gas; any other wallet
+   * sends them itself, as before. A sponsored approval that fails shows its
+   * error: it never falls back to the wallet paying.
+   */
   async function signAll(planned: Planned) {
     setStep("signing");
     const wallet = await walletFor(props.heraldEnv, props.accountId);
+    const payer = nearGasPayer(wallet);
+    setGasPayer(payer);
+    const finished =
+      payer === "herald" ? await sponsorAll(planned, wallet) : await sendAll(planned, wallet);
+    const skipped = planned.skipped.map(({ label, message }) => ({
+      label,
+      ok: false,
+      message: inPlainWords(message),
+    }));
+    setOutcomes([...finished, ...skipped]);
+  }
+
+  /**
+   * Your wallet signs every `sign` call as a delegate action in one
+   * request, and Herald relays each in its own NEAR transaction. Signing
+   * sends nothing, so the withdrawals it didn't sign are discarded. The
+   * batch is presented again a few times while the relayer doesn't answer:
+   * each approval is relayed at most once.
+   */
+  async function sponsorAll(planned: Planned, wallet: Wallet): Promise<Outcome[]> {
+    const sweepIds = planned.planned.map(({ sweepId }) => sweepId);
+    let signedDelegateActions: string[];
+    try {
+      signedDelegateActions = await signSponsoredSigns(wallet, {
+        heraldEnv: props.heraldEnv,
+        signerId: props.accountId,
+        requests: planned.planned.map(({ signRequest }) => signRequest),
+      });
+    } catch (cause) {
+      for (const sweepId of sweepIds) void discard({ data: { sweepId } }).catch(() => undefined);
+      throw cause;
+    }
+
+    setStep("submitting");
+    let relayed = await sponsor({ data: { sweepIds, signedDelegateActions } });
+    for (
+      let attempt = 1;
+      attempt < SPONSOR_ATTEMPTS && relayed.some((o) => !o.ok && o.retry);
+      attempt++
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, SPONSOR_RETRY_MS));
+      relayed = await sponsor({ data: { sweepIds, signedDelegateActions } });
+    }
+
+    return planned.planned.map(({ sweepId, network, amount }): Outcome => {
+      const label = labelOf(network);
+      const result = relayed.find((o) => o.sweepId === sweepId);
+      if (!result) return { label, ok: false, message: "Herald didn't answer for it." };
+      if (!result.ok) {
+        return {
+          label,
+          ok: false,
+          message:
+            result.reason === "not_signed"
+              ? "Not approved: your wallet didn't sign it."
+              : inPlainWords(result.message),
+        };
+      }
+      if (result.status === "failed") {
+        return {
+          label,
+          ok: false,
+          message: result.error ? inPlainWords(result.error) : "The withdrawal failed.",
+        };
+      }
+      return {
+        label,
+        ok: true,
+        message:
+          result.status === "awaiting_signature"
+            ? `${formatUsdc(amount)} USDC: your approval is being confirmed.`
+            : `${formatUsdc(amount)} USDC: on its way.`,
+      };
+    });
+  }
+
+  /** Your wallet sends each `sign` call in its own NEAR transaction, then Herald takes each hash. */
+  async function sendAll(planned: Planned, wallet: Wallet): Promise<Outcome[]> {
     const signed = await signEachInOwnTransaction(wallet, {
       heraldEnv: props.heraldEnv,
       signerId: props.accountId,
@@ -179,7 +289,7 @@ export function WithdrawEverything(props: {
     }
 
     setStep("submitting");
-    const finished = await Promise.all(
+    return Promise.all(
       planned.planned.map(async ({ sweepId, network, amount }, index): Promise<Outcome> => {
         const label = labelOf(network);
         const nearTxHash = signed.hashes[index];
@@ -217,12 +327,6 @@ export function WithdrawEverything(props: {
         }
       }),
     );
-    const skipped = planned.skipped.map(({ label, message }) => ({
-      label,
-      ok: false,
-      message: inPlainWords(message),
-    }));
-    setOutcomes([...finished, ...skipped]);
   }
 
   async function run(first: Step, action: () => Promise<void>) {
@@ -374,6 +478,7 @@ export function WithdrawEverything(props: {
       labelOf={labelOf}
       secondsLeft={secondsLeft}
       expired={quotesExpired}
+      gasPayer={gasPayer}
     />
   ) : (
     <section className="flex flex-col rounded-xl border bg-muted/40">
@@ -408,7 +513,7 @@ export function WithdrawEverything(props: {
       </div>
       <p className="border-t px-4 py-3 text-xs text-muted-foreground">
         The bridge keeps a small fee on each network it moves, shown in the quotes. Herald pays the
-        network fees.
+        network fees. {nearGasLine(gasPayer)}
       </p>
     </section>
   );
@@ -455,6 +560,7 @@ function QuotesReview(props: {
   labelOf: (network: string) => string;
   secondsLeft: number;
   expired: boolean;
+  gasPayer: NearGasPayer | null;
 }) {
   return (
     <section className="flex flex-col rounded-xl border bg-muted/40">
@@ -507,7 +613,7 @@ function QuotesReview(props: {
       <p className="border-t px-4 py-3 text-xs text-muted-foreground">
         {props.expired
           ? "These quotes expired. Get new ones to withdraw."
-          : "If the bridge can't deliver, it sends the money back to the network it left."}
+          : `If the bridge can't deliver, it sends the money back to the network it left. ${nearGasLine(props.gasPayer)}`}
       </p>
     </section>
   );

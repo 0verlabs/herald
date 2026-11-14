@@ -2315,7 +2315,7 @@ function authorizationPayload(
  * (ECDSA), the transaction message for a Solana one and the delegate
  * action's NEP-461 hash for a NEAR one (EdDSA).
  */
-function signRequestFor(env: HeraldEnv, sweep: Sweep): MpcSignRequest {
+export function signRequestFor(env: HeraldEnv, sweep: Sweep): MpcSignRequest {
   const { path, domainId } = receivingAddressPaths[sweep.sourceKind];
   return {
     contractId: mpcSigners[env].contractId,
