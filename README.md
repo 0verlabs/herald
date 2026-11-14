@@ -1,4 +1,8 @@
-# Herald
+<div align="center">
+  <img src="assets/wordmark.svg" alt="Herald" height="86">
+</div>
+
+---
 
 Herald lets an API that charges per request through [x402](https://x402.org) accept USDC on several chains with the stock x402 libraries. Every payment lands in an ordinary address on the Buyer's chain, and one NEAR account controls all of those addresses through NEAR Chain Signatures. The API's owner moves the money out later from a dashboard, to any address or into NEAR Intents.
 
