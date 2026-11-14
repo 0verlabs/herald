@@ -29,13 +29,15 @@ export const SPONSORED_SIGN_MAX_GAS = 100_000_000_000_000n;
 
 const HexSchema = z.string().regex(/^[0-9a-fA-F]+$/);
 
+const PayloadSchema = z.union([
+  z.strictObject({ Ecdsa: HexSchema }),
+  z.strictObject({ Eddsa: HexSchema }),
+]);
+
 /** The `sign` call's arguments, exactly as Herald plans them (`MpcSignRequest`). */
 const SignArgsSchema = z.strictObject({
   request: z.strictObject({
-    payload_v2: z.union([
-      z.strictObject({ Ecdsa: HexSchema }),
-      z.strictObject({ Eddsa: HexSchema }),
-    ]),
+    payload_v2: PayloadSchema,
     path: z.string(),
     domain_id: z.number().int().nonnegative(),
   }),
@@ -43,6 +45,43 @@ const SignArgsSchema = z.strictObject({
 
 /** What a sponsored `sign` call asks the MPC signer: `MpcSignRequest["args"]["request"]`. */
 export type SponsoredSignRequest = z.infer<typeof SignArgsSchema>["request"];
+
+/** An MPC `payload_v2` as one string, its hex in lowercase, to compare two. */
+export function mpcPayloadKey(payload: SponsoredSignRequest["payload_v2"]): string {
+  return "Ecdsa" in payload
+    ? `Ecdsa:${payload.Ecdsa.toLowerCase()}`
+    : `Eddsa:${payload.Eddsa.toLowerCase()}`;
+}
+
+/** Any function call's arguments holding an MPC payload, whatever else they hold. */
+const AnyPayloadArgsSchema = z.object({ request: z.object({ payload_v2: PayloadSchema }) });
+
+/**
+ * The MPC payload a signed delegate action asks to sign, read from the
+ * first of its function calls whose arguments hold one, or null if it
+ * doesn't decode or none does. It tells which Sweep a delegate action that
+ * `readSponsoredSign` refuses was signed for, to say why there; it is
+ * never a reason to relay it.
+ */
+export function sponsoredSignPayload(
+  signedDelegateAction: string,
+): SponsoredSignRequest["payload_v2"] | null {
+  let delegate: DecodedNearDelegate;
+  try {
+    delegate = decodeSignedNearDelegate(signedDelegateAction);
+  } catch {
+    return null;
+  }
+  for (const call of delegate.calls) {
+    try {
+      const args = AnyPayloadArgsSchema.safeParse(JSON.parse(new TextDecoder().decode(call.args)));
+      if (args.success) return args.data.request.payload_v2;
+    } catch {
+      // Not JSON: try the next call.
+    }
+  }
+  return null;
+}
 
 /**
  * A signed delegate action holding one MPC `sign` call, as `readSponsoredSign`

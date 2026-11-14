@@ -12,8 +12,12 @@ import type { NearGasPayer } from "@/lib/near-wallet";
 // A Sweep is a withdrawal on screen: the code keeps the domain's words,
 // the dashboard speaks the customer's.
 
-/** The steps of starting a withdrawal, as the button names them while it waits. */
-export type Step = "idle" | "planning" | "quoting" | "signing" | "submitting";
+/**
+ * The steps of starting a withdrawal, as the button names them while it
+ * waits. `preparing` is Herald creating an implicit Provider Account that
+ * isn't on NEAR yet, before a sponsored approval (#50).
+ */
+export type Step = "idle" | "planning" | "quoting" | "preparing" | "signing" | "submitting";
 
 /**
  * What the button says while Herald creates an implicit Provider Account
@@ -22,11 +26,28 @@ export type Step = "idle" | "planning" | "quoting" | "signing" | "submitting";
  */
 export const PREPARING_ACCOUNT_LABEL = "Herald is preparing your NEAR account…";
 
-// How often preparing the Provider Account is asked again when Herald's
-// relayer didn't answer, and how long apart. It creates the account at most
-// once.
-const PREPARE_ATTEMPTS = 3;
-const PREPARE_RETRY_MS = 2_000;
+// How often a call is made again when Herald's relayer didn't answer, and
+// how long apart (`askRelayer`).
+const RELAYER_ATTEMPTS = 3;
+const RELAYER_RETRY_MS = 2_000;
+
+/**
+ * Calls `ask`, and again up to `RELAYER_ATTEMPTS` times in all,
+ * `RELAYER_RETRY_MS` apart, while `again` says its answer is worth asking
+ * again for (Herald's relayer didn't answer). Answers the last answer.
+ * Only for calls that are safe to repeat: the relayer sends each approval,
+ * and creates each account, at most once.
+ */
+export async function askRelayer<T>(
+  ask: () => Promise<T>,
+  again: (answer: T) => boolean,
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    const answer = await ask();
+    if (attempt >= RELAYER_ATTEMPTS || !again(answer)) return answer;
+    await new Promise((resolve) => setTimeout(resolve, RELAYER_RETRY_MS));
+  }
+}
 
 /** The `prepareSponsoredAccount` server function, as `useServerFn` hands it over. */
 export type PrepareSponsoredAccount = (input: {
@@ -49,12 +70,11 @@ export async function prepareProviderAccount(
 ): Promise<void> {
   if (!NearImplicitAccountSchema.safeParse(input.accountId).success) return;
   input.onPreparing();
-  for (let attempt = 1; ; attempt++) {
-    const prepared = await prepare({ data: { sweepId: input.sweepId } });
-    if (prepared.ok) return;
-    if (!prepared.retry || attempt >= PREPARE_ATTEMPTS) throw new Error(prepared.message);
-    await new Promise((resolve) => setTimeout(resolve, PREPARE_RETRY_MS));
-  }
+  const prepared = await askRelayer(
+    () => prepare({ data: { sweepId: input.sweepId } }),
+    (answer) => !answer.ok && answer.retry,
+  );
+  if (!prepared.ok) throw new Error(prepared.message);
 }
 
 /** Why `address` isn't one to withdraw to on a network of this kind, or null if it is. */
@@ -116,34 +136,34 @@ export const statusBadges = {
   failed: { label: "Failed", variant: "destructive" },
 } as const satisfies Record<SweepStatus, { label: string; variant: string }>;
 
+/**
+ * Who pays the NEAR gas of the approval (ADR 0010), in plain words, by who
+ * pays it: Herald with a wallet that signs delegate actions, your wallet
+ * otherwise, and either while no wallet is connected yet (`unknown`).
+ * `approval` is what the wallet asks you to approve, once per withdrawal;
+ * `gas` is the line saying who pays.
+ */
+const NEAR_GAS_WORDS = {
+  herald: {
+    approval: "One approval in your NEAR wallet. Herald pays its NEAR gas.",
+    gas: "Herald pays the NEAR gas.",
+  },
+  provider: {
+    approval: "One NEAR transaction from your wallet, which pays a little NEAR in network fees.",
+    gas: "Your wallet pays the NEAR gas, a little NEAR. Wallets that sign delegate actions, such as Meteor, let Herald pay it.",
+  },
+  unknown: {
+    approval: "One approval in your NEAR wallet.",
+    gas: "Herald pays the NEAR gas if your wallet signs delegate actions, such as Meteor. Otherwise your wallet pays a little NEAR.",
+  },
+} as const satisfies Record<NearGasPayer | "unknown", { approval: string; gas: string }>;
+
 /** What the wallet asks you to approve, once per withdrawal, and who pays its NEAR gas. */
 export function approveOnce(payer: NearGasPayer | null): string {
-  switch (payer) {
-    case "herald":
-      return "One approval in your NEAR wallet. Herald pays its NEAR gas.";
-    case "provider":
-      return "One NEAR transaction from your wallet, which pays a little NEAR in network fees.";
-    case null:
-      return "One approval in your NEAR wallet.";
-    default:
-      return unhandledKind(payer);
-  }
+  return NEAR_GAS_WORDS[payer ?? "unknown"].approval;
 }
 
-/**
- * Who pays the NEAR gas of the approval (ADR 0010), in plain words: Herald
- * with a wallet that signs delegate actions, your wallet otherwise, and
- * both cases while no wallet is connected yet.
- */
+/** Who pays the NEAR gas of the approval, in plain words (`NEAR_GAS_WORDS`). */
 export function nearGasLine(payer: NearGasPayer | null): string {
-  switch (payer) {
-    case "herald":
-      return "Herald pays the NEAR gas.";
-    case "provider":
-      return "Your wallet pays the NEAR gas, a little NEAR. Wallets that sign delegate actions, such as Meteor, let Herald pay it.";
-    case null:
-      return "Herald pays the NEAR gas if your wallet signs delegate actions, such as Meteor. Otherwise your wallet pays a little NEAR.";
-    default:
-      return unhandledKind(payer);
-  }
+  return NEAR_GAS_WORDS[payer ?? "unknown"].gas;
 }

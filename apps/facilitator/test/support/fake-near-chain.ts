@@ -79,6 +79,8 @@ export type NearChainFaults = {
   failNextBroadcasts?: number;
   /** Fail this many upcoming view calls (`call_function`) of each contract method, by name. */
   failNextCalls?: Record<string, number>;
+  /** Fail this many upcoming access key reads (`view_access_key`) with a server error. */
+  failNextKeyReads?: number;
   /** Refuse connections: every request fails before reaching the node. */
   unreachable?: boolean;
 };
@@ -275,6 +277,10 @@ export class FakeNearChain {
         };
       }
       case "view_access_key": {
+        if ((this.faults.failNextKeyReads ?? 0) > 0) {
+          this.faults.failNextKeyReads = (this.faults.failNextKeyReads ?? 0) - 1;
+          throw new RpcFailure("INTERNAL_ERROR", "Internal server error");
+        }
         const key = this.#keys.get(keyId(accountId, String(params["public_key"])));
         // As the RPC answers a missing key: inside `result`, no top-level error.
         if (!key) {

@@ -185,8 +185,26 @@ export class FakeNear {
   checkNonces = false;
   readonly #keyNonces = new Map<string, bigint>();
   readonly #derivedKeys = new Map<string, MpcKey>();
-  readonly #relayed = new Map<string, string>();
+  readonly #relayed = new Map<string, Promise<string>>();
   readonly #relayerKey = ed25519.utils.randomSecretKey();
+  #held: Promise<void> | null = null;
+
+  /**
+   * Holds every sponsored sign handed to the relayer from now on, after it
+   * is recorded in `sponsoredSubmissions` and before it is answered, until
+   * the returned function is called: a slow relayer, to present another
+   * delegate action meanwhile.
+   */
+  holdRelays(): () => void {
+    let release = () => {};
+    this.#held = new Promise((resolve) => {
+      release = resolve;
+    });
+    return () => {
+      this.#held = null;
+      release();
+    };
+  }
 
   /** The key the MPC network derives for `accountId` on `path`, which relayed signs sign with. */
   derive(accountId: string, path: string, key: MpcKey): void {
@@ -200,15 +218,24 @@ export class FakeNear {
    * top-level status is the delegate receipt's empty `SuccessValue`, and
    * the MPC signer's second receipt holds the signature, by the key
    * `derive` gave the delegate's sender for the path. The same signed
-   * delegate action always answers the same transaction.
+   * delegate action always answers the same transaction, also when it is
+   * presented again before the first answer, as the queue's dedup does.
    */
   readonly relaySign: NearSweepQueue["submitSponsoredSign"] = async (submission) => {
     if (this.relayUnreachable) throw new Error("The NEAR chain queue didn't answer");
     this.sponsoredSubmissions.push(submission);
+    if (this.#held) await this.#held;
     if (this.refuseSponsoredWith) return { ok: false, message: this.refuseSponsoredWith };
-    const known = this.#relayed.get(submission.signedDelegateAction);
-    if (known) return { ok: true, transaction: known, relayer: this.relayer };
+    let relayed = this.#relayed.get(submission.signedDelegateAction);
+    if (!relayed) {
+      relayed = this.#land(submission);
+      this.#relayed.set(submission.signedDelegateAction, relayed);
+    }
+    return { ok: true, transaction: await relayed, relayer: this.relayer };
+  };
 
+  /** Lands a relayed sign's transaction on this network, and answers its hash. */
+  async #land(submission: NearSponsoredSignSubmission): Promise<string> {
     // Read the delegate action with near-api-js, not with Herald's decoder.
     const wrapped = signedRelayerTransaction({
       relayer: {
@@ -278,9 +305,8 @@ export class FakeNear {
       },
       receipts_outcome: receipts,
     });
-    this.#relayed.set(submission.signedDelegateAction, txHash);
-    return { ok: true, transaction: txHash, relayer: this.relayer };
-  };
+    return txHash;
+  }
 
   /** Accounts on NEAR, for `createAccount`: those it created and those `existing` names. */
   readonly existing = new Set<string>();

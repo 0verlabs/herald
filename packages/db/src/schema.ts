@@ -200,6 +200,13 @@ export const sweeps = sqliteTable(
      * its gas. Null when the Provider's wallet sent it.
      */
     nearTxRelayer: text("near_tx_relayer"),
+    /**
+     * A sponsored Sweep: the first signed delegate action (base64 Borsh)
+     * presented for it, the only one Herald's relayer sends for it (ADR
+     * 0008). Taken before relaying; cleared when the relayer refused it,
+     * sending nothing. Null for a Sweep the Provider's wallet sent.
+     */
+    sponsoredDelegateAction: text("sponsored_delegate_action"),
     sourceTxHash: text("source_tx_hash"),
     status: text({
       enum: [

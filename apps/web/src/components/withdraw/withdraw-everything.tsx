@@ -23,7 +23,7 @@ import { formatUsdc, shortenMiddle } from "@/lib/format";
 import {
   nearGasPayer,
   signEachInOwnTransaction,
-  signSponsoredSigns,
+  signedDelegateActionsFor,
   walletFor,
   watchNearGasPayer,
   type NearGasPayer,
@@ -45,6 +45,7 @@ import { WithdrawLayout } from "./withdraw-layout";
 import {
   addressPlaceholder,
   addressProblem,
+  askRelayer,
   formatCountdown,
   nearGasLine,
   PREPARING_ACCOUNT_LABEL,
@@ -52,9 +53,7 @@ import {
   type Step,
 } from "./withdraw-shared";
 
-type AllStep = Step | "preparing";
-
-const stepLabels: Record<Exclude<AllStep, "idle">, string> = {
+const stepLabels: Record<Exclude<Step, "idle">, string> = {
   planning: "Preparing your withdrawals…",
   quoting: "Getting quotes…",
   preparing: PREPARING_ACCOUNT_LABEL,
@@ -64,11 +63,6 @@ const stepLabels: Record<Exclude<AllStep, "idle">, string> = {
 
 /** The destination that isn't a network. */
 const INTENTS = "intents";
-
-// How often a sponsored batch is presented again when Herald's relayer
-// didn't answer, and how long apart. Each approval is relayed at most once.
-const SPONSOR_ATTEMPTS = 3;
-const SPONSOR_RETRY_MS = 2_000;
 
 type Planned = Extract<Awaited<ReturnType<typeof startSweepAll>>, { ok: true }>;
 
@@ -100,7 +94,7 @@ export function WithdrawEverything(props: {
   const [target, setTarget] = useState<string | null>(null);
   const [destination, setDestination] = useState("");
   const [quoted, setQuoted] = useState<Planned | null>(null);
-  const [step, setStep] = useState<AllStep>("idle");
+  const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<Outcome[] | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -241,7 +235,7 @@ export function WithdrawEverything(props: {
         onPreparing: () => setStep("preparing"),
       });
       setStep("signing");
-      signedDelegateActions = await signSponsoredSigns(wallet, {
+      signedDelegateActions = await signedDelegateActionsFor(wallet, {
         heraldEnv: props.heraldEnv,
         signerId: props.accountId,
         requests: planned.planned.map(({ signRequest }) => signRequest),
@@ -252,15 +246,10 @@ export function WithdrawEverything(props: {
     }
 
     setStep("submitting");
-    let relayed = await sponsor({ data: { sweepIds, signedDelegateActions } });
-    for (
-      let attempt = 1;
-      attempt < SPONSOR_ATTEMPTS && relayed.some((o) => !o.ok && o.retry);
-      attempt++
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, SPONSOR_RETRY_MS));
-      relayed = await sponsor({ data: { sweepIds, signedDelegateActions } });
-    }
+    const relayed = await askRelayer(
+      () => sponsor({ data: { sweepIds, signedDelegateActions } }),
+      (outcomes) => outcomes.some((o) => !o.ok && o.retry),
+    );
 
     return planned.planned.map(({ sweepId, network, amount }): Outcome => {
       const label = labelOf(network);

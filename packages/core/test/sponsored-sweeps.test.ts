@@ -3,7 +3,7 @@ import { sweeps } from "@herald/db/schema";
 import { base64 } from "@scure/base";
 import { env } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
-import { describe, expect, test } from "vite-plus/test";
+import { describe, expect, test, vi } from "vite-plus/test";
 import { receivingAddressPaths, type HeraldEnv } from "../src/index.ts";
 import {
   completeSweep,
@@ -389,6 +389,72 @@ describe("relaying once", () => {
     if (!first.ok || !second.ok) throw new Error("Expected both to answer the Sweep");
     expect(second.sweep.nearTxHash).toBe(first.sweep.nearTxHash);
     expect(near.sponsoredSubmissions).toHaveLength(1);
+  });
+
+  test("two delegate actions for one Sweep presented at once, as from two tabs: Herald relays only the first, and both callers get the Sweep it relayed", async () => {
+    const { near, chain, plan, signDelegate, relay } = await sponsoredProvider(
+      "sponsored-concurrent.testnet",
+    );
+    const { sweepId, signRequest } = await plan();
+    const firstTab = await signDelegate(signRequest, { nonce: 1_000_001n });
+    const secondTab = await signDelegate(signRequest, { nonce: 1_000_002n });
+    const release = near.holdRelays();
+
+    const first = relay(sweepId, firstTab);
+    await vi.waitFor(() => expect(near.sponsoredSubmissions).toHaveLength(1));
+    const second = relay(sweepId, secondTab);
+    // Each caller is with the relayer before either is answered.
+    await vi.waitFor(() => expect(near.sponsoredSubmissions).toHaveLength(2));
+    release();
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+
+    expect(near.sponsoredSubmissions.map((s) => s.signedDelegateAction)).toEqual([
+      firstTab,
+      firstTab,
+    ]);
+    if (!firstResult.ok) throw new Error(firstResult.message);
+    expect(firstResult.sweep).toMatchObject({ status: "submitted", nearTxRelayer: near.relayer });
+    expect(secondResult).toMatchObject({
+      ok: true,
+      sweep: { id: sweepId, status: "submitted", nearTxHash: firstResult.sweep.nearTxHash },
+    });
+    // Both carried the Sweep on: one signed transfer, which the chain queue sends once.
+    expect(new Set(chain.submissions.map((s) => s.data)).size).toBe(1);
+  });
+
+  test("after the relayer went unanswered, another delegate action for the Sweep sends the first one again rather than a second sign", async () => {
+    const { near, chain, plan, signDelegate, relay } = await sponsoredProvider(
+      "sponsored-unanswered-resign.testnet",
+    );
+    const { sweepId, signRequest } = await plan();
+    const firstApproval = await signDelegate(signRequest, { nonce: 1_000_001n });
+    near.relayUnreachable = true;
+    const unanswered = await relay(sweepId, firstApproval);
+    near.relayUnreachable = false;
+
+    const result = await relay(sweepId, await signDelegate(signRequest, { nonce: 1_000_002n }));
+
+    expect(unanswered).toMatchObject({ ok: false, reason: "relay_unanswered" });
+    expect(result).toMatchObject({ ok: true, sweep: { status: "submitted" } });
+    expect(near.sponsoredSubmissions.map((s) => s.signedDelegateAction)).toEqual([firstApproval]);
+    expect(chain.submissions).toHaveLength(1);
+  });
+
+  test("after the relayer refused a delegate action, sending nothing, a new one for the Sweep is relayed", async () => {
+    const { near, plan, signDelegate, relay } = await sponsoredProvider(
+      "sponsored-refused-resign.testnet",
+    );
+    const { sweepId, signRequest } = await plan();
+    near.refuseSponsoredWith = "The delegate action's nonce 1000001 is used";
+    const refused = await relay(sweepId, await signDelegate(signRequest, { nonce: 1_000_001n }));
+    near.refuseSponsoredWith = null;
+    const resigned = await signDelegate(signRequest, { nonce: 1_000_002n });
+
+    const result = await relay(sweepId, resigned);
+
+    expect(refused).toMatchObject({ ok: false, reason: "relay_refused" });
+    expect(result).toMatchObject({ ok: true, sweep: { status: "submitted" } });
+    expect(near.sponsoredSubmissions.at(-1)?.signedDelegateAction).toBe(resigned);
   });
 
   test("a Sweep the Provider's wallet already signed and paid for isn't relayed", async () => {

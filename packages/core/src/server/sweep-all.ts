@@ -3,7 +3,13 @@ import { and, eq, inArray } from "drizzle-orm";
 import { mpcSigners } from "../receiving-addresses.ts";
 import { unhandledKind, type Caip2 } from "../networks.ts";
 import { SweepSchema, type HeraldEnv, type Sweep } from "../schemas.ts";
-import { readSponsoredSign, type SponsoredSign } from "./sponsored-signs.ts";
+import {
+  mpcPayloadKey,
+  readSponsoredSign,
+  sponsoredSignPayload,
+  type SponsoredSign,
+  type SponsoredSignRequest,
+} from "./sponsored-signs.ts";
 import {
   discardSweep,
   getSweepOptions,
@@ -190,9 +196,11 @@ function targetFor(chain: SweepChainOption, target: SweepAllTarget): SweepTarget
 /**
  * How one Sweep of a sponsored "Sweep all" went (`relaySponsoredSweepAll`):
  * as `relaySponsoredSweep` answers for a single one, `not_signed` when the
- * wallet signed no delegate action Herald could read for it, so it was
- * discarded, or `held_back` when a delegate action before it in nonce order
- * went unanswered, so it wasn't relayed yet and is safe to present again.
+ * wallet signed no delegate action for it, so it was discarded, or
+ * `held_back` when a delegate action before it in nonce order went
+ * unanswered, so it wasn't relayed yet and is safe to present again.
+ * `delegate_refused` also answers a Sweep whose delegate action Herald
+ * won't relay as a `sign` call at all (`readSponsoredSign`), saying why.
  */
 export type SponsoredSweepAllOutcome = { sweepId: number } & (
   | SponsoredSweepRelay
@@ -213,11 +221,18 @@ export type SponsoredSweepAllOutcome = { sweepId: number } & (
  * goes first when the wallet numbered it first, as Meteor does for the
  * delegate action asked for first. After a relay goes unanswered, the
  * rest are held back (`held_back`) and stay `planned`: presenting the same
- * batch again is safe and relays them in order. A Sweep the wallet signed
+ * batch again is safe and relays them in order. A delegate action that
+ * matches none of the Provider's Sweeps in `sweepIds` isn't relayed.
+ *
+ * A delegate action Herald won't relay as a `sign` call (a deposit other
+ * than 1 yoctoNEAR, gas over the cap, another contract…) is refused
+ * (`delegate_refused`) with why for the Sweep whose payload it holds,
+ * which stays `planned` as for a single Sweep. A Sweep the wallet signed
  * no delegate action for is discarded (`not_signed`): signing sends
- * nothing, so it was never sent. A delegate action that matches none of
- * the Provider's Sweeps in `sweepIds` isn't relayed. Answers how each
- * Sweep went, in `sweepIds` order.
+ * nothing, so it was never sent. When the batch holds a delegate action
+ * so malformed Herald can't tell which Sweep it was for, the Sweeps left
+ * without one are discarded too, but refused with its reason. Answers how
+ * each Sweep went, in `sweepIds` order.
  */
 export async function relaySponsoredSweepAll(
   deps: SweepDeps,
@@ -230,19 +245,28 @@ export async function relaySponsoredSweepAll(
   },
 ): Promise<SponsoredSweepAllOutcome[]> {
   const own = await ownSweeps(deps, input);
+  const sweepAsking = (payload: SponsoredSignRequest["payload_v2"]) =>
+    own.find(
+      (sweep) =>
+        mpcPayloadKey(signRequestFor(input.env, sweep).args.request.payload_v2) ===
+        mpcPayloadKey(payload),
+    );
+  const signs: SponsoredSign[] = [];
+  const refused: Array<{ message: string; payload: SponsoredSignRequest["payload_v2"] | null }> =
+    [];
+  for (const signed of input.signedDelegateActions) {
+    const read = readSponsoredSign(signed, mpcSigners[input.env].contractId);
+    if (read.ok) signs.push(read.sign);
+    else refused.push({ message: read.message, payload: sponsoredSignPayload(signed) });
+  }
   // Ascending nonce order: landing a delegate action raises the key's nonce
   // to its own, so a lower one relayed after it fails on NEAR (#46).
-  const signs = input.signedDelegateActions
-    .flatMap((signed) => {
-      const read = readSponsoredSign(signed, mpcSigners[input.env].contractId);
-      return read.ok ? [read.sign] : [];
-    })
-    .sort((a, b) => (a.nonce < b.nonce ? -1 : a.nonce > b.nonce ? 1 : 0));
+  signs.sort((a, b) => (a.nonce < b.nonce ? -1 : a.nonce > b.nonce ? 1 : 0));
 
   const outcomes = new Map<number, SponsoredSweepAllOutcome>();
   let unanswered = false;
   for (const sign of signs) {
-    const sweep = own.find((s) => samePayload(input.env, s, sign));
+    const sweep = sweepAsking(sign.request.payload_v2);
     if (!sweep || outcomes.has(sweep.id)) continue;
     if (unanswered) {
       // Relayed now, it could land before the unanswered one and make it
@@ -265,17 +289,39 @@ export async function relaySponsoredSweepAll(
     unanswered = !relayed.ok && relayed.reason === "relay_unanswered";
     outcomes.set(sweep.id, { sweepId: sweep.id, ...relayed });
   }
+  // A delegate action Herald won't relay says why for its Sweep, which
+  // stays planned, as `relaySponsoredSweep` refuses one for a single Sweep.
+  const unplaced: string[] = [];
+  for (const { message, payload } of refused) {
+    if (payload === null) {
+      unplaced.push(message);
+      continue;
+    }
+    const sweep = sweepAsking(payload);
+    if (!sweep || outcomes.has(sweep.id)) continue;
+    outcomes.set(sweep.id, { sweepId: sweep.id, ok: false, reason: "delegate_refused", message });
+  }
   // Signing a delegate action sends nothing, so a Sweep the wallet signed
   // none for was never sent: discard it, as when a wallet stops partway.
   for (const sweep of own) {
     if (outcomes.has(sweep.id)) continue;
     await discardSweep(deps.db, { providerId: input.providerId, sweepId: sweep.id });
-    outcomes.set(sweep.id, {
-      sweepId: sweep.id,
-      ok: false,
-      reason: "not_signed",
-      message: "Your wallet didn't sign it, so Herald discarded it.",
-    });
+    outcomes.set(
+      sweep.id,
+      unplaced.length === 0
+        ? {
+            sweepId: sweep.id,
+            ok: false,
+            reason: "not_signed",
+            message: "Your wallet didn't sign it, so Herald discarded it.",
+          }
+        : {
+            sweepId: sweep.id,
+            ok: false,
+            reason: "delegate_refused",
+            message: `${unplaced.join(" ")} Herald couldn't tell which Sweep that was for, so it discarded this one.`,
+          },
+    );
   }
   return input.sweepIds.map(
     (sweepId) =>
@@ -299,19 +345,4 @@ async function ownSweeps(
     .from(sweeps)
     .where(and(eq(sweeps.providerId, input.providerId), inArray(sweeps.id, input.sweepIds)));
   return rows.map((row) => SweepSchema.parse(row));
-}
-
-/** Whether `sign` asks the MPC signer for `sweep`'s payload. */
-function samePayload(env: HeraldEnv, sweep: Sweep, sign: SponsoredSign): boolean {
-  return (
-    payloadKey(signRequestFor(env, sweep).args.request.payload_v2) ===
-    payloadKey(sign.request.payload_v2)
-  );
-}
-
-/** An MPC `payload_v2` as one string, its hex in lowercase, to compare two. */
-function payloadKey(payload: { Ecdsa: string } | { Eddsa: string }): string {
-  return "Ecdsa" in payload
-    ? `Ecdsa:${payload.Ecdsa.toLowerCase()}`
-    : `Eddsa:${payload.Eddsa.toLowerCase()}`;
 }

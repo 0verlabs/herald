@@ -114,7 +114,7 @@ export function watchNearGasPayer(
  * (base64 Borsh) for Herald's relayer to send (ADR 0010). One delegate
  * action holds the one `sign` call, as ADR 0008 asks of a transaction.
  */
-export async function signSponsoredSign(
+export async function signedDelegateActionFor(
   wallet: Wallet,
   input: { heraldEnv: HeraldEnv; signerId: string; request: MpcSignRequest },
 ): Promise<string> {
@@ -142,7 +142,7 @@ export async function signSponsoredSign(
  * Solana's, which expires soonest, is relayed first. A wallet may answer
  * fewer than asked for; Herald matches each to its Sweep by payload.
  */
-export async function signSponsoredSigns(
+export async function signedDelegateActionsFor(
   wallet: Wallet,
   input: { heraldEnv: HeraldEnv; signerId: string; requests: MpcSignRequest[] },
 ): Promise<string[]> {
@@ -219,7 +219,7 @@ export type SignedCalls = {
 
 /**
  * The order to ask for approvals one at a time, or for delegate actions in
- * one request (`signSponsoredSigns`): Solana's first, since its
+ * one request (`signedDelegateActionsFor`): Solana's first, since its
  * transaction expires within about a minute of planning, then the rest as
  * planned. A NEAR Sweep's delegate action, like an EVM authorization, stays
  * valid for about 10 minutes (less if its 1Click quote expires sooner), so
